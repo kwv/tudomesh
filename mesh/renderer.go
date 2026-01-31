@@ -91,21 +91,25 @@ func (r *CompositeRenderer) HasDrawableContent() bool {
 	found := false
 	for id, m := range r.Maps {
 		total := 0
-		for _, layer := range m.Layers {
+		layerSummary := ""
+		for i, layer := range m.Layers {
+			if i > 0 {
+				layerSummary += ", "
+			}
+			layerSummary += fmt.Sprintf("%s(%dpx)", layer.Type, len(layer.Pixels))
+
 			if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
 				total += len(layer.Pixels)
-				if total > 0 {
+				if len(layer.Pixels) > 0 {
 					found = true
-					break
 				}
 			}
 		}
+
 		if total == 0 {
-			// concise debug line to help diagnose missing dimensions
-			log.Printf("[DEBUG] renderer: map %s has no drawable pixels (layers=%d)", id, len(m.Layers))
-		}
-		if found {
-			break
+			log.Printf("[DEBUG] renderer: map %s has no drawable pixels. Layers found: [%s]", id, layerSummary)
+		} else {
+			log.Printf("[DEBUG] renderer: map %s has %d drawable pixels across %d layers", id, total, len(m.Layers))
 		}
 	}
 	return found
