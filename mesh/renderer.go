@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"log"
 	"math"
 	"os"
 	"sort"
@@ -82,6 +83,32 @@ func NewCompositeRenderer(maps map[string]*ValetudoMap, transforms map[string]Af
 		Padding:        30,
 		GlobalRotation: 0,
 	}
+}
+
+// HasDrawableContent returns true if any map contains drawable pixels in floor/segment/wall layers.
+// It logs a concise debug message for maps that have no drawable pixels to aid troubleshooting.
+func (r *CompositeRenderer) HasDrawableContent() bool {
+	found := false
+	for id, m := range r.Maps {
+		total := 0
+		for _, layer := range m.Layers {
+			if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
+				total += len(layer.Pixels)
+				if total > 0 {
+					found = true
+					break
+				}
+			}
+		}
+		if total == 0 {
+			// concise debug line to help diagnose missing dimensions
+			log.Printf("[DEBUG] renderer: map %s has no drawable pixels (layers=%d)", id, len(m.Layers))
+		}
+		if found {
+			break
+		}
+	}
+	return found
 }
 
 // applyGlobalRotation rotates a point around the center by the global rotation angle
@@ -195,6 +222,21 @@ func (r *CompositeRenderer) Render() *image.RGBA {
 		r.Scale *= float64(4000) / float64(height)
 		height = 4000
 		width = int((maxX-minX)*r.Scale) + 2*r.Padding
+	}
+
+	// If bounds are invalid (e.g., no map data), ensure positive, reasonable dimensions
+	if width <= 0 || height <= 0 {
+		// No drawable area; create a minimal image (include padding if set)
+		minSize := 1
+		if 2*r.Padding+1 > minSize {
+			minSize = 2*r.Padding + 1
+		}
+		if width <= 0 {
+			width = minSize
+		}
+		if height <= 0 {
+			height = minSize
+		}
 	}
 
 	// Create image with white background
@@ -673,6 +715,21 @@ func (r *CompositeRenderer) RenderGreyscale() *image.RGBA {
 		r.Scale *= float64(4000) / float64(height)
 		height = 4000
 		width = int((maxX-minX)*r.Scale) + 2*r.Padding
+	}
+
+	// If bounds are invalid (e.g., no map data), ensure positive, reasonable dimensions
+	if width <= 0 || height <= 0 {
+		// No drawable area; create a minimal image (include padding if set)
+		minSize := 1
+		if 2*r.Padding+1 > minSize {
+			minSize = 2*r.Padding + 1
+		}
+		if width <= 0 {
+			width = minSize
+		}
+		if height <= 0 {
+			height = minSize
+		}
 	}
 
 	// Create image with background

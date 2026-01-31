@@ -249,19 +249,17 @@ func runRender() {
 		if err != nil {
 			log.Printf("Warning: Failed to load config file %s: %v", *configFile, err)
 		} else {
-			fmt.Printf("Loaded config from %s\n", *configFile)
+			log.Printf("Loaded config from %s", *configFile)
 		}
 	}
 
 	// Load calibration cache (auto-computed ICP transforms)
 	var cache *mesh.CalibrationData
-	if _, err := os.Stat(*calibrationCache); err == nil {
-		cache, err = mesh.LoadCalibration(*calibrationCache)
-		if err != nil {
-			log.Printf("Warning: Failed to load calibration cache: %v", err)
-		} else {
-			fmt.Printf("Loaded calibration cache from %s\n", *calibrationCache)
-		}
+	cache, err = mesh.LoadCalibration(*calibrationCache)
+	if err != nil {
+		log.Printf("Warning: Failed to load calibration cache %s: %v", *calibrationCache, err)
+	} else if cache != nil {
+		log.Printf("Loaded calibration cache from %s", *calibrationCache)
 	}
 
 	// Determine effective reference
@@ -711,20 +709,18 @@ func runService() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-	fmt.Printf("Loaded config from %s\n", *configFile)
+	log.Printf("Loaded config from %s", *configFile)
 
 	// 2. Load calibration cache (optional but recommended)
 	var cache *mesh.CalibrationData
-	if _, err := os.Stat(*calibrationCache); err == nil {
-		cache, err = mesh.LoadCalibration(*calibrationCache)
-		if err != nil {
-			log.Printf("Warning: Failed to load calibration cache: %v", err)
-		} else {
-			fmt.Printf("Loaded calibration cache from %s\n", *calibrationCache)
-		}
+	cache, err = mesh.LoadCalibration(*calibrationCache)
+	if err != nil {
+		log.Printf("Warning: Failed to load calibration cache %s: %v", *calibrationCache, err)
+	} else if cache != nil {
+		log.Printf("Loaded calibration cache from %s", *calibrationCache)
 	} else {
-		log.Println("Warning: No calibration cache found. Positions will not be transformed.")
-		log.Printf("Run './tudomesh --calibrate' to generate %s\n", *calibrationCache)
+		log.Printf("Warning: No calibration cache found at %s. Positions will not be transformed.", *calibrationCache)
+		log.Printf("Run './tudomesh --calibrate' to generate it.")
 	}
 
 	// 3. Determine reference vacuum
@@ -735,9 +731,9 @@ func runService() {
 		refID = cache.ReferenceVacuum
 	}
 	if refID != "" {
-		fmt.Printf("Reference vacuum: %s\n", refID)
+		log.Printf("Reference vacuum: %s", refID)
 	} else {
-		fmt.Println("Reference vacuum: (will auto-select on first map data)")
+		log.Println("Reference vacuum: (will auto-select on first map data)")
 	}
 
 	// 4. Create state tracker for HTTP endpoints
@@ -1019,6 +1015,13 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		// Apply colors from config
 		applyConfigColors(renderer, config)
 
+		// If no drawable content exists, return service unavailable to avoid generating invalid images
+		if !renderer.HasDrawableContent() {
+			log.Printf("Warning: maps present but no drawable content; endpoint=/composite-map.png")
+			http.Error(w, "No drawable map content", http.StatusServiceUnavailable)
+			return
+		}
+
 		// Render and send
 		img := renderer.Render()
 		w.Header().Set("Content-Type", "image/png")
@@ -1049,6 +1052,13 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
 		renderer.GlobalRotation = *rotateAll
 
+		// If no drawable content exists, return service unavailable
+		if !renderer.HasDrawableContent() {
+			log.Printf("Warning: maps present but no drawable content; endpoint=/floorplan.png")
+			http.Error(w, "No drawable map content", http.StatusServiceUnavailable)
+			return
+		}
+
 		// Render greyscale and send
 		img := renderer.RenderGreyscale()
 		w.Header().Set("Content-Type", "image/png")
@@ -1078,6 +1088,13 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		// Create renderer
 		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
 		renderer.GlobalRotation = *rotateAll
+
+		// If no drawable content exists, return service unavailable
+		if !renderer.HasDrawableContent() {
+			log.Printf("Warning: maps present but no drawable content; endpoint=/live.png")
+			http.Error(w, "No drawable map content", http.StatusServiceUnavailable)
+			return
+		}
 
 		// Get live positions
 		positions := stateTracker.GetPositions()
