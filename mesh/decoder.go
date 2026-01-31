@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
+	"os"
 )
 
 // DecodeMapData decodes Valetudo map data from various formats:
@@ -17,25 +19,37 @@ func DecodeMapData(data []byte) (*ValetudoMap, error) {
 		return nil, fmt.Errorf("empty data")
 	}
 
+	var jsonBytes []byte
+	var err error
+
 	// Try PNG format first (most common from MQTT)
 	if isPNG(data) {
-		jsonBytes, err := extractPNGzTXt(data)
+		jsonBytes, err = extractPNGzTXt(data)
 		if err != nil {
 			return nil, fmt.Errorf("extracting PNG zTXt: %w", err)
 		}
-		return ParseMapJSON(jsonBytes)
+	} else if data[0] == '{' {
+		// Try raw JSON (starts with '{')
+		jsonBytes = data
+	} else {
+		// Try zlib-compressed JSON
+		jsonBytes, err = inflateZlib(data)
+		if err != nil {
+			return nil, fmt.Errorf("unknown format: not PNG, JSON, or zlib-compressed")
+		}
 	}
 
-	// Try raw JSON (starts with '{')
-	if data[0] == '{' {
-		return ParseMapJSON(data)
+	if len(jsonBytes) == 0 {
+		return nil, fmt.Errorf("decoded JSON payload is empty")
 	}
 
-	// Try zlib-compressed JSON
-	jsonBytes, err := inflateZlib(data)
-	if err != nil {
-		return nil, fmt.Errorf("unknown format: not PNG, JSON, or zlib-compressed")
+	// Debug: Log the first 100 bytes of the JSON to verify structure
+	sample := string(jsonBytes)
+	if len(sample) > 100 {
+		sample = sample[:100]
 	}
+	log.Printf("[DEBUG] Decoded JSON sample: %s", sample)
+
 	return ParseMapJSON(jsonBytes)
 }
 
@@ -151,7 +165,7 @@ func DecodePNGMapFile(path string) (*ValetudoMap, error) {
 	return DecodeMapData(data)
 }
 
-// readFile is a helper to read file contents (avoids import cycle)
+// readFile is a helper to read file contents
 func readFile(path string) ([]byte, error) {
-	return nil, fmt.Errorf("not implemented: use os.ReadFile")
+	return os.ReadFile(path)
 }
