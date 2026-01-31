@@ -4,3 +4,7 @@
 tudomesh
 tudomesh
 config.yaml
+
+# Beads task tracking (ephemeral)
+.beads/
+.mcp.json
