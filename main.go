@@ -704,22 +704,37 @@ func runDetectRotation() {
 func runService() {
 	fmt.Println("Starting tudomesh service...")
 
-	// 1. Load config.yaml (required)
-	config, err := mesh.LoadConfig(*configFile)
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
-	}
-	log.Printf("Loaded config from %s", *configFile)
+	// 1. Resolve configuration paths relative to data-dir if provided
+	resolvedConfig := *configFile
+	resolvedCache := *calibrationCache
 
-	// 2. Load calibration cache (optional but recommended)
-	var cache *mesh.CalibrationData
-	cache, err = mesh.LoadCalibration(*calibrationCache)
+	// If data-dir is specified and files are still pointing to defaults,
+	// resolve them relative to the data-dir.
+	if *dataDir != "." {
+		if resolvedConfig == "config.yaml" {
+			resolvedConfig = filepath.Join(*dataDir, "config.yaml")
+		}
+		if resolvedCache == ".calibration-cache.json" {
+			resolvedCache = filepath.Join(*dataDir, ".calibration-cache.json")
+		}
+	}
+
+	// 2. Load config.yaml (required)
+	config, err := mesh.LoadConfig(resolvedConfig)
 	if err != nil {
-		log.Printf("Warning: Failed to load calibration cache %s: %v", *calibrationCache, err)
+		log.Fatalf("Failed to load config: %v (looked at %s)", err, resolvedConfig)
+	}
+	log.Printf("Loaded config from %s", resolvedConfig)
+
+	// 3. Load calibration cache (optional but recommended)
+	var cache *mesh.CalibrationData
+	cache, err = mesh.LoadCalibration(resolvedCache)
+	if err != nil {
+		log.Printf("Warning: Failed to load calibration cache %s: %v", resolvedCache, err)
 	} else if cache != nil {
-		log.Printf("Loaded calibration cache from %s", *calibrationCache)
+		log.Printf("Loaded calibration cache from %s", resolvedCache)
 	} else {
-		log.Printf("Warning: No calibration cache found at %s. Positions will not be transformed.", *calibrationCache)
+		log.Printf("Warning: No calibration cache found at %s. Positions will not be transformed.", resolvedCache)
 		log.Printf("Run './tudomesh --calibrate' to generate it.")
 	}
 
@@ -801,8 +816,11 @@ func runService() {
 				return
 			}
 
-			// Update state tracker with new map
-			stateTracker.UpdateMap(vacuumID, mapData)
+			// Update state tracker with new map only if it contains drawable content
+			// This prevents lightweight MQTT updates from overwriting the rich floorplan loaded from disk
+			if mesh.HasDrawablePixels(mapData) {
+				stateTracker.UpdateMap(vacuumID, mapData)
+			}
 
 			// Debug: log map data stats
 			log.Printf("[DEBUG] %s: received map data - pixelSize=%d, layers=%d, entities=%d",
@@ -825,6 +843,21 @@ func runService() {
 				pixelSize = 5 // default
 			}
 			gridPos := mesh.Point{X: robotPos.X / pixelSize, Y: robotPos.Y / pixelSize}
+
+			// Auto-cache map to disk if it contains drawable data
+			if mesh.HasDrawablePixels(mapData) {
+				cachePath := filepath.Join(*dataDir, fmt.Sprintf("ValetudoMapExport-%s.json", vacuumID))
+				// Save map data to disk for persistent floorplan (async)
+				go func(p string, d *mesh.ValetudoMap) {
+					// Encode back to JSON
+					jsonBytes, err := json.MarshalIndent(d, "", "  ")
+					if err == nil {
+						if err := os.WriteFile(p, jsonBytes, 0644); err == nil {
+							log.Printf("[DEBUG] Cached map for %s to %s", vacuumID, p)
+						}
+					}
+				}(cachePath, mapData)
+			}
 
 			// Transform position if calibration available
 			var gridX, gridY, worldAngle float64
@@ -1089,11 +1122,21 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
 		renderer.GlobalRotation = *rotateAll
 
-		// If no drawable content exists, return service unavailable
+		// If no drawable content exists, we can still show positions on a blank map
 		if !renderer.HasDrawableContent() {
-			log.Printf("Warning: maps present but no drawable content; endpoint=/live.png")
-			http.Error(w, "No drawable map content", http.StatusServiceUnavailable)
-			return
+			// Add more debug logging for layer keys if no drawable content
+			for id, m := range maps {
+				layerSummary := ""
+				if len(m.Layers) > 0 {
+					layerTypes := make([]string, len(m.Layers))
+					for i, layer := range m.Layers {
+						layerTypes[i] = layer.Type
+					}
+					layerSummary = strings.Join(layerTypes, ", ")
+				}
+				log.Printf("[DEBUG] renderer: map %s has no drawable pixels. Layers found: [%s]", id, layerSummary)
+			}
+			log.Printf("[DEBUG] renderer: no drawable content for /live.png, rendering positions only")
 		}
 
 		// Get live positions

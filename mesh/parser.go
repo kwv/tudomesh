@@ -143,3 +143,18 @@ func Summarize(m *ValetudoMap) MapSummary {
 
 	return summary
 }
+
+// HasDrawablePixels returns true if the map contains any pixels in floor, wall or segment layers
+func HasDrawablePixels(m *ValetudoMap) bool {
+	if m == nil {
+		return false
+	}
+	for _, layer := range m.Layers {
+		if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
+			if len(layer.Pixels) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
