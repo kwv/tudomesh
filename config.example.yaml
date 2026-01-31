@@ -1,0 +1,72 @@
+# TudoMesh Configuration - Example
+# Copy this file to config.yaml and customize for your setup
+
+mqtt:
+  broker: "mqtt://localhost:1883"
+  publishPrefix: "tudomesh"
+  clientId: "tudomesh"
+  # username: "mqtt_user"      # Optional MQTT authentication
+  # password: "mqtt_password"
+
+# Reference vacuum (optional)
+# - If not specified: auto-selected by largest totalLayerArea
+# - If specified: used as world coordinate origin
+# - Auto-computed transforms are cached in .calibration-cache.json
+reference: vacuum1  # Use vacuum1 as the reference coordinate system
+
+# Vacuum definitions
+# Each vacuum requires: id, topic, color
+# Optional fields:
+# - rotation: Manual rotation hint/override in degrees (0, 90, 180, 270)
+#   * Used as starting point for ICP alignment
+#   * If provided, takes precedence over auto-computed rotation
+# - translation: Manual translation override in pixels {x, y}
+#   * Rarely needed - ICP usually computes this correctly
+vacuums:
+  # Reference vacuum - no rotation or translation needed
+  - id: vacuum1
+    topic: valetudo/YourVacuumID/MapData/map-data
+    color: "#FF6B6B"
+
+  # Vacuum with rotation hint (recommended approach)
+  - id: vacuum2
+    topic: valetudo/AnotherVacuumID/MapData/map-data
+    color: "#4ECDC4"
+    rotation: 180  # ICP will use this as starting point
+
+  # Vacuum with full manual calibration (advanced/rare)
+  - id: vacuum3
+    topic: valetudo/ThirdVacuumID/MapData/map-data
+    color: "#45B7D1"
+    rotation: 270
+    translation:
+      x: 50
+      y: -100
+
+# Calibration workflow:
+# 1. Rotation hints in config are used as ICP starting points
+# 2. ICP computes full AffineMatrix transforms (rotation + translation)
+# 3. Transforms are cached in .calibration-cache.json
+# 4. Manual overrides in config take precedence over cache
+# 5. CLI --force-rotation flag overrides everything
+#
+# Common patterns:
+#
+# 1. Auto-calibration (recommended for first time):
+#    - Don't set rotation hints
+#    - Run: ./tudomesh --calibrate
+#    - Check output to see detected rotations
+#    - Add rotation hints to config.yaml
+#
+# 2. With rotation hints (recommended for production):
+#    - Set rotation hints in config.yaml based on calibration results
+#    - ICP will start from these hints and fine-tune
+#    - Much faster and more reliable than full auto-calibration
+#
+# 3. CLI override (testing/troubleshooting):
+#    - ./tudomesh --render --force-rotation="vacuum2=180,vacuum3=270"
+#    - Overrides both config and cache
+#
+# 4. Manual calibration (rare - only if ICP fails):
+#    - Set both rotation and translation in config.yaml
+#    - Bypasses ICP completely for that vacuum
