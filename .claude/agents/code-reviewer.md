@@ -127,7 +127,7 @@ git diff main...bd-{BEAD_ID}
 ### If APPROVED:
 
 ```bash
-bd comment {BEAD_ID} "CODE REVIEW: APPROVED - [1-line summary]"
+bd comment add {BEAD_ID} "CODE REVIEW: APPROVED - [1-line summary]"
 ```
 
 ```
@@ -154,7 +154,7 @@ Comment added. Supervisor may proceed.
 ### If NOT APPROVED:
 
 ```bash
-bd comment {BEAD_ID} "CODE REVIEW: NOT APPROVED - [brief reason]"
+bd comment add {BEAD_ID} "CODE REVIEW: NOT APPROVED - [brief reason]"
 ```
 
 ```
