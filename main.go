@@ -40,6 +40,11 @@ var (
 	mqttMode           = flag.Bool("mqtt", false, "Run MQTT service mode for real-time position tracking")
 	httpMode           = flag.Bool("http", false, "Enable HTTP server for serving map images")
 	httpPort           = flag.Int("http-port", 8080, "HTTP server port (default 8080)")
+	// Vector rendering flags
+	renderFormat       = flag.String("format", "raster", "Render format: raster, vector, or both")
+	vectorFormat       = flag.String("vector-format", "svg", "Vector output format: svg or png")
+	gridSpacing        = flag.Float64("grid-spacing", 1000.0, "Grid line spacing in millimeters (default 1000mm = 1m)")
+	vectorResolution   = flag.Float64("vector-resolution", 300.0, "Vector to PNG rasterization DPI (default 300)")
 )
 
 func main() {
@@ -362,12 +367,66 @@ func runRender() {
 
 	// Render with computed transforms
 	fmt.Printf("\nRendering composite map to %s...\n", *outputFile)
-	renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
-	renderer.GlobalRotation = *rotateAll
-	applyConfigColors(renderer, config)
-	if err := renderer.SavePNG(*outputFile); err != nil {
-		log.Fatalf("Error rendering: %v", err)
+
+	// Determine render format
+	format := *renderFormat
+	if format != "raster" && format != "vector" && format != "both" {
+		log.Fatalf("Invalid format: %s (must be raster, vector, or both)", format)
 	}
+
+	// Raster rendering (existing behavior)
+	if format == "raster" || format == "both" {
+		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
+		renderer.GlobalRotation = *rotateAll
+		applyConfigColors(renderer, config)
+
+		outputPath := *outputFile
+		if format == "both" && !strings.HasSuffix(outputPath, ".png") {
+			outputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".png"
+		}
+
+		if err := renderer.SavePNG(outputPath); err != nil {
+			log.Fatalf("Error rendering raster: %v", err)
+		}
+		fmt.Printf("Created raster: %s\n", outputPath)
+	}
+
+	// Vector rendering
+	if format == "vector" || format == "both" {
+		vectorRenderer := mesh.NewVectorRenderer(maps, transforms, effectiveRef)
+		vectorRenderer.GlobalRotation = *rotateAll
+
+		// Apply grid spacing from config or flag
+		if config != nil && config.GridSpacing > 0 {
+			vectorRenderer.Padding = config.GridSpacing
+		} else if *gridSpacing > 0 {
+			vectorRenderer.Padding = *gridSpacing / 2 // Padding is half the grid spacing
+		}
+
+		outputPath := *outputFile
+		if format == "both" {
+			// When rendering both, change extension to .svg for vector
+			outputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".svg"
+		}
+
+		// Create output file
+		outFile, err := os.Create(outputPath)
+		if err != nil {
+			log.Fatalf("Error creating output file %s: %v", outputPath, err)
+		}
+		defer outFile.Close()
+
+		// Render based on vector format
+		if *vectorFormat == "svg" {
+			if err := vectorRenderer.RenderToSVG(outFile); err != nil {
+				log.Fatalf("Error rendering vector SVG: %v", err)
+			}
+			fmt.Printf("Created vector SVG: %s\n", outputPath)
+		} else {
+			log.Fatalf("PNG vector format not yet implemented (use --vector-format=svg)")
+		}
+	}
+
 	fmt.Println("Done!")
 }
 
@@ -1148,6 +1207,75 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		w.Header().Set("Cache-Control", "no-cache")
 		if err := png.Encode(w, img); err != nil {
 			log.Printf("Error encoding live PNG: %v", err)
+		}
+	})
+
+	// Vector SVG endpoints
+	// Composite map SVG endpoint
+	mux.HandleFunc("/composite-map.svg", func(w http.ResponseWriter, r *http.Request) {
+		maps := stateTracker.GetMaps()
+		if len(maps) == 0 {
+			http.Error(w, "No maps available", http.StatusServiceUnavailable)
+			return
+		}
+
+		// Build transforms from cache
+		transforms := buildTransforms(maps, cache, refID)
+
+		// Determine effective reference
+		effectiveRef := refID
+		if effectiveRef == "" {
+			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
+		}
+
+		// Create vector renderer
+		vectorRenderer := mesh.NewVectorRenderer(maps, transforms, effectiveRef)
+		vectorRenderer.GlobalRotation = *rotateAll
+
+		// Apply grid spacing from config if available
+		if config != nil && config.GridSpacing > 0 {
+			vectorRenderer.Padding = config.GridSpacing / 2
+		}
+
+		// Render SVG
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "no-cache")
+		if err := vectorRenderer.RenderToSVG(w); err != nil {
+			log.Printf("Error encoding composite map SVG: %v", err)
+		}
+	})
+
+	// Floorplan SVG endpoint
+	mux.HandleFunc("/floorplan.svg", func(w http.ResponseWriter, r *http.Request) {
+		maps := stateTracker.GetMaps()
+		if len(maps) == 0 {
+			http.Error(w, "No maps available", http.StatusServiceUnavailable)
+			return
+		}
+
+		// Build transforms from cache
+		transforms := buildTransforms(maps, cache, refID)
+
+		// Determine effective reference
+		effectiveRef := refID
+		if effectiveRef == "" {
+			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
+		}
+
+		// Create vector renderer
+		vectorRenderer := mesh.NewVectorRenderer(maps, transforms, effectiveRef)
+		vectorRenderer.GlobalRotation = *rotateAll
+
+		// Apply grid spacing from config if available
+		if config != nil && config.GridSpacing > 0 {
+			vectorRenderer.Padding = config.GridSpacing / 2
+		}
+
+		// Render SVG
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "no-cache")
+		if err := vectorRenderer.RenderToSVG(w); err != nil {
+			log.Printf("Error encoding floorplan SVG: %v", err)
 		}
 	})
 

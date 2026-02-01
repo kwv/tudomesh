@@ -14,6 +14,12 @@ mqtt:
 # - Auto-computed transforms are cached in .calibration-cache.json
 reference: vacuum1  # Use vacuum1 as the reference coordinate system
 
+# Vector rendering options (optional)
+# gridSpacing: Grid line spacing in millimeters (default: 1000mm = 1m)
+# vectorResolution: DPI for vector-to-PNG rasterization (default: 300)
+# gridSpacing: 1000.0
+# vectorResolution: 300.0
+
 # Vacuum definitions
 # Each vacuum requires: id, topic, color
 # Optional fields:

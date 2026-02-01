@@ -110,9 +110,11 @@ type VacuumConfig struct {
 
 // Config represents the full configuration file
 type Config struct {
-	MQTT      MQTTConfig     `yaml:"mqtt" json:"mqtt"`
-	Reference string         `yaml:"reference,omitempty" json:"reference,omitempty"` // Optional reference vacuum ID
-	Vacuums   []VacuumConfig `yaml:"vacuums" json:"vacuums"`
+	MQTT             MQTTConfig     `yaml:"mqtt" json:"mqtt"`
+	Reference        string         `yaml:"reference,omitempty" json:"reference,omitempty"` // Optional reference vacuum ID
+	Vacuums          []VacuumConfig `yaml:"vacuums" json:"vacuums"`
+	GridSpacing      float64        `yaml:"gridSpacing,omitempty" json:"gridSpacing,omitempty"`           // Grid line spacing in mm (default 1000)
+	VectorResolution float64        `yaml:"vectorResolution,omitempty" json:"vectorResolution,omitempty"` // Vector PNG DPI (default 300)
 }
 
 // MQTTConfig holds MQTT connection settings
