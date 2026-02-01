@@ -4,6 +4,7 @@
 tudomesh
 tudomesh
 config.yaml
+*.svg
 
 # Beads task tracking (ephemeral)
 .beads/
@@ -11,3 +12,8 @@ config.yaml
 
 # Git worktrees
 .worktrees/
+
+# Test coverage files
+*.out
+coverage.out
+*_coverage.out
