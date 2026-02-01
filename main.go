@@ -1327,19 +1327,19 @@ func applyConfigColors(renderer *mesh.CompositeRenderer, config *mesh.Config) {
 		}
 
 		// Create VacuumColor from the hex color
-		baseColor := color.RGBA{r, g, b, 255}
+		baseColor := color.NRGBA{r, g, b, 255}
 		renderer.Colors[vc.ID] = mesh.VacuumColor{
-			Floor: color.RGBA{r, g, b, 150}, // Semi-transparent for floor
-			Wall:  darkenColor(baseColor),   // Darker version for walls
-			Robot: baseColor,                // Full color for robot
+			Floor: color.NRGBA{r, g, b, 150}, // Semi-transparent for floor
+			Wall:  darkenColor(baseColor),    // Darker version for walls
+			Robot: baseColor,                 // Full color for robot
 		}
 	}
 }
 
 // darkenColor creates a darker version of a color for walls
-func darkenColor(c color.RGBA) color.RGBA {
+func darkenColor(c color.NRGBA) color.NRGBA {
 	factor := 0.5
-	return color.RGBA{
+	return color.NRGBA{
 		R: uint8(float64(c.R) * factor),
 		G: uint8(float64(c.G) * factor),
 		B: uint8(float64(c.B) * factor),

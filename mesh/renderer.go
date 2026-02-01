@@ -17,33 +17,33 @@ import (
 
 // VacuumColor defines the color for each vacuum's map elements
 type VacuumColor struct {
-	Floor color.RGBA
-	Wall  color.RGBA
-	Robot color.RGBA
+	Floor color.NRGBA
+	Wall  color.NRGBA
+	Robot color.NRGBA
 }
 
 // DefaultColors returns distinct colors for up to 4 vacuums
 func DefaultColors() []VacuumColor {
 	return []VacuumColor{
 		{ // Reference - Blue
-			Floor: color.RGBA{100, 149, 237, 180}, // Cornflower blue
-			Wall:  color.RGBA{0, 0, 139, 255},     // Dark blue
-			Robot: color.RGBA{0, 0, 255, 255},     // Blue
+			Floor: color.NRGBA{100, 149, 237, 180}, // Cornflower blue
+			Wall:  color.NRGBA{0, 0, 139, 255},     // Dark blue
+			Robot: color.NRGBA{0, 0, 255, 255},     // Blue
 		},
 		{ // Vacuum 2 - Red
-			Floor: color.RGBA{255, 99, 71, 150}, // Tomato
-			Wall:  color.RGBA{139, 0, 0, 255},   // Dark red
-			Robot: color.RGBA{255, 0, 0, 255},   // Red
+			Floor: color.NRGBA{255, 99, 71, 150}, // Tomato
+			Wall:  color.NRGBA{139, 0, 0, 255},   // Dark red
+			Robot: color.NRGBA{255, 0, 0, 255},   // Red
 		},
 		{ // Vacuum 3 - Green
-			Floor: color.RGBA{144, 238, 144, 150}, // Light green
-			Wall:  color.RGBA{0, 100, 0, 255},     // Dark green
-			Robot: color.RGBA{0, 255, 0, 255},     // Green
+			Floor: color.NRGBA{144, 238, 144, 150}, // Light green
+			Wall:  color.NRGBA{0, 100, 0, 255},     // Dark green
+			Robot: color.NRGBA{0, 255, 0, 255},     // Green
 		},
 		{ // Vacuum 4 - Yellow
-			Floor: color.RGBA{255, 255, 150, 150}, // Light yellow
-			Wall:  color.RGBA{184, 134, 11, 255},  // Dark goldenrod
-			Robot: color.RGBA{255, 215, 0, 255},   // Gold
+			Floor: color.NRGBA{255, 255, 150, 150}, // Light yellow
+			Wall:  color.NRGBA{184, 134, 11, 255},  // Dark goldenrod
+			Robot: color.NRGBA{255, 215, 0, 255},   // Gold
 		},
 	}
 }
@@ -324,7 +324,9 @@ func (r *CompositeRenderer) Render() *image.RGBA {
 		if robot, _, ok := ExtractRobotPosition(m); ok {
 			tr := TransformPoint(robot, transform)
 			ix, iy := toImage(tr)
-			drawCircle(img, ix, iy, 6, vc.Robot)
+			// Convert NRGBA to RGBA for image rendering
+			robotRGBA := color.RGBA{vc.Robot.R, vc.Robot.G, vc.Robot.B, vc.Robot.A}
+			drawCircle(img, ix, iy, 6, robotRGBA)
 		}
 	}
 
@@ -465,14 +467,33 @@ func RenderSingleMapWithRotation(m *ValetudoMap, outputPath string, floorColor, 
 }
 
 // blendColors performs alpha blending of two colors
-func blendColors(bg, fg color.RGBA) color.RGBA {
+func blendColors(bg color.RGBA, fg color.NRGBA) color.NRGBA {
+	// Convert RGBA background to NRGBA for proper blending
+	// RGBA is premultiplied, so we need to un-premultiply it first
+	var bgNRGBA color.NRGBA
+	if bg.A == 0 {
+		bgNRGBA = color.NRGBA{0, 0, 0, 0}
+	} else if bg.A == 255 {
+		bgNRGBA = color.NRGBA{bg.R, bg.G, bg.B, 255}
+	} else {
+		// Un-premultiply: divide RGB by alpha
+		alpha32 := uint32(bg.A)
+		bgNRGBA = color.NRGBA{
+			R: uint8((uint32(bg.R) * 255) / alpha32),
+			G: uint8((uint32(bg.G) * 255) / alpha32),
+			B: uint8((uint32(bg.B) * 255) / alpha32),
+			A: bg.A,
+		}
+	}
+
+	// Now perform standard alpha blending with non-premultiplied colors
 	alpha := float64(fg.A) / 255.0
 	invAlpha := 1.0 - alpha
 
-	return color.RGBA{
-		R: uint8(float64(fg.R)*alpha + float64(bg.R)*invAlpha),
-		G: uint8(float64(fg.G)*alpha + float64(bg.G)*invAlpha),
-		B: uint8(float64(fg.B)*alpha + float64(bg.B)*invAlpha),
+	return color.NRGBA{
+		R: uint8(float64(fg.R)*alpha + float64(bgNRGBA.R)*invAlpha),
+		G: uint8(float64(fg.G)*alpha + float64(bgNRGBA.G)*invAlpha),
+		B: uint8(float64(fg.B)*alpha + float64(bgNRGBA.B)*invAlpha),
 		A: 255,
 	}
 }
@@ -695,9 +716,9 @@ func RenderRotationComparison(maps map[string]*ValetudoMap, vacuumID string, out
 
 // Greyscale colors for floorplan rendering
 var (
-	GreyscaleFloor = color.RGBA{200, 200, 200, 255} // Light grey for floor
-	GreyscaleWall  = color.RGBA{60, 60, 60, 255}    // Dark grey for walls
-	GreyscaleBG    = color.RGBA{240, 240, 240, 255} // Background
+	GreyscaleFloor = color.NRGBA{200, 200, 200, 255} // Light grey for floor
+	GreyscaleWall  = color.NRGBA{60, 60, 60, 255}    // Dark grey for walls
+	GreyscaleBG    = color.NRGBA{240, 240, 240, 255} // Background
 )
 
 // RenderGreyscale creates a greyscale composite image without color coding or legend
