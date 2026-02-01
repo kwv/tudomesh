@@ -1,6 +1,7 @@
 package mesh
 
 import (
+	"image/color"
 	"image/png"
 	"io"
 	"math"
@@ -9,6 +10,25 @@ import (
 	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/tdewolff/canvas/renderers/svg"
 )
+
+// nrgbaToRGBA converts color.NRGBA to color.RGBA by premultiplying alpha
+// This is needed for the canvas library which expects premultiplied RGBA
+func nrgbaToRGBA(c color.NRGBA) color.RGBA {
+	if c.A == 0 {
+		return color.RGBA{0, 0, 0, 0}
+	}
+	if c.A == 255 {
+		return color.RGBA{c.R, c.G, c.B, 255}
+	}
+	// Premultiply: multiply RGB by alpha
+	alpha32 := uint32(c.A)
+	return color.RGBA{
+		R: uint8((uint32(c.R) * alpha32) / 255),
+		G: uint8((uint32(c.G) * alpha32) / 255),
+		B: uint8((uint32(c.B) * alpha32) / 255),
+		A: c.A,
+	}
+}
 
 // VectorRenderer renders multiple vacuum maps as vector graphics
 type VectorRenderer struct {
@@ -119,7 +139,7 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 
 		// Render Floor/Segments first (filled)
 		floorStyle := canvas.DefaultStyle
-		floorStyle.Fill = canvas.Paint{Color: vc.Floor}
+		floorStyle.Fill = canvas.Paint{Color: nrgbaToRGBA(vc.Floor)}
 		floorStyle.Stroke = canvas.Paint{Color: canvas.Transparent}
 
 		for _, layer := range m.Layers {
@@ -145,7 +165,7 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 		// Render Walls (stroked)
 		wallStyle := canvas.DefaultStyle
 		wallStyle.Fill = canvas.Paint{Color: canvas.Transparent}
-		wallStyle.Stroke = canvas.Paint{Color: vc.Wall}
+		wallStyle.Stroke = canvas.Paint{Color: nrgbaToRGBA(vc.Wall)}
 		wallStyle.StrokeWidth = 20.0 // 20mm thick walls
 
 		for _, layer := range m.Layers {
@@ -209,7 +229,7 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 
 			// Render as circle with vacuum's wall color
 			chargerStyle := canvas.DefaultStyle
-			chargerStyle.Fill = canvas.Paint{Color: vc.Wall}
+			chargerStyle.Fill = canvas.Paint{Color: nrgbaToRGBA(vc.Wall)}
 			chargerStyle.Stroke = canvas.Paint{Color: canvas.Black}
 			chargerStyle.StrokeWidth = 5.0
 
