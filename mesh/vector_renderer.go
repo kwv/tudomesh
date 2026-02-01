@@ -1,10 +1,12 @@
 package mesh
 
 import (
+	"image/png"
 	"io"
 	"math"
 
 	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/tdewolff/canvas/renderers/svg"
 )
 
@@ -17,6 +19,7 @@ type VectorRenderer struct {
 	Scale          float64 // Scale factor for rendering
 	Padding        float64 // Padding in world units
 	GlobalRotation float64
+	Resolution     canvas.Resolution // Resolution for PNG output (default: 300 DPI)
 }
 
 // NewVectorRenderer creates a vector renderer with default settings
@@ -40,9 +43,15 @@ func NewVectorRenderer(maps map[string]*ValetudoMap, transforms map[string]Affin
 		Colors:         colorMap,
 		Reference:      reference,
 		Scale:          1.0,
-		Padding:        500.0, // 500mm padding
+		Padding:        500.0,           // 500mm padding
 		GlobalRotation: 0,
+		Resolution:     canvas.DPI(300), // 300 DPI default for PNG output
 	}
+}
+
+// canvasRenderer is an interface that both svg and rasterizer renderers implement
+type canvasRenderer interface {
+	RenderPath(path *canvas.Path, style canvas.Style, m canvas.Matrix)
 }
 
 // RenderToSVG writes the map as an SVG to the provided writer
@@ -56,12 +65,39 @@ func (r *VectorRenderer) RenderToSVG(w io.Writer) error {
 	// 2. Create SVG renderer
 	svgRenderer := svg.New(w, width, height, nil)
 
+	// 3. Render to canvas
+	r.renderToCanvas(svgRenderer, minX, minY, maxX, maxY, centerX, centerY, width, height)
+
+	return nil
+}
+
+// RenderToPNG writes the map as a PNG to the provided writer
+func (r *VectorRenderer) RenderToPNG(w io.Writer) error {
+	// 1. Calculate world-space bounds
+	minX, minY, maxX, maxY, centerX, centerY := r.calculateWorldBounds()
+
+	width := (maxX - minX) + 2*r.Padding
+	height := (maxY - minY) + 2*r.Padding
+
+	// 2. Create rasterizer renderer
+	rast := rasterizer.New(width, height, r.Resolution, canvas.DefaultColorSpace)
+
+	// 3. Render to canvas
+	r.renderToCanvas(rast, minX, minY, maxX, maxY, centerX, centerY, width, height)
+
+	// 4. Encode to PNG
+	// Rasterizer implements draw.Image interface, which embeds image.Image
+	return png.Encode(w, rast)
+}
+
+// renderToCanvas renders the maps to a canvas renderer (shared logic for SVG and PNG)
+func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, maxX, maxY, centerX, centerY, width, height float64) {
 	// Draw white background
 	bgStyle := canvas.DefaultStyle
 	bgStyle.Fill = canvas.Paint{Color: canvas.White}
-	svgRenderer.RenderPath(canvas.Rectangle(width, height), bgStyle, canvas.Identity)
+	renderer.RenderPath(canvas.Rectangle(width, height), bgStyle, canvas.Identity)
 
-	// 3. Helper to transform world points to canvas points
+	// Helper to transform world points to canvas points
 	toCanvas := func(p Point) (float64, float64) {
 		rp := r.applyGlobalRotation(p, centerX, centerY)
 		tx := (rp.X - minX) + r.Padding
@@ -69,7 +105,7 @@ func (r *VectorRenderer) RenderToSVG(w io.Writer) error {
 		return tx, ty
 	}
 
-	// 4. Trace and draw each map
+	// Trace and draw each map
 	for id, m := range r.Maps {
 		transform := r.Transforms[id]
 		vc := r.Colors[id]
@@ -94,7 +130,7 @@ func (r *VectorRenderer) RenderToSVG(w io.Writer) error {
 						}
 					}
 					cp.Close()
-					svgRenderer.RenderPath(cp, floorStyle, canvas.Identity)
+					renderer.RenderPath(cp, floorStyle, canvas.Identity)
 				}
 			}
 		}
@@ -119,13 +155,11 @@ func (r *VectorRenderer) RenderToSVG(w io.Writer) error {
 							cp.LineTo(cx, cy)
 						}
 					}
-					svgRenderer.RenderPath(cp, wallStyle, canvas.Identity)
+					renderer.RenderPath(cp, wallStyle, canvas.Identity)
 				}
 			}
 		}
 	}
-
-	return nil
 }
 
 func (r *VectorRenderer) calculateWorldBounds() (minX, minY, maxX, maxY, centerX, centerY float64) {
