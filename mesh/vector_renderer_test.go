@@ -307,3 +307,95 @@ func TestVectorRenderer_GridAndCharger(t *testing.T) {
 
 	t.Logf("Generated SVG with grid and charger: %d bytes", len(svgContent))
 }
+
+// TestCalculateWorldBounds verifies that calculateWorldBounds scales pixel coordinates
+// to world coordinates (by pixelSize) before calculating bounds
+func TestCalculateWorldBounds(t *testing.T) {
+	// Create a test map with pixelSize=50
+	// Pixels at [100,200] should become world coords [5000,10000]
+	m := &ValetudoMap{
+		PixelSize: 50,
+		Layers: []MapLayer{
+			{
+				Type:   "floor",
+				Pixels: []int{100, 200, 150, 250}, // Two points: (100,200) and (150,250)
+			},
+		},
+	}
+
+	renderer := &VectorRenderer{
+		Maps: map[string]*ValetudoMap{
+			"test": m,
+		},
+		Transforms: map[string]AffineMatrix{
+			"test": Identity(),
+		},
+		Padding: 0,
+	}
+
+	minX, minY, maxX, maxY, _, _ := renderer.calculateWorldBounds()
+
+	// Expected bounds: (100*50, 200*50) to (150*50, 250*50)
+	// = (5000, 10000) to (7500, 12500)
+	expectedMinX := 100.0 * 50.0
+	expectedMinY := 200.0 * 50.0
+	expectedMaxX := 150.0 * 50.0
+	expectedMaxY := 250.0 * 50.0
+
+	if minX != expectedMinX {
+		t.Errorf("minX: got %v, want %v", minX, expectedMinX)
+	}
+	if minY != expectedMinY {
+		t.Errorf("minY: got %v, want %v", minY, expectedMinY)
+	}
+	if maxX != expectedMaxX {
+		t.Errorf("maxX: got %v, want %v", maxX, expectedMaxX)
+	}
+	if maxY != expectedMaxY {
+		t.Errorf("maxY: got %v, want %v", maxY, expectedMaxY)
+	}
+}
+
+// TestBoundsMatchVectorizeLayer verifies that calculateWorldBounds and VectorizeLayer
+// use the same coordinate system (both scale by pixelSize)
+func TestBoundsMatchVectorizeLayer(t *testing.T) {
+	m := &ValetudoMap{
+		PixelSize: 50,
+		Layers: []MapLayer{
+			{
+				Type:   "floor",
+				Pixels: []int{10, 20, 30, 40},
+			},
+		},
+	}
+
+	renderer := &VectorRenderer{
+		Maps: map[string]*ValetudoMap{
+			"test": m,
+		},
+		Transforms: map[string]AffineMatrix{
+			"test": Identity(),
+		},
+		Padding: 0,
+	}
+
+	// Get bounds from calculateWorldBounds
+	minX, minY, maxX, maxY, _, _ := renderer.calculateWorldBounds()
+
+	// Get paths from VectorizeLayer
+	paths := VectorizeLayer(&m.Layers[0], m.PixelSize, 0.0)
+
+	if len(paths) == 0 {
+		t.Skip("VectorizeLayer returned no paths (expected for sparse test data)")
+	}
+
+	// Verify that all vectorized points fall within the calculated bounds
+	for _, path := range paths {
+		for _, pt := range path {
+			if pt.X < minX || pt.X > maxX || pt.Y < minY || pt.Y > maxY {
+				t.Errorf("VectorizeLayer point (%v,%v) outside bounds [%v,%v] to [%v,%v]",
+					pt.X, pt.Y, minX, minY, maxX, maxY)
+			}
+		}
+	}
+}
