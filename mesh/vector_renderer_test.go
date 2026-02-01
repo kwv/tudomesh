@@ -2,7 +2,9 @@ package mesh
 
 import (
 	"bytes"
+	"encoding/xml"
 	"image/png"
+	"strings"
 	"testing"
 
 	"github.com/tdewolff/canvas"
@@ -46,6 +48,27 @@ func TestVectorRenderer_RenderToSVG(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("path")) {
 		t.Errorf("Output does not contain path elements")
+	}
+
+	// Verify SVG has proper closing tag (fixes bug tudomesh-k4h)
+	if !strings.HasSuffix(strings.TrimSpace(svgContent), "</svg>") {
+		t.Errorf("SVG does not end with </svg> tag - file is incomplete")
+	}
+
+	// Verify SVG is valid XML
+	var result interface{}
+	if err := xml.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Errorf("SVG is not valid XML: %v", err)
+	}
+
+	// Count opening and closing svg tags (should be exactly 1 of each)
+	openingTags := strings.Count(svgContent, "<svg")
+	closingTags := strings.Count(svgContent, "</svg>")
+	if openingTags != 1 {
+		t.Errorf("Expected 1 opening <svg tag, got %d", openingTags)
+	}
+	if closingTags != 1 {
+		t.Errorf("Expected 1 closing </svg> tag, got %d", closingTags)
 	}
 
 	t.Logf("Generated SVG length: %d", len(svgContent))
