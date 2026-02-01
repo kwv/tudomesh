@@ -70,6 +70,11 @@ func (r *VectorRenderer) RenderToSVG(w io.Writer) error {
 	// 3. Render to canvas
 	r.renderToCanvas(svgRenderer, minX, minY, maxX, maxY, centerX, centerY, width, height)
 
+	// 4. Close SVG renderer to write closing tags
+	if err := svgRenderer.Close(); err != nil {
+		return err
+	}
+
 	return nil
 }
 

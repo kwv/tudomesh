@@ -403,8 +403,8 @@ func runRender() {
 		}
 
 		outputPath := *outputFile
-		if format == "both" {
-			// When rendering both, change extension to .svg for vector
+		if format == "both" || (format == "vector" && *vectorFormat == "svg") {
+			// When rendering both or vector SVG, change extension to .svg
 			outputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".svg"
 		}
 
