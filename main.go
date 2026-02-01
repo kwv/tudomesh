@@ -41,10 +41,9 @@ var (
 	httpMode           = flag.Bool("http", false, "Enable HTTP server for serving map images")
 	httpPort           = flag.Int("http-port", 8080, "HTTP server port (default 8080)")
 	// Vector rendering flags
-	renderFormat       = flag.String("format", "raster", "Render format: raster, vector, or both")
-	vectorFormat       = flag.String("vector-format", "svg", "Vector output format: svg or png")
-	gridSpacing        = flag.Float64("grid-spacing", 1000.0, "Grid line spacing in millimeters (default 1000mm = 1m)")
-	vectorResolution   = flag.Float64("vector-resolution", 300.0, "Vector to PNG rasterization DPI (default 300)")
+	renderFormat = flag.String("format", "raster", "Render format: raster, vector, or both")
+	vectorFormat = flag.String("vector-format", "svg", "Vector output format: svg or png")
+	gridSpacing  = flag.Float64("grid-spacing", 1000.0, "Grid line spacing in millimeters (default 1000mm = 1m)")
 )
 
 func main() {
@@ -414,7 +413,11 @@ func runRender() {
 		if err != nil {
 			log.Fatalf("Error creating output file %s: %v", outputPath, err)
 		}
-		defer outFile.Close()
+		defer func() {
+			if err := outFile.Close(); err != nil {
+				log.Printf("Warning: error closing output file %s: %v", outputPath, err)
+			}
+		}()
 
 		// Render based on vector format
 		if *vectorFormat == "svg" {
