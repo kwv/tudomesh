@@ -33,10 +33,11 @@ fi
 BLOCKED="Edit|Write|NotebookEdit"
 
 if [[ "$TOOL_NAME" =~ ^($BLOCKED)$ ]]; then
-  cat << EOF
-{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Tool '$TOOL_NAME' blocked. Orchestrators investigate and delegate via Task(). Supervisors implement."}}
-EOF
-  exit 0
+  # Allow if file is in a worktree (supervisors work in worktrees)
+  FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+  if [[ "$FILE_PATH" == *"/.worktrees/"* ]]; then
+    exit 0
+fi
 fi
 
 # Validate provider_delegator agent invocations - block implementation agents
