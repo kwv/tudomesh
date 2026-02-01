@@ -117,25 +117,38 @@ func traceContours(grid []bool, width, height int) []Path {
 		return grid[idx(x, y)]
 	}
 
+	// Scan for contour starting points
+	// A starting point is any set pixel with at least one empty neighbor
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			if !isSet(x, y) {
 				continue
 			}
 
-			// Check left neighbor (Outer boundary start candidate)
-			if !isSet(x-1, y) && !seen[VisitKey{idx(x, y), 3}] { // 3 = entered from left (West)
-				path := traceBoundary(x, y, 3, grid, width, height, seen)
-				if len(path) > 2 {
-					paths = append(paths, path)
-				}
+			// Check all four neighbors for potential contour starts
+			// Direction encoding: 0=N, 1=E, 2=S, 3=W
+			neighbors := []struct {
+				dx, dy int
+				dir    int // direction we would be FACING when starting
+			}{
+				{-1, 0, 3}, // Left empty: face West
+				{1, 0, 1},  // Right empty: face East
+				{0, -1, 0}, // Top empty: face North
+				{0, 1, 2},  // Bottom empty: face South
 			}
 
-			// Check right neighbor (Hole boundary start candidate)
-			if !isSet(x+1, y) && !seen[VisitKey{idx(x, y), 1}] { // 1 = entered from right (East)
-				path := traceBoundary(x, y, 1, grid, width, height, seen)
-				if len(path) > 2 {
-					paths = append(paths, path)
+			for _, n := range neighbors {
+				nx, ny := x+n.dx, y+n.dy
+				if !isSet(nx, ny) {
+					// Found an edge: this pixel has an empty neighbor
+					// Check if we've already traced this edge
+					key := VisitKey{idx(x, y), n.dir}
+					if !seen[key] {
+						path := traceBoundary(x, y, n.dir, grid, width, height, seen)
+						if len(path) > 2 {
+							paths = append(paths, path)
+						}
+					}
 				}
 			}
 		}
@@ -143,13 +156,13 @@ func traceContours(grid []bool, width, height int) []Path {
 	return paths
 }
 
-// traceBoundary follows the edge using Moore-Neighbor tracing
-// entryDir: 0=N, 1=E, 2=S, 3=W (direction we came FROM)
-func traceBoundary(startX, startY, startEntryDir int, grid []bool, width, height int, seen map[VisitKey]bool) Path {
+// traceBoundary follows the edge using Moore-Neighbor tracing with right-hand rule
+// startFacing: direction we're initially FACING (0=N, 1=E, 2=S, 3=W)
+func traceBoundary(startX, startY, startFacing int, grid []bool, width, height int, seen map[VisitKey]bool) Path {
 	var path Path
 
 	curX, curY := startX, startY
-	entryDir := startEntryDir
+	facing := startFacing
 
 	// Helper to check pixel
 	isSet := func(x, y int) bool {
@@ -159,49 +172,58 @@ func traceBoundary(startX, startY, startEntryDir int, grid []bool, width, height
 		return grid[y*width+x]
 	}
 
-	// Robust stopping: break if we hit a state we've already visited
+	// Direction vectors: N, E, S, W
+	dirs := []struct{ dx, dy int }{
+		{0, -1}, // 0: North
+		{1, 0},  // 1: East
+		{0, 1},  // 2: South
+		{-1, 0}, // 3: West
+	}
+
+	// Trace boundary using right-hand rule
 	for {
-		key := VisitKey{Idx: curY*width + curX, Dir: entryDir}
+		key := VisitKey{Idx: curY*width + curX, Dir: facing}
 
 		if seen[key] {
-			// We returned to start or merged
-			if len(path) > 0 && curX == startX && curY == startY {
+			// We've returned to the start state - close the loop
+			if curX == startX && curY == startY && len(path) > 0 {
+				// Add closing point to complete the loop
 				path = append(path, Point{X: float64(curX), Y: float64(curY)})
 			}
 			break
 		}
 
-		// Mark as seen
+		// Mark current state as seen
 		seen[key] = true
 		path = append(path, Point{X: float64(curX), Y: float64(curY)})
 
-		// Moore neighbor tracing:
-		dirs := []Point{{0, -1}, {1, 0}, {0, 1}, {-1, 0}}
-
-		// Left Hand Rule
-		facing := (entryDir + 2) % 4
-		nextDir := (facing + 3) % 4
+		// Right-hand rule: turn right and scan clockwise until we find a set pixel
+		// Start from (facing - 1) which is one position to the right
+		startScan := (facing - 1 + 4) % 4
 		found := false
 
 		for i := 0; i < 4; i++ {
-			scanDir := (nextDir + i) % 4
-			dx, dy := int(dirs[scanDir].X), int(dirs[scanDir].Y)
+			scanDir := (startScan + i) % 4
+			dx := dirs[scanDir].dx
+			dy := dirs[scanDir].dy
 			nx, ny := curX+dx, curY+dy
 
 			if isSet(nx, ny) {
+				// Found next pixel - move there
 				curX, curY = nx, ny
-				entryDir = (scanDir + 2) % 4
+				// Update facing: we're now facing the direction we moved
+				facing = scanDir
 				found = true
 				break
 			}
 		}
 
 		if !found {
-			// Single pixel island
+			// Isolated pixel or dead end
 			break
 		}
 
-		// Safety break
+		// Safety break for infinite loops
 		if len(path) > 100000 {
 			break
 		}
