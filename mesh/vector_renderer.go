@@ -17,6 +17,7 @@ type VectorRenderer struct {
 	Scale          float64 // Scale factor for rendering
 	Padding        float64 // Padding in world units
 	GlobalRotation float64
+	GridSpacing    float64 // Grid line spacing in millimeters
 }
 
 // NewVectorRenderer creates a vector renderer with default settings
@@ -42,6 +43,7 @@ func NewVectorRenderer(maps map[string]*ValetudoMap, transforms map[string]Affin
 		Scale:          1.0,
 		Padding:        500.0, // 500mm padding
 		GlobalRotation: 0,
+		GridSpacing:    1000.0, // 1000mm grid spacing
 	}
 }
 
@@ -123,6 +125,70 @@ func (r *VectorRenderer) RenderToSVG(w io.Writer) error {
 				}
 			}
 		}
+	}
+
+	// 5. Render grid lines
+	if r.GridSpacing > 0 {
+		gridStyle := canvas.DefaultStyle
+		gridStyle.Fill = canvas.Paint{Color: canvas.Transparent}
+		gridStyle.Stroke = canvas.Paint{Color: canvas.Gray}
+		gridStyle.StrokeWidth = 2.0
+		gridStyle.Dashes = []float64{10.0, 10.0}
+
+		// Vertical grid lines
+		for x := math.Floor(minX/r.GridSpacing) * r.GridSpacing; x <= maxX; x += r.GridSpacing {
+			gridPath := &canvas.Path{}
+			x1, y1 := toCanvas(Point{X: x, Y: minY})
+			x2, y2 := toCanvas(Point{X: x, Y: maxY})
+			gridPath.MoveTo(x1, y1)
+			gridPath.LineTo(x2, y2)
+			svgRenderer.RenderPath(gridPath, gridStyle, canvas.Identity)
+		}
+
+		// Horizontal grid lines
+		for y := math.Floor(minY/r.GridSpacing) * r.GridSpacing; y <= maxY; y += r.GridSpacing {
+			gridPath := &canvas.Path{}
+			x1, y1 := toCanvas(Point{X: minX, Y: y})
+			x2, y2 := toCanvas(Point{X: maxX, Y: y})
+			gridPath.MoveTo(x1, y1)
+			gridPath.LineTo(x2, y2)
+			svgRenderer.RenderPath(gridPath, gridStyle, canvas.Identity)
+		}
+	}
+
+	// 6. Render charger icons
+	for id, m := range r.Maps {
+		transform := r.Transforms[id]
+		vc := r.Colors[id]
+
+		if chargerPt, ok := ExtractChargerPosition(m); ok {
+			// Transform charger position to world coordinates
+			worldPt := TransformPoint(chargerPt, transform)
+			cx, cy := toCanvas(worldPt)
+
+			// Render as circle with vacuum's wall color
+			chargerStyle := canvas.DefaultStyle
+			chargerStyle.Fill = canvas.Paint{Color: vc.Wall}
+			chargerStyle.Stroke = canvas.Paint{Color: canvas.Black}
+			chargerStyle.StrokeWidth = 5.0
+
+			chargerPath := canvas.Circle(100.0)
+			chargerPath = chargerPath.Translate(cx, cy)
+			svgRenderer.RenderPath(chargerPath, chargerStyle, canvas.Identity)
+		}
+	}
+
+	// 7. Render coordinate labels
+	if r.GridSpacing > 0 {
+		textStyle := canvas.DefaultStyle
+		textStyle.Fill = canvas.Paint{Color: canvas.Black}
+		textStyle.Stroke = canvas.Paint{Color: canvas.Transparent}
+
+		// Note: Text rendering in tdewolff/canvas requires a font family
+		// This is a simplified implementation - full text support would require
+		// loading a font face. For now, we'll skip text rendering to keep
+		// the implementation focused on the core vector layers.
+		// TODO: Add text rendering with proper font support
 	}
 
 	return nil
