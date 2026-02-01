@@ -264,7 +264,12 @@ func (r *VectorRenderer) calculateWorldBounds() (minX, minY, maxX, maxY, centerX
 			if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
 				points := PixelsToPoints(layer.Pixels)
 				for _, p := range points {
-					tp := TransformPoint(p, transform)
+					// Scale pixel coords to world coords (same as VectorizeLayer)
+					scaledP := Point{
+						X: p.X * float64(m.PixelSize),
+						Y: p.Y * float64(m.PixelSize),
+					}
+					tp := TransformPoint(scaledP, transform)
 					if tp.X < minX {
 						minX = tp.X
 					}
