@@ -6,30 +6,22 @@
    - BEAD_ID: Your task ID (e.g., BD-001 for standalone, BD-001.2 for epic child)
    - EPIC_ID: (epic children only) The parent epic ID (e.g., BD-001)
 
-2. **Create worktree (via API with git fallback):**
+2. **Create worktree:**
    ```bash
    REPO_ROOT=$(git rev-parse --show-toplevel)
    WORKTREE_PATH="$REPO_ROOT/.worktrees/bd-{BEAD_ID}"
 
-   # Try API first (requires beads-kanban-ui running)
-   API_RESPONSE=$(curl -s -X POST http://localhost:3008/api/git/worktree \
-     -H "Content-Type: application/json" \
-     -d '{"repo_path": "'$REPO_ROOT'", "bead_id": "{BEAD_ID}"}' 2>/dev/null)
-
-   # Fallback to git if API unavailable
-   if [[ -z "$API_RESPONSE" ]] || echo "$API_RESPONSE" | grep -q "error"; then
-     mkdir -p "$REPO_ROOT/.worktrees"
-     if [[ ! -d "$WORKTREE_PATH" ]]; then
-       git worktree add "$WORKTREE_PATH" -b bd-{BEAD_ID}
-     fi
+   if [[ ! -d "$WORKTREE_PATH" ]]; then
+     bd worktree create "$WORKTREE_PATH" --branch bd-{BEAD_ID}
    fi
 
    cd "$WORKTREE_PATH"
    ```
 
-3. **Mark in progress:**
+3. **Claim and mark in progress:**
    ```bash
-   bd update {BEAD_ID} --status in_progress
+   # Assign to yourself (the subagent role) and mark in progress
+   bd update {BEAD_ID} --status in_progress --assignee "@{ROLE}"
    ```
 
 4. **Read bead comments for investigation context:**
@@ -63,7 +55,7 @@ If the orchestrator's approach would break something, explain what you found and
 <during-implementation>
 1. Work ONLY in your worktree: `.worktrees/bd-{BEAD_ID}/`
 2. Commit frequently with descriptive messages
-3. Log progress: `bd comment {BEAD_ID} "Completed X, working on Y"`
+3. Log progress: `bd comment add {BEAD_ID} "Completed X, working on Y"`
 </during-implementation>
 
 <on-completion>
@@ -81,7 +73,7 @@ WARNING: You will be BLOCKED if you skip any step. Execute ALL in order:
 
 3. **Log what you learned (REQUIRED - you will be blocked without this):**
    ```bash
-   bd comment {BEAD_ID} "LEARNED: [key technical insight from this task]"
+   bd comment add {BEAD_ID} "LEARNED: [key technical insight from this task]"
    ```
    Record a convention, gotcha, or pattern you discovered. Examples:
    - `"LEARNED: MenuBarExtra popup closes on NSWindow activate. Use activates:false."`
@@ -90,12 +82,12 @@ WARNING: You will be BLOCKED if you skip any step. Execute ALL in order:
 
 4. **Leave completion comment:**
    ```bash
-   bd comment {BEAD_ID} "Completed: [summary]"
+   bd comment add {BEAD_ID} "Completed: [summary]"
    ```
 
 5. **Mark status:**
    ```bash
-   bd update {BEAD_ID} --status inreview
+   bd update add {BEAD_ID} --status inreview
    ```
 
 6. **Return completion report:**

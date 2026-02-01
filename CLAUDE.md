@@ -49,10 +49,10 @@ Supervisors are **required** to log a LEARNED: comment before completing. The Su
 
 ### Delegation Format
 
-```
 Task(
   subagent_type="{tech}-supervisor",
   prompt="BEAD_ID: {id}
+ROLE: {tech}
 
 Fix: [brief summary - supervisor will read details from bead comments]"
 )
@@ -64,7 +64,7 @@ Supervisors read the bead comments for full investigation context, then execute 
 
 **Read-only agents:** `mcp__provider_delegator__invoke_agent(agent="scout|detective|architect|scribe", task_prompt="...")`
 
-**Implementation:** `Task(subagent_type="<name>-supervisor", prompt="BEAD_ID: {id}\n\n{task}")`
+**Implementation:** `Task(subagent_type="<name>-supervisor", prompt="BEAD_ID: {id}\nROLE: <name>\n\n{task}")`
 
 ## Beads Commands
 
@@ -217,11 +217,6 @@ bd close {EPIC_ID}  # Closes epic and all children
 Supervisors start by creating a worktree:
 
 ```bash
-# Idempotent - returns existing worktree if it exists
-curl -X POST http://localhost:3008/api/git/worktree \
-  -H "Content-Type: application/json" \
-  -d '{"repo_path": "'$(git rev-parse --show-toplevel)'", "bead_id": "{BEAD_ID}"}'
-
 # Change to worktree
 cd $(git rev-parse --show-toplevel)/.worktrees/bd-{BEAD_ID}
 
