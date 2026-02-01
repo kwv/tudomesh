@@ -216,16 +216,17 @@ func TestVectorRenderer_PNGWithReducedPadding(t *testing.T) {
 	// Test PNG rendering with reduced padding to ensure floor is visible
 	// Create a larger floor area relative to padding
 	m := &ValetudoMap{
-		PixelSize: 50,
+		PixelSize: 5, // Reduced from 50 to avoid OOM
 		Layers: []MapLayer{
 			{
 				Type: "floor",
-				// Create a substantial floor area
+				// Create a substantial floor area (300*5=1500mm, manageable size)
+				// Reduced from 3000 to 300 to avoid OOM: 300*5=1500mm at 72 DPI = ~93MB
 				Pixels: []int{
-					0, 0, 1000, 0, 2000, 0, 3000, 0,
-					0, 1000, 1000, 1000, 2000, 1000, 3000, 1000,
-					0, 2000, 1000, 2000, 2000, 2000, 3000, 2000,
-					0, 3000, 1000, 3000, 2000, 3000, 3000, 3000,
+					0, 0, 100, 0, 200, 0, 300, 0,
+					0, 100, 100, 100, 200, 100, 300, 100,
+					0, 200, 100, 200, 200, 200, 300, 200,
+					0, 300, 100, 300, 200, 300, 300, 300,
 				},
 			},
 		},
