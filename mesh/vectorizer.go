@@ -1,7 +1,10 @@
 package mesh
 
 import (
+	"log"
 	"math"
+	"os"
+	"strings"
 )
 
 // Path represents a sequential list of points
@@ -13,6 +16,20 @@ type VisitKey struct {
 	Dir int
 }
 
+var debugVectorizer bool
+
+func init() {
+	// Enable debug logging via TUDOMESH_DEBUG=1 or TUDOMESH_DEBUG=vectorizer
+	debug := os.Getenv("TUDOMESH_DEBUG")
+	debugVectorizer = debug == "1" || strings.Contains(debug, "vectorizer")
+}
+
+func debugLog(format string, args ...interface{}) {
+	if debugVectorizer {
+		log.Printf("[VECTORIZER] "+format, args...)
+	}
+}
+
 // VectorizeLayer converts a map layer into a set of simplified vector paths
 // It uses contour tracing and RDP to simplify them
 func VectorizeLayer(layer *MapLayer, pixelSize int, tolerance float64) []Path {
@@ -20,11 +37,19 @@ func VectorizeLayer(layer *MapLayer, pixelSize int, tolerance float64) []Path {
 		return nil
 	}
 
+	// Log input
+	debugLog("VectorizeLayer input: layer.Type=%s, len(layer.Pixels)=%d", layer.Type, len(layer.Pixels))
+
 	// 1. Reconstruct dense grid from sparse pixels
 	grid, minX, minY, width, height := pixelsToGrid(layer.Pixels, pixelSize)
+	debugLog("After pixelsToGrid: grid dimensions (width=%d, height=%d), pixel count=%d", width, height, len(grid))
 
 	// 2. Trace contours
 	contours := traceContours(grid, width, height)
+	debugLog("After traceContours: number of contours=%d", len(contours))
+	for i, c := range contours {
+		debugLog("  Contour %d: %d points", i, len(c))
+	}
 
 	// 3. Transform back to world coordinates and simplify
 	var result []Path
@@ -44,6 +69,12 @@ func VectorizeLayer(layer *MapLayer, pixelSize int, tolerance float64) []Path {
 			result = append(result, simplified)
 		}
 	}
+
+	debugLog("After SimplifyRDP: number of paths kept=%d", len(result))
+	for i, p := range result {
+		debugLog("  Path %d: %d points", i, len(p))
+	}
+	debugLog("VectorizeLayer output: total paths returned=%d", len(result))
 
 	return result
 }
