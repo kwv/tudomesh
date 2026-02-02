@@ -43,7 +43,7 @@ Implement → Run tests → Run RAMS → Run web-interface-guidelines → Fix is
 
 After running both reviews, add a comment to the bead:
 ```bash
-bd comment add {BEAD_ID} "Reviews: RAMS 95/100, WIG passed. Fixed: [issues if any]"
+bd comments add {BEAD_ID} "Reviews: RAMS 95/100, WIG passed. Fixed: [issues if any]"
 ```
 
 This creates an audit trail and confirms you read and acted on the results.

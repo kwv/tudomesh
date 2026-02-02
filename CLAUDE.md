@@ -20,7 +20,7 @@
 **Always log your investigation to the bead:**
 
 ```bash
-bd comment {BEAD_ID} "INVESTIGATION:
+bd comments add {BEAD_ID} "INVESTIGATION:
 Root cause: {file}:{line} - {what's wrong}
 Related files: {list of files that may need changes}
 Fix: {specific change to make}

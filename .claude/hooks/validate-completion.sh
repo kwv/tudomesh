@@ -64,10 +64,10 @@ IS_EPIC_CHILD="false"
 [[ "$BEAD_ID_FROM_RESPONSE" == *"."* ]] && IS_EPIC_CHILD="true"
 
 # Check 2: Comment required
-HAS_COMMENT=$(grep -c '"bd comment\|"command":"bd comment' "$AGENT_TRANSCRIPT" 2>/dev/null) || HAS_COMMENT=0
+HAS_COMMENT=$(grep -c '"bd comments\|"command":"bd comments' "$AGENT_TRANSCRIPT" 2>/dev/null) || HAS_COMMENT=0
 if [[ "$HAS_COMMENT" -lt 1 ]]; then
   cat << 'EOF'
-{"decision":"block","reason":"Work verification failed: no comment on bead.\n\nRun: bd comment {BEAD_ID} \"Completed: [summary]\""}
+{"decision":"block","reason":"Work verification failed: no comment on bead.\n\nRun: bd comments add {BEAD_ID} \"Completed: [summary]\""}
 EOF
   exit 0
 fi
@@ -133,7 +133,7 @@ if [[ "$IS_SUPERVISOR" == "true" ]]; then
   HAS_LEARNED=$(grep -c 'LEARNED:' "$AGENT_TRANSCRIPT" 2>/dev/null) || HAS_LEARNED=0
   if [[ "$HAS_LEARNED" -lt 1 ]]; then
     cat << 'EOF'
-{"decision":"block","reason":"Work verification failed: no LEARNED comment.\n\nBefore completing, record what you learned:\n  bd comment {BEAD_ID} \"LEARNED: [key technical insight from this task]\"\n\nExamples:\n  \"LEARNED: MenuBarExtra popup closes on NSWindow activate. Use activates:false.\"\n  \"LEARNED: All source adapters must handle nil SUFeedURL gracefully.\""}
+{"decision":"block","reason":"Work verification failed: no LEARNED comment.\n\nBefore completing, record what you learned:\n  bd comments add {BEAD_ID} \"LEARNED: [key technical insight from this task]\"\n\nExamples:\n  \"LEARNED: MenuBarExtra popup closes on NSWindow activate. Use activates:false.\"\n  \"LEARNED: All source adapters must handle nil SUFeedURL gracefully.\""}
 EOF
     exit 0
   fi
