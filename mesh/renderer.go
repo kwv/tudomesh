@@ -471,11 +471,12 @@ func blendColors(bg color.RGBA, fg color.NRGBA) color.NRGBA {
 	// Convert RGBA background to NRGBA for proper blending
 	// RGBA is premultiplied, so we need to un-premultiply it first
 	var bgNRGBA color.NRGBA
-	if bg.A == 0 {
+	switch bg.A {
+	case 0:
 		bgNRGBA = color.NRGBA{0, 0, 0, 0}
-	} else if bg.A == 255 {
+	case 255:
 		bgNRGBA = color.NRGBA{bg.R, bg.G, bg.B, 255}
-	} else {
+	default:
 		// Un-premultiply: divide RGB by alpha
 		alpha32 := uint32(bg.A)
 		bgNRGBA = color.NRGBA{

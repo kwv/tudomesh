@@ -71,6 +71,7 @@ func TestVectorizeLayer(t *testing.T) {
 
 	t.Logf("Simplified to %d points with tolerance 2.0", pointsSimplified)
 	// We just check that simplification doesn't increase points (sanity check)
+	// For simple shapes like rectangles, RDP may not reduce further since corners are essential
 	if pointsSimplified > foundPoints {
 		t.Errorf("Simplification increased points: %d vs %d", pointsSimplified, foundPoints)
 	}

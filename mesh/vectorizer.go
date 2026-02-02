@@ -159,6 +159,34 @@ func traceContours(grid []bool, width, height int) []Path {
 				continue
 			}
 
+			// Check if this is an isolated pixel (no set neighbors in cardinal directions)
+			hasNeighbor := isSet(x-1, y) || isSet(x+1, y) || isSet(x, y-1) || isSet(x, y+1)
+
+			if !hasNeighbor {
+				// Isolated pixel: create a minimal contour at the pixel position
+				// Check if we haven't already processed this pixel
+				key := VisitKey{idx(x, y), 0}
+				if !seen[key] {
+					// Mark all directions as seen for this pixel
+					for dir := 0; dir < 4; dir++ {
+						seen[VisitKey{idx(x, y), dir}] = true
+					}
+
+					// For an isolated pixel, create a degenerate path that repeats the pixel position
+					// This ensures the path stays within bounds while satisfying the requirement
+					// for a closed contour. SimplifyRDP will preserve this as it has < 3 points.
+					px := float64(x)
+					py := float64(y)
+					path := Path{
+						{px, py},
+						{px, py},
+						{px, py},
+					}
+					paths = append(paths, path)
+				}
+				continue
+			}
+
 			// Check all four neighbors for potential contour starts
 			// Direction encoding: 0=N, 1=E, 2=S, 3=W
 			neighbors := []struct {
