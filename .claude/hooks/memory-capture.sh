@@ -2,7 +2,7 @@
 #
 # PostToolUse:Bash (async) - Capture knowledge from bd comment commands
 #
-# Detects: bd comment {BEAD_ID} "INVESTIGATION: ..." or "LEARNED: ..."
+# Detects: bd comments {BEAD_ID} "INVESTIGATION: ..." or "LEARNED: ..."
 # Extracts knowledge entries into .beads/memory/knowledge.jsonl
 #
 
@@ -16,16 +16,16 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 [[ -z "$COMMAND" ]] && exit 0
 
-# Only process bd comment commands containing knowledge markers
-echo "$COMMAND" | grep -qE 'bd[[:space:]]+comment([[:space:]]+add)?[[:space:]]+' || exit 0
+# Only process bd comments commands containing knowledge markers
+echo "$COMMAND" | grep -qE 'bd[[:space:]]+comments([[:space:]]+add)?[[:space:]]+' || exit 0
 echo "$COMMAND" | grep -qE '(INVESTIGATION:|LEARNED:)' || exit 0
 
-# Extract BEAD_ID (argument after "bd comment" or "bd comment add")
-BEAD_ID=$(echo "$COMMAND" | sed -E 's/.*bd[[:space:]]+comment([[:space:]]+add)?[[:space:]]+([A-Za-z0-9._-]+)[[:space:]]+.*/\2/')
+# Extract BEAD_ID (argument after "bd comments" or "bd comments add")
+BEAD_ID=$(echo "$COMMAND" | sed -E 's/.*bd[[:space:]]+comments([[:space:]]+add)?[[:space:]]+([A-Za-z0-9._-]+)[[:space:]]+.*/\2/')
 [[ -z "$BEAD_ID" || "$BEAD_ID" == "$COMMAND" ]] && exit 0
 
 # Extract the comment body (content inside quotes after bead ID)
-COMMENT_BODY=$(echo "$COMMAND" | sed -E 's/.*bd[[:space:]]+comment([[:space:]]+add)?[[:space:]]+[A-Za-z0-9._-]+[[:space:]]+["'\''"]//' | sed -E 's/["'\'''][[:space:]]*$//' | head -c 4096)
+COMMENT_BODY=$(echo "$COMMAND" | sed -E 's/.*bd[[:space:]]+comments([[:space:]]+add)?[[:space:]]+[A-Za-z0-9._-]+[[:space:]]+["'\''"]//' | sed -E 's/["'\'''][[:space:]]*$//' | head -c 4096)
 [[ -z "$COMMENT_BODY" ]] && exit 0
 
 # Determine type and extract content

@@ -73,7 +73,7 @@ WARNING: You will be BLOCKED if you skip any step. Execute ALL in order:
 
 3. **Log what you learned (REQUIRED - you will be blocked without this):**
    ```bash
-   bd comment add {BEAD_ID} "LEARNED: [key technical insight from this task]"
+   bd comments add {BEAD_ID} "LEARNED: [key technical insight from this task]"
    ```
    Record a convention, gotcha, or pattern you discovered. Examples:
    - `"LEARNED: MenuBarExtra popup closes on NSWindow activate. Use activates:false."`
@@ -82,7 +82,7 @@ WARNING: You will be BLOCKED if you skip any step. Execute ALL in order:
 
 4. **Leave completion comment:**
    ```bash
-   bd comment add {BEAD_ID} "Completed: [summary]"
+   bd comments add {BEAD_ID} "Completed: [summary]"
    ```
 
 5. **Mark status:**
