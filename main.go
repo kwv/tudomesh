@@ -985,11 +985,12 @@ func runService() {
 		// Create HTTP handlers
 		httpServer := newHTTPServer(stateTracker, cache, config, refID)
 		go func() {
-			addr := fmt.Sprintf(":%d", *httpPort)
-			fmt.Printf("HTTP server starting on %s\n", addr)
+			addr := fmt.Sprintf("0.0.0.0:%d", *httpPort)
+			log.Printf("[HTTP] Starting server on %s", addr)
 			if err := http.ListenAndServe(addr, httpServer); err != nil {
-				log.Fatalf("HTTP server error: %v", err)
+				log.Fatalf("[HTTP] Server error: %v", err)
 			}
+			log.Printf("[HTTP] Server stopped unexpectedly")
 		}()
 	}
 
@@ -1071,6 +1072,7 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[HTTP] /health request from %s", r.RemoteAddr)
 		w.Header().Set("Content-Type", "application/json")
 		status := struct {
 			Status    string    `json:"status"`
@@ -1282,7 +1284,11 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		}
 	})
 
-	return mux
+	// Wrap mux with logging middleware
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[HTTP] %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+		mux.ServeHTTP(w, r)
+	})
 }
 
 // buildTransforms creates transform map from cache or identity
