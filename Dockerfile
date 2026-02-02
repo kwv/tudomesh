@@ -14,3 +14,4 @@ EXPOSE 8080
 USER nonroot:nonroot
 
 ENTRYPOINT ["/app/tudomesh"]
+CMD ["--http", "--mqtt", "--data-dir=/data"]
