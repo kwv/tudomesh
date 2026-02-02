@@ -1,0 +1,41 @@
+services:
+  # MQTT Broker (Eclipse Mosquitto)
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: tudomesh-mosquitto
+    ports:
+      - "1883:1883"  # MQTT
+      - "9001:9001"  # WebSockets (optional)
+    volumes:
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-logs:/mosquitto/log
+    restart: unless-stopped
+    networks:
+      - tudomesh-network
+
+  # TudoMesh Service
+  tudomesh:
+    image: kwv4/tudomesh:latest
+    container_name: tudomesh
+    ports:
+      - "8080:8080"  # HTTP API
+    volumes:
+      - ./tudomesh-data:/data
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+    networks:
+      - tudomesh-network
+    # Default CMD from Dockerfile will be used:
+    # CMD ["--http", "--mqtt", "--data-dir=/data"]
+    #
+    # Override if needed:
+    # command: ["--http", "--mqtt", "--data-dir=/data", "--http-port=8080"]
+
+networks:
+  tudomesh-network:
+    driver: bridge
+
+volumes:
+  mosquitto-data:
+  mosquitto-logs:
