@@ -303,7 +303,7 @@ func TestLayerToFeature(t *testing.T) {
 			{{X: 0, Y: 0}, {X: 100, Y: 0}, {X: 100, Y: 100}, {X: 0, Y: 100}},
 		}
 
-		feature := LayerToFeature(layer, paths, "vacuum1", Identity())
+		feature := LayerToFeature(layer, paths, "vacuum1", Identity(), 5)
 
 		if feature == nil {
 			t.Fatal("Expected non-nil feature")
@@ -340,7 +340,7 @@ func TestLayerToFeature(t *testing.T) {
 			{{X: 0, Y: 100}, {X: 100, Y: 100}},
 		}
 
-		feature := LayerToFeature(layer, paths, "vacuum1", Identity())
+		feature := LayerToFeature(layer, paths, "vacuum1", Identity(), 5)
 
 		if feature == nil {
 			t.Fatal("Expected non-nil feature")
@@ -366,7 +366,7 @@ func TestLayerToFeature(t *testing.T) {
 			{{X: 0, Y: 0}, {X: 50, Y: 0}, {X: 50, Y: 50}, {X: 0, Y: 50}},
 		}
 
-		feature := LayerToFeature(layer, paths, "vacuum2", Identity())
+		feature := LayerToFeature(layer, paths, "vacuum2", Identity(), 5)
 
 		if feature.Properties["segmentId"] != "seg123" {
 			t.Error("Properties missing segmentId")
@@ -383,7 +383,7 @@ func TestLayerToFeature(t *testing.T) {
 
 	t.Run("nil for nil layer", func(t *testing.T) {
 		paths := []Path{{{X: 0, Y: 0}}}
-		feature := LayerToFeature(nil, paths, "vacuum1", Identity())
+		feature := LayerToFeature(nil, paths, "vacuum1", Identity(), 5)
 		if feature != nil {
 			t.Error("Expected nil feature for nil layer")
 		}
@@ -391,7 +391,7 @@ func TestLayerToFeature(t *testing.T) {
 
 	t.Run("nil for empty paths", func(t *testing.T) {
 		layer := &MapLayer{Type: "floor"}
-		feature := LayerToFeature(layer, []Path{}, "vacuum1", Identity())
+		feature := LayerToFeature(layer, []Path{}, "vacuum1", Identity(), 5)
 		if feature != nil {
 			t.Error("Expected nil feature for empty paths")
 		}

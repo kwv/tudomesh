@@ -178,13 +178,25 @@ func TransformPaths(paths []Path, matrix AffineMatrix) []Path {
 // - "floor" or "segment" -> Polygon (for closed boundaries)
 // - "wall" -> MultiLineString (for wall segments)
 // Properties include layer metadata (segment name, vacuum ID, area, etc.)
-func LayerToFeature(layer *MapLayer, paths []Path, vacuumID string, transform AffineMatrix) *Feature {
+func LayerToFeature(layer *MapLayer, paths []Path, vacuumID string, transform AffineMatrix, pixelSize int) *Feature {
 	if layer == nil || len(paths) == 0 {
 		return nil
 	}
 
-	// Transform paths to world coordinates
-	worldPaths := TransformPaths(paths, transform)
+	// Transform paths from pixel coordinates to world coordinates
+	// First apply the transform (ICP operates at pixel scale)
+	transformedPaths := TransformPaths(paths, transform)
+	// Then scale to world coordinates
+	worldPaths := make([]Path, len(transformedPaths))
+	for i, path := range transformedPaths {
+		worldPaths[i] = make(Path, len(path))
+		for j, pt := range path {
+			worldPaths[i][j] = Point{
+				X: pt.X * float64(pixelSize),
+				Y: pt.Y * float64(pixelSize),
+			}
+		}
+	}
 
 	// Create geometry based on layer type
 	var geom *Geometry
@@ -254,7 +266,7 @@ func MapToFeatureCollection(valetudoMap *ValetudoMap, vacuumID string, transform
 		}
 
 		// Convert to feature
-		feature := LayerToFeature(layer, paths, vacuumID, transform)
+		feature := LayerToFeature(layer, paths, vacuumID, transform, valetudoMap.PixelSize)
 		if feature != nil {
 			fc.AddFeature(feature)
 		}

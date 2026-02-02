@@ -148,7 +148,13 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
-						worldPt := TransformPoint(pt, transform)
+						// Apply transform to pixel coordinates first
+						transformedPt := TransformPoint(pt, transform)
+						// Then scale to world coordinates
+						worldPt := Point{
+							X: transformedPt.X * float64(m.PixelSize),
+							Y: transformedPt.Y * float64(m.PixelSize),
+						}
 						cx, cy := toCanvas(worldPt)
 						if i == 0 {
 							cp.MoveTo(cx, cy)
@@ -174,7 +180,13 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
-						worldPt := TransformPoint(pt, transform)
+						// Apply transform to pixel coordinates first
+						transformedPt := TransformPoint(pt, transform)
+						// Then scale to world coordinates
+						worldPt := Point{
+							X: transformedPt.X * float64(m.PixelSize),
+							Y: transformedPt.Y * float64(m.PixelSize),
+						}
 						cx, cy := toCanvas(worldPt)
 						if i == 0 {
 							cp.MoveTo(cx, cy)
@@ -223,8 +235,13 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 		vc := r.Colors[id]
 
 		if chargerPt, ok := ExtractChargerPosition(m); ok {
-			// Transform charger position to world coordinates
-			worldPt := TransformPoint(chargerPt, transform)
+			// Apply transform to pixel coordinates first
+			transformedPt := TransformPoint(chargerPt, transform)
+			// Then scale to world coordinates
+			worldPt := Point{
+				X: transformedPt.X * float64(m.PixelSize),
+				Y: transformedPt.Y * float64(m.PixelSize),
+			}
 			cx, cy := toCanvas(worldPt)
 
 			// Render as circle with vacuum's wall color
@@ -264,23 +281,24 @@ func (r *VectorRenderer) calculateWorldBounds() (minX, minY, maxX, maxY, centerX
 			if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
 				points := PixelsToPoints(layer.Pixels)
 				for _, p := range points {
-					// Scale pixel coords to world coords (same as VectorizeLayer)
-					scaledP := Point{
-						X: p.X * float64(m.PixelSize),
-						Y: p.Y * float64(m.PixelSize),
+					// Apply transform to pixel coordinates first (ICP operates at pixel scale)
+					tp := TransformPoint(p, transform)
+					// Then scale to world coordinates
+					worldP := Point{
+						X: tp.X * float64(m.PixelSize),
+						Y: tp.Y * float64(m.PixelSize),
 					}
-					tp := TransformPoint(scaledP, transform)
-					if tp.X < minX {
-						minX = tp.X
+					if worldP.X < minX {
+						minX = worldP.X
 					}
-					if tp.Y < minY {
-						minY = tp.Y
+					if worldP.Y < minY {
+						minY = worldP.Y
 					}
-					if tp.X > maxX {
-						maxX = tp.X
+					if worldP.X > maxX {
+						maxX = worldP.X
 					}
-					if tp.Y > maxY {
-						maxY = tp.Y
+					if worldP.Y > maxY {
+						maxY = worldP.Y
 					}
 				}
 			}
