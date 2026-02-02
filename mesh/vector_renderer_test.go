@@ -358,7 +358,9 @@ func TestCalculateWorldBounds(t *testing.T) {
 }
 
 // TestBoundsMatchVectorizeLayer verifies that calculateWorldBounds and VectorizeLayer
-// use the same coordinate system (both scale by pixelSize)
+// produce consistent coordinates when properly scaled.
+// VectorizeLayer returns pixel coordinates, calculateWorldBounds returns world coordinates.
+// The renderer scales pixel coords by pixelSize to get world coords.
 func TestBoundsMatchVectorizeLayer(t *testing.T) {
 	m := &ValetudoMap{
 		PixelSize: 50,
@@ -380,22 +382,26 @@ func TestBoundsMatchVectorizeLayer(t *testing.T) {
 		Padding: 0,
 	}
 
-	// Get bounds from calculateWorldBounds
+	// Get bounds from calculateWorldBounds (returns world coordinates)
 	minX, minY, maxX, maxY, _, _ := renderer.calculateWorldBounds()
 
-	// Get paths from VectorizeLayer
+	// Get paths from VectorizeLayer (returns pixel coordinates)
 	paths := VectorizeLayer(&m.Layers[0], m.PixelSize, 0.0)
 
 	if len(paths) == 0 {
 		t.Skip("VectorizeLayer returned no paths (expected for sparse test data)")
 	}
 
-	// Verify that all vectorized points fall within the calculated bounds
+	// Verify that all vectorized points, when scaled to world coords, fall within bounds
+	pixelSize := float64(m.PixelSize)
 	for _, path := range paths {
 		for _, pt := range path {
-			if pt.X < minX || pt.X > maxX || pt.Y < minY || pt.Y > maxY {
-				t.Errorf("VectorizeLayer point (%v,%v) outside bounds [%v,%v] to [%v,%v]",
-					pt.X, pt.Y, minX, minY, maxX, maxY)
+			// Scale pixel coords to world coords
+			worldX := pt.X * pixelSize
+			worldY := pt.Y * pixelSize
+			if worldX < minX || worldX > maxX || worldY < minY || worldY > maxY {
+				t.Errorf("VectorizeLayer point (%v,%v) -> world (%v,%v) outside bounds [%v,%v] to [%v,%v]",
+					pt.X, pt.Y, worldX, worldY, minX, minY, maxX, maxY)
 			}
 		}
 	}

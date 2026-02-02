@@ -51,20 +51,23 @@ func VectorizeLayer(layer *MapLayer, pixelSize int, tolerance float64) []Path {
 		debugLog("  Contour %d: %d points", i, len(c))
 	}
 
-	// 3. Transform back to world coordinates and simplify
+	// 3. Transform back to pixel coordinates and simplify
 	var result []Path
 	for _, contour := range contours {
-		// Convert grid coordinates to world coordinates
-		worldContour := make(Path, len(contour))
+		// Convert grid coordinates to pixel coordinates (not world coordinates)
+		// ICP transforms operate at pixel scale, so we must not scale here
+		pixelContour := make(Path, len(contour))
 		for i, p := range contour {
-			worldContour[i] = Point{
-				X: (p.X + float64(minX)) * float64(pixelSize),
-				Y: (p.Y + float64(minY)) * float64(pixelSize),
+			pixelContour[i] = Point{
+				X: p.X + float64(minX),
+				Y: p.Y + float64(minY),
 			}
 		}
 
 		// Simplify using Ramer-Douglas-Peucker
-		simplified := SimplifyRDP(worldContour, tolerance)
+		// Note: tolerance is in world units, so scale it to pixel units for simplification
+		pixelTolerance := tolerance / float64(pixelSize)
+		simplified := SimplifyRDP(pixelContour, pixelTolerance)
 		if len(simplified) >= 2 {
 			result = append(result, simplified)
 		}

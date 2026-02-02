@@ -61,7 +61,8 @@ func TestVectorizeLayer(t *testing.T) {
 	}
 	t.Logf("Found %d paths with total %d points", len(paths), foundPoints)
 
-	// RDP with higher tolerance should reduce points
+	// RDP with higher tolerance should reduce points or keep them the same
+	// (for very simple shapes like squares, simplification may not reduce further)
 	pathsSimplified := VectorizeLayer(layer, 1, 2.0)
 	pointsSimplified := 0
 	for _, p := range pathsSimplified {
