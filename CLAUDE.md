@@ -49,6 +49,10 @@ Supervisors are **required** to log a LEARNED: comment before completing. The Su
 
 ### Delegation Format
 
+1. **Assign the bead:** `bd update {id} --assignee {tech}-supervisor`
+2. **Dispatch:**
+
+```javascript
 Task(
   subagent_type="{tech}-supervisor",
   prompt="BEAD_ID: {id}
@@ -129,10 +133,14 @@ For simple tasks handled by one supervisor:
 
 1. Investigate the issue (Grep, Read)
 2. Create bead: `bd create "Task" -d "Details"`
-3. Dispatch with fix: `Task(subagent_type="<tech>-supervisor", prompt="BEAD_ID: {id}\n\n{problem + fix}")`
-4. Supervisor creates worktree, implements, pushes, marks `inreview` when done
-5. **User merges via UI** (Create PR → wait for CI → Merge PR → Clean Up)
-6. Close: `bd close {ID}` (or auto-close on cleanup)
+3. **Assign and dispatch:** 
+   - `bd update {id} --assignee <tech>-supervisor`
+   - `Task(subagent_type="<tech>-supervisor", prompt="BEAD_ID: {id}\n\n{problem + fix}")`
+4. Supervisor creates worktree, implements, ensures lint and tests pass.
+5. Supervisor marks `inreview` when done and pushes.
+   - *Note: If a task encounters blockers or needs separate tracking, create a dependent bead.*
+6. **User merges via UI** (Create PR → wait for CI → Merge PR → Clean Up)
+7. Close: `bd close {ID}` (or auto-close on cleanup)
 
 ### Epic Workflow (Cross-Domain Features)
 
@@ -195,8 +203,14 @@ Use `bd ready` to find all unblocked tasks and dispatch them simultaneously:
 bd ready --json | jq -r '.[] | select(.id | startswith("{EPIC_ID}.")) | .id'
 ```
 
-**Dispatch ALL ready children in a single message with multiple Task() calls:**
-```
+**Assign and dispatch ALL ready children:**
+
+```bash
+# Assign first
+bd update {EPIC_ID}.1 --assignee {tech}-supervisor
+bd update {EPIC_ID}.2 --assignee {tech}-supervisor
+
+# Then dispatch
 Task(subagent_type="{tech}-supervisor", prompt="BEAD_ID: {EPIC_ID}.1\nEPIC_ID: {EPIC_ID}\n\n{task}")
 Task(subagent_type="{tech}-supervisor", prompt="BEAD_ID: {EPIC_ID}.2\nEPIC_ID: {EPIC_ID}\n\n{task}")
 ```
@@ -234,12 +248,14 @@ Tests: pass
 Summary: [1 sentence]
 ```
 
-Then:
+Then, **only after verifying lint and tests pass**:
 ```bash
 git add -A && git commit -m "..."
 git push origin bd-{BEAD_ID}
 bd update {BEAD_ID} --status inreview
 ```
+
+*Note: If work is incomplete or requires follow-up, do not mark inreview. Instead, create a new bead depending on the current one and dispatch a new task.*
 
 ## Design Doc Guidelines
 

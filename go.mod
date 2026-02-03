@@ -30,7 +30,7 @@ require (
 	github.com/tdewolff/minify/v2 v2.24.4 // indirect
 	github.com/tdewolff/parse/v2 v2.8.5 // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
-	golang.org/x/net v0.46.0 // indirect
+	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	modernc.org/knuth v0.5.5 // indirect
