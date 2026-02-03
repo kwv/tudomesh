@@ -277,16 +277,13 @@ func TestMQTTDisconnect(t *testing.T) {
 	client.Disconnect()
 }
 
-// TestTimeout ensures operations don't hang
-func TestConnectionTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping timeout test in short mode")
-	}
-
-	// This test verifies that connection attempts don't block forever
+// TestInitMQTT_ReturnsImmediately ensures InitMQTT doesn't block
+func TestInitMQTT_ReturnsImmediately(t *testing.T) {
+	// InitMQTT spawns connection goroutines in background
+	// This test verifies it returns immediately without blocking
 	config := &Config{
 		MQTT: MQTTConfig{
-			Broker: "mqtt://invalid-broker-that-does-not-exist:1883",
+			Broker: "mqtt://localhost:1883",
 		},
 		Vacuums: []VacuumConfig{
 			{ID: "test", Topic: "test/topic"},
@@ -295,7 +292,6 @@ func TestConnectionTimeout(t *testing.T) {
 
 	handler := func(string, *ValetudoMap, error) {}
 
-	// Should return immediately (connection happens in background)
 	start := time.Now()
 	client, err := InitMQTT(config, handler)
 	duration := time.Since(start)
@@ -304,8 +300,8 @@ func TestConnectionTimeout(t *testing.T) {
 		t.Errorf("InitMQTT() error = %v, should not error (connects in background)", err)
 	}
 
-	// Should not block - returns immediately
-	if duration > 1*time.Second {
+	// Should return immediately (< 100ms) even though connection happens async
+	if duration > 100*time.Millisecond {
 		t.Errorf("InitMQTT() took %v, should return immediately", duration)
 	}
 
