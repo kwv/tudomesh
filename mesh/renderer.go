@@ -5,7 +5,6 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"log"
 	"math"
 	"os"
 	"sort"
@@ -86,33 +85,17 @@ func NewCompositeRenderer(maps map[string]*ValetudoMap, transforms map[string]Af
 }
 
 // HasDrawableContent returns true if any map contains drawable pixels in floor/segment/wall layers.
-// It logs a concise debug message for maps that have no drawable pixels to aid troubleshooting.
 func (r *CompositeRenderer) HasDrawableContent() bool {
-	found := false
-	for id, m := range r.Maps {
-		total := 0
-		layerSummary := ""
-		for i, layer := range m.Layers {
-			if i > 0 {
-				layerSummary += ", "
-			}
-			layerSummary += fmt.Sprintf("%s(%dpx)", layer.Type, len(layer.Pixels))
-
+	for _, m := range r.Maps {
+		for _, layer := range m.Layers {
 			if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
-				total += len(layer.Pixels)
 				if len(layer.Pixels) > 0 {
-					found = true
+					return true
 				}
 			}
 		}
-
-		if total == 0 {
-			log.Printf("[DEBUG] renderer: map %s has no drawable pixels. Layers found: [%s]", id, layerSummary)
-		} else {
-			log.Printf("[DEBUG] renderer: map %s has %d drawable pixels across %d layers", id, total, len(m.Layers))
-		}
 	}
-	return found
+	return false
 }
 
 // applyGlobalRotation rotates a point around the center by the global rotation angle
