@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"os"
 )
 
@@ -42,13 +41,6 @@ func DecodeMapData(data []byte) (*ValetudoMap, error) {
 	if len(jsonBytes) == 0 {
 		return nil, fmt.Errorf("decoded JSON payload is empty")
 	}
-
-	// Debug: Log the first 100 bytes of the JSON to verify structure
-	sample := string(jsonBytes)
-	if len(sample) > 100 {
-		sample = sample[:100]
-	}
-	log.Printf("[DEBUG] Decoded JSON sample: %s", sample)
 
 	return ParseMapJSON(jsonBytes)
 }
