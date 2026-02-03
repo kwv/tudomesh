@@ -1,0 +1,16 @@
+#!/bin/bash
+# pre-commit hook for tudomesh
+# Runs linting before allowing commits
+
+set -e
+
+echo "Running lint checks..."
+if ! make lint; then
+    echo ""
+    echo "Lint failed. Please fix the issues before committing."
+    echo "To bypass this check (not recommended), use: git commit --no-verify"
+    exit 1
+fi
+
+echo "Lint passed."
+exit 0
