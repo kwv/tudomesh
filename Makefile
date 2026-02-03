@@ -9,7 +9,7 @@ DEV_VERSION := $(shell git describe --tags --dirty --always 2>/dev/null | sed 's
 
 REMOTE_IMAGE := $(DOCKERHUB_USER)/$(IMAGE_NAME)
 
-.PHONY: build build-dev test lint run clean docker-build bump bump-minor bump-major check-version show-version verify-release
+.PHONY: build build-dev test lint run clean docker-build bump bump-minor bump-major check-version show-version verify-release coverage coverage-report coverage-html
 
 # Build binary
 build:
@@ -25,6 +25,44 @@ build-dev:
 # Run tests
 test:
 	go test -v ./...
+
+# Coverage target (default 70%)
+COVERAGE_TARGET ?= 70
+
+# Quick coverage summary with machine-parseable output
+coverage:
+	@go test -coverprofile=coverage.out ./... > /dev/null 2>&1
+	@TOTAL=$$(go tool cover -func=coverage.out | tail -n1 | awk '{print $$NF}' | sed 's/%//'); \
+	echo "COVERAGE_TOTAL=$$TOTAL"; \
+	echo "COVERAGE_TARGET=$(COVERAGE_TARGET)"; \
+	if [ $$(echo "$$TOTAL >= $(COVERAGE_TARGET)" | bc -l) -eq 1 ]; then \
+		echo "COVERAGE_MET=true"; \
+	else \
+		echo "COVERAGE_MET=false"; \
+		exit 1; \
+	fi
+
+# Detailed per-file coverage with machine-parseable output
+coverage-report:
+	@go test -coverprofile=coverage.out ./... > /dev/null 2>&1
+	@TOTAL=$$(go tool cover -func=coverage.out | tail -n1 | awk '{print $$NF}' | sed 's/%//'); \
+	echo "COVERAGE_TOTAL=$$TOTAL"; \
+	echo "COVERAGE_TARGET=$(COVERAGE_TARGET)"; \
+	if [ $$(echo "$$TOTAL >= $(COVERAGE_TARGET)" | bc -l) -eq 1 ]; then \
+		echo "COVERAGE_MET=true"; \
+	else \
+		echo "COVERAGE_MET=false"; \
+	fi; \
+	go tool cover -func=coverage.out | grep -v "total:" | awk '{split($$1, a, ":"); file=a[1]; cov=$$NF; gsub(/%/, "", cov); files[file]+=cov; counts[file]++} END {for (f in files) printf "FILE=%s COVERAGE=%.1f\n", f, files[f]/counts[f]}' | sort -t= -k3 -rn; \
+	if [ $$(echo "$$TOTAL < $(COVERAGE_TARGET)" | bc -l) -eq 1 ]; then \
+		exit 1; \
+	fi
+
+# Generate HTML coverage report for human review
+coverage-html:
+	@go test -coverprofile=coverage.out ./... > /dev/null 2>&1
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
 
 # Run linter
 lint:
