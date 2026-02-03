@@ -17,3 +17,4 @@ config.yaml
 *.out
 coverage.out
 *_coverage.out
+coverage.html
