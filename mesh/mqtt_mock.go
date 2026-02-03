@@ -52,9 +52,8 @@ type MockClient struct {
 	messageHandlers   map[string]mqtt.MessageHandler
 	publishedMessages []MockMessage
 	mu                sync.RWMutex
-	connectDelay      time.Duration
-	onConnect         mqtt.OnConnectHandler
-	onConnectionLost  mqtt.ConnectionLostHandler
+	connectDelay time.Duration
+	onConnect    mqtt.OnConnectHandler
 }
 
 type MockMessage struct {
