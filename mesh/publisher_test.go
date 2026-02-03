@@ -412,6 +412,35 @@ func TestPublisher_PublishWithNilClient(t *testing.T) {
 	}
 }
 
+func TestPublisher_PublishWithMockClient(t *testing.T) {
+	mock := NewMockClient()
+	mock.SetConnected(true)
+
+	publisher := NewPublisher(mock)
+
+	// Should succeed with connected mock
+	err := publisher.PublishPosition("vacuum1", 100, 200, 90)
+	if err != nil {
+		t.Errorf("PublishPosition() error = %v, want nil", err)
+	}
+
+	// Verify position was stored
+	pos, ok := publisher.GetPosition("vacuum1")
+	if !ok {
+		t.Error("Position should be stored")
+	}
+	if pos.X != 100 || pos.Y != 200 || pos.Angle != 90 {
+		t.Errorf("Stored position = (%.0f, %.0f, %.0f°), want (100, 200, 90°)",
+			pos.X, pos.Y, pos.Angle)
+	}
+
+	// Verify MQTT messages were published
+	messages := mock.GetPublishedMessages()
+	if len(messages) != 2 {
+		t.Errorf("Published messages count = %d, want 2 (individual + combined)", len(messages))
+	}
+}
+
 // Benchmark position publishing operations
 func BenchmarkPublisher_GetPosition(b *testing.B) {
 	publisher := NewPublisher(nil)

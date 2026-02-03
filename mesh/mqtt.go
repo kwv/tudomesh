@@ -235,3 +235,13 @@ func (c *MQTTClient) GetVacuumByTopic(topic string) (string, bool) {
 func (c *MQTTClient) GetClient() mqtt.Client {
 	return c.client
 }
+
+// newMQTTClientWithMock creates an MQTTClient with a provided mqtt.Client
+// This is used for testing with mock clients
+func newMQTTClientWithMock(client mqtt.Client, config *Config, handler MessageHandler) *MQTTClient {
+	return &MQTTClient{
+		client:         client,
+		config:         config,
+		messageHandler: handler,
+	}
+}
