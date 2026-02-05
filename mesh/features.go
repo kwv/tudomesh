@@ -278,9 +278,12 @@ func SampleFeatures(fs FeatureSet, maxPoints int) []Point {
 	}
 
 	// Include some corners (important geometric features)
-	cornerAlloc := min(len(fs.Corners), 50)
-	for i := 0; i < cornerAlloc; i++ {
-		result = append(result, fs.Corners[i])
+	if len(fs.Corners) > 0 {
+		remaining := maxPoints - len(result)
+		cornerAlloc := min(len(fs.Corners), min(50, remaining))
+		for i := 0; i < cornerAlloc; i++ {
+			result = append(result, fs.Corners[i])
+		}
 	}
 
 	// Fill remaining with boundary points
