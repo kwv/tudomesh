@@ -47,6 +47,23 @@ func NewApp() *App {
 	}
 }
 
+// ApplyOptions applies CLI options to the App instance
+func (a *App) ApplyOptions(opts AppOptions) {
+	a.DataDir = opts.DataDir
+	a.ConfigFile = opts.ConfigFile
+	a.CalibrationCache = opts.CalibrationCache
+	a.RotateAll = opts.RotateAll
+	a.ForceRotation = opts.ForceRotation
+	a.ReferenceVacuum = opts.ReferenceVacuum
+	a.OutputFile = opts.OutputFile
+	a.RenderFormat = opts.RenderFormat
+	a.VectorFormat = opts.VectorFormat
+	a.GridSpacing = opts.GridSpacing
+	a.HttpPort = opts.HttpPort
+	a.MqttMode = opts.MqttMode
+	a.HttpMode = opts.HttpMode
+}
+
 // RunParseOnly finds and parses all Valetudo JSON exports
 func (a *App) RunParseOnly() {
 	pattern := filepath.Join(a.DataDir, "ValetudoMapExport-*.json")
