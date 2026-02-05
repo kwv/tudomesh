@@ -125,7 +125,7 @@ The `relates_to` link provides full traceability without reopening anything. A P
 
 ## Worktree Workflow
 
-Supervisors work in isolated worktrees (`.worktrees/bd-{BEAD_ID}/`), not branches on main.
+Supervisors work in isolated git worktrees (`.worktrees/bd-{BEAD_ID}/`), not branches on main.
 
 ### Standalone Workflow (Single Supervisor)
 
@@ -136,7 +136,7 @@ For simple tasks handled by one supervisor:
 3. **Assign and dispatch:** 
    - `bd update {id} --assignee <tech>-supervisor`
    - `Task(subagent_type="<tech>-supervisor", prompt="BEAD_ID: {id}\n\n{problem + fix}")`
-4. Supervisor creates worktree, implements, ensures lint and tests pass.
+4. Supervisor creates git worktree, implements, ensures lint and tests pass.
 5. Supervisor marks `inreview` when done and pushes.
    - *Note: If a task encounters blockers or needs separate tracking, create a dependent bead.*
 6. **User merges via UI** (Create PR → wait for CI → Merge PR → Clean Up)
@@ -256,40 +256,3 @@ bd update {BEAD_ID} --status inreview
 ```
 
 *Note: If work is incomplete or requires follow-up, do not mark inreview. Instead, create a new bead depending on the current one and dispatch a new task.*
-
-## Design Doc Guidelines
-
-When the architect creates a design doc, it should include:
-
-```markdown
-# Feature: {name}
-
-## Schema
-```sql
--- Exact column names and types
-ALTER TABLE x ADD COLUMN y TYPE;
-```
-
-## API Contract
-```
-POST /api/endpoint
-Request: { field: type }
-Response: { field: type }
-```
-
-## Shared Constants
-```
-STATUS_ACTIVE = 1
-STATUS_INACTIVE = 0
-```
-
-## Data Flow
-1. Frontend calls POST /api/...
-2. Backend validates and stores in DB
-3. Backend returns response
-```
-
-## Supervisors
-
-<!-- Populated by discovery agent -->
-- merge-supervisor

@@ -74,7 +74,7 @@ verify-release:
 
 # Run locally
 run:
-	go run . --config config.yaml
+	go run . --data-dir tudomesh-data --mqtt --http
 
 # Run with example config
 run-example:
