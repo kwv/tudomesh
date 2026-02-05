@@ -52,8 +52,8 @@ type MockClient struct {
 	messageHandlers   map[string]mqtt.MessageHandler
 	publishedMessages []MockMessage
 	mu                sync.RWMutex
-	connectDelay time.Duration
-	onConnect    mqtt.OnConnectHandler
+	connectDelay      time.Duration
+	onConnect         mqtt.OnConnectHandler
 }
 
 type MockMessage struct {
@@ -279,17 +279,17 @@ type mockMessage struct {
 	duplicate bool
 }
 
-func (m *mockMessage) Duplicate() bool      { return m.duplicate }
-func (m *mockMessage) Qos() byte            { return m.qos }
-func (m *mockMessage) Retained() bool       { return m.retained }
-func (m *mockMessage) Topic() string        { return m.topic }
-func (m *mockMessage) MessageID() uint16    { return m.messageID }
-func (m *mockMessage) Payload() []byte      { return m.payload }
-func (m *mockMessage) Ack()                 {}
-func (m *mockMessage) AutoAckOff()          {}
-func (m *mockMessage) AutoAckOn()           {}
-func (m *mockMessage) SetAutoAck(bool)      {}
-func (m *mockMessage) SetRetained(bool)     {}
-func (m *mockMessage) SetQoS(byte)          {}
-func (m *mockMessage) SetDuplicate(bool)    {}
-func (m *mockMessage) SetMessageID(uint16)  {}
+func (m *mockMessage) Duplicate() bool     { return m.duplicate }
+func (m *mockMessage) Qos() byte           { return m.qos }
+func (m *mockMessage) Retained() bool      { return m.retained }
+func (m *mockMessage) Topic() string       { return m.topic }
+func (m *mockMessage) MessageID() uint16   { return m.messageID }
+func (m *mockMessage) Payload() []byte     { return m.payload }
+func (m *mockMessage) Ack()                {}
+func (m *mockMessage) AutoAckOff()         {}
+func (m *mockMessage) AutoAckOn()          {}
+func (m *mockMessage) SetAutoAck(bool)     {}
+func (m *mockMessage) SetRetained(bool)    {}
+func (m *mockMessage) SetQoS(byte)         {}
+func (m *mockMessage) SetDuplicate(bool)   {}
+func (m *mockMessage) SetMessageID(uint16) {}

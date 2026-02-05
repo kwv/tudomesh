@@ -13,7 +13,6 @@ type VisitKey struct {
 	Dir int
 }
 
-
 // VectorizeLayer converts a map layer into a set of simplified vector paths
 // It uses contour tracing and RDP to simplify them
 func VectorizeLayer(layer *MapLayer, pixelSize int, tolerance float64) []Path {
