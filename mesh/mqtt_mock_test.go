@@ -138,7 +138,7 @@ func TestMQTTClient_WithMock_OnConnect(t *testing.T) {
 	}
 
 	handlerCalls := 0
-	handler := func(vacuumID string, mapData *ValetudoMap, err error) {
+	handler := func(vacuumID string, rawPayload []byte, mapData *ValetudoMap, err error) {
 		handlerCalls++
 	}
 
@@ -176,7 +176,7 @@ func TestMQTTClient_WithMock_MessageHandling(t *testing.T) {
 	var receivedMapData *ValetudoMap
 	var receivedErr error
 
-	handler := func(vacuumID string, mapData *ValetudoMap, err error) {
+	handler := func(vacuumID string, rawPayload []byte, mapData *ValetudoMap, err error) {
 		receivedVacuumID = vacuumID
 		receivedMapData = mapData
 		receivedErr = err
@@ -235,7 +235,7 @@ func TestMQTTClient_WithMock_InvalidMapData(t *testing.T) {
 	}
 
 	var receivedErr error
-	handler := func(vacuumID string, mapData *ValetudoMap, err error) {
+	handler := func(vacuumID string, rawPayload []byte, mapData *ValetudoMap, err error) {
 		receivedErr = err
 	}
 
@@ -393,7 +393,7 @@ func TestPublisher_WithMock_TransformedPosition(t *testing.T) {
 	// After 90-degree rotation, (100, 200) should become (-200, 100)
 	// Angle should be 45 + 90 = 135 degrees
 	const tolerance = 0.01
-	if abs(pos.X - (-200)) > tolerance {
+	if abs(pos.X-(-200)) > tolerance {
 		t.Errorf("Transformed X = %.2f, want -200.00", pos.X)
 	}
 	if abs(pos.Y-100) > tolerance {

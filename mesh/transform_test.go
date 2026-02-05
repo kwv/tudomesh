@@ -211,7 +211,7 @@ func TestInvertMatrix(t *testing.T) {
 		{
 			name: "singular matrix (zero determinant)",
 			m:    AffineMatrix{A: 1, B: 2, Tx: 0, C: 2, D: 4, Ty: 0}, // det = 1*4 - 2*2 = 0
-			want: Identity(),                                          // Returns identity for singular matrices
+			want: Identity(),                                         // Returns identity for singular matrices
 		},
 		{
 			name: "near-singular matrix",
@@ -542,7 +542,7 @@ func TestCalculateFromPointPairs(t *testing.T) {
 			},
 		},
 		{
-			name: "two points - with scale",
+			name:   "two points - with scale",
 			source: []Point{{X: 0, Y: 0}, {X: 1, Y: 0}},
 			target: []Point{{X: 0, Y: 0}, {X: 2, Y: 0}}, // 2x scale
 			verify: []struct {

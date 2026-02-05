@@ -18,14 +18,14 @@ func newMockApp() *mockApp {
 	}
 }
 
-func (m *mockApp) ApplyOptions(opts AppOptions)        { m.opts = opts }
-func (m *mockApp) RunParseOnly()                       { m.called["RunParseOnly"] = true }
-func (m *mockApp) RunCalibration()                     { m.called["RunCalibration"] = true }
-func (m *mockApp) RunRender()                          { m.called["RunRender"] = true }
-func (m *mockApp) RunRenderIndividual(s string)        { m.called["RunRenderIndividual"] = true; m.sArg = s }
-func (m *mockApp) RunCompareRotation(s string)         { m.called["RunCompareRotation"] = true; m.sArg = s }
-func (m *mockApp) RunDetectRotation()                  { m.called["RunDetectRotation"] = true }
-func (m *mockApp) RunService()                         { m.called["RunService"] = true }
+func (m *mockApp) ApplyOptions(opts AppOptions) { m.opts = opts }
+func (m *mockApp) RunParseOnly()                { m.called["RunParseOnly"] = true }
+func (m *mockApp) RunCalibration()              { m.called["RunCalibration"] = true }
+func (m *mockApp) RunRender()                   { m.called["RunRender"] = true }
+func (m *mockApp) RunRenderIndividual(s string) { m.called["RunRenderIndividual"] = true; m.sArg = s }
+func (m *mockApp) RunCompareRotation(s string)  { m.called["RunCompareRotation"] = true; m.sArg = s }
+func (m *mockApp) RunDetectRotation()           { m.called["RunDetectRotation"] = true }
+func (m *mockApp) RunService()                  { m.called["RunService"] = true }
 
 func TestRun_Flags(t *testing.T) {
 	tests := []struct {

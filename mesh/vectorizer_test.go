@@ -110,10 +110,10 @@ func TestTraceBoundaryDetailed(t *testing.T) {
 // TestTraceContoursSimple tests contour tracing with a minimal pattern
 func TestTraceContoursSimple(t *testing.T) {
 	tests := []struct {
-		name          string
-		setupGrid     func() ([]bool, int, int)
-		expectPaths   int
-		expectMinPts  int
+		name         string
+		setupGrid    func() ([]bool, int, int)
+		expectPaths  int
+		expectMinPts int
 	}{
 		{
 			name: "single pixel",
@@ -158,9 +158,9 @@ func TestTraceContoursSimple(t *testing.T) {
 				// . . . . .
 				grid := make([]bool, 25)
 				// Top row
-				grid[6] = true  // (1,1)
-				grid[7] = true  // (2,1)
-				grid[8] = true  // (3,1)
+				grid[6] = true // (1,1)
+				grid[7] = true // (2,1)
+				grid[8] = true // (3,1)
 				// Middle row
 				grid[11] = true // (1,2)
 				grid[13] = true // (3,2)

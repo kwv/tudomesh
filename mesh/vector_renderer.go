@@ -36,8 +36,8 @@ type VectorRenderer struct {
 	Transforms     map[string]AffineMatrix
 	Colors         map[string]VacuumColor
 	Reference      string
-	Scale          float64           // Scale factor for rendering
-	Padding        float64           // Padding in world units
+	Scale          float64 // Scale factor for rendering
+	Padding        float64 // Padding in world units
 	GlobalRotation float64
 	Resolution     canvas.Resolution // Resolution for PNG output (default: 300 DPI)
 	GridSpacing    float64           // Grid line spacing in millimeters
@@ -64,7 +64,7 @@ func NewVectorRenderer(maps map[string]*ValetudoMap, transforms map[string]Affin
 		Colors:         colorMap,
 		Reference:      reference,
 		Scale:          1.0,
-		Padding:        500.0,           // 500mm padding
+		Padding:        500.0, // 500mm padding
 		GlobalRotation: 0,
 		Resolution:     canvas.DPI(300), // 300 DPI default for PNG output
 		GridSpacing:    1000.0,          // 1000mm grid spacing

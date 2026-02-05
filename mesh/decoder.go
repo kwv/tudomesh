@@ -22,7 +22,7 @@ func DecodeMapData(data []byte) (*ValetudoMap, error) {
 	var err error
 
 	// Try PNG format first (most common from MQTT)
-	if isPNG(data) {
+	if IsPNG(data) {
 		jsonBytes, err = extractPNGzTXt(data)
 		if err != nil {
 			return nil, fmt.Errorf("extracting PNG zTXt: %w", err)
@@ -45,8 +45,8 @@ func DecodeMapData(data []byte) (*ValetudoMap, error) {
 	return ParseMapJSON(jsonBytes)
 }
 
-// isPNG checks if data starts with PNG magic bytes
-func isPNG(data []byte) bool {
+// IsPNG checks if data starts with PNG magic bytes
+func IsPNG(data []byte) bool {
 	if len(data) < 8 {
 		return false
 	}

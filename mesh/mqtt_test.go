@@ -13,7 +13,7 @@ func TestInitMQTT_Disabled(t *testing.T) {
 		},
 	}
 
-	handler := func(string, *ValetudoMap, error) {}
+	handler := func(string, []byte, *ValetudoMap, error) {}
 
 	client, err := InitMQTT(config, handler)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestInitMQTT_NoVacuums(t *testing.T) {
 		Vacuums: []VacuumConfig{},
 	}
 
-	handler := func(string, *ValetudoMap, error) {}
+	handler := func(string, []byte, *ValetudoMap, error) {}
 
 	_, err := InitMQTT(config, handler)
 	if err == nil {
@@ -151,7 +151,7 @@ func TestMessageHandler_Integration(t *testing.T) {
 	var receivedMap *ValetudoMap
 	var receivedErr error
 
-	handler := func(vacuumID string, m *ValetudoMap, err error) {
+	handler := func(vacuumID string, rawPayload []byte, m *ValetudoMap, err error) {
 		handlerCalled = true
 		receivedID = vacuumID
 		receivedMap = m
@@ -159,7 +159,7 @@ func TestMessageHandler_Integration(t *testing.T) {
 	}
 
 	// Simulate handler call
-	handler("test-vacuum", mapData, nil)
+	handler("test-vacuum", nil, mapData, nil)
 
 	if !handlerCalled {
 		t.Error("Handler was not called")
@@ -235,7 +235,7 @@ func BenchmarkCreateMessageHandler(b *testing.B) {
 
 	client := &MQTTClient{
 		config:         config,
-		messageHandler: func(string, *ValetudoMap, error) {},
+		messageHandler: func(string, []byte, *ValetudoMap, error) {},
 	}
 
 	b.ResetTimer()
@@ -290,7 +290,7 @@ func TestInitMQTT_ReturnsImmediately(t *testing.T) {
 		},
 	}
 
-	handler := func(string, *ValetudoMap, error) {}
+	handler := func(string, []byte, *ValetudoMap, error) {}
 
 	start := time.Now()
 	client, err := InitMQTT(config, handler)
