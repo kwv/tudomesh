@@ -42,11 +42,16 @@ done
 # 3. Delete merged local branches
 echo "🌿 Cleaning up merged local branches..."
 # Use origin/main as reference for merged branches
-git branch --merged origin/main | grep -v "\*" | grep -v "main" | xargs -r git branch -d || true
+git branch --merged origin/main | grep -v "\*" | grep -v "main" | grep -v "beads-sync" | xargs -r git branch -d || true
 
-# 4. Prune remote branches
+# 4. Prune remote branches (preserve beads-sync)
 echo "🌐 Pruning remote branches..."
-git remote update --prune origin || true
+git fetch origin --prune && git remote set-head origin --auto || true
+# Re-push beads-sync if it was pruned from remote
+if ! git ls-remote --heads origin beads-sync | grep -q beads-sync; then
+    echo "⚠️  Restoring pruned remote beads-sync..."
+    git push origin beads-sync || true
+fi
 
 # 5. Close inreview beads
 echo "✅ Closing 'inreview' beads..."
