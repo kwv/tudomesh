@@ -20,8 +20,9 @@ type MQTTClient struct {
 }
 
 // MessageHandler is called when a map data message is received
-// Parameters: vacuumID, mapData, error
-type MessageHandler func(string, *ValetudoMap, error)
+// Parameters: vacuumID, rawPayload, mapData, error
+// rawPayload is provided so callers can handle raw PNG images that lack zTXt metadata
+type MessageHandler func(vacuumID string, rawPayload []byte, mapData *ValetudoMap, err error)
 
 var (
 	globalClient *MQTTClient
@@ -178,22 +179,24 @@ func (c *MQTTClient) onReconnecting(client mqtt.Client, opts *mqtt.ClientOptions
 // createMessageHandler creates a handler function for a specific vacuum's topic
 func (c *MQTTClient) createMessageHandler(vacuumID string) mqtt.MessageHandler {
 	return func(client mqtt.Client, msg mqtt.Message) {
+		payload := msg.Payload()
 		log.Printf("Received map data for %s (topic: %s, size: %d bytes)",
-			vacuumID, msg.Topic(), len(msg.Payload()))
+			vacuumID, msg.Topic(), len(payload))
 
 		// Decode the map data (handles PNG with zTXt, raw JSON, or compressed JSON)
-		mapData, err := DecodeMapData(msg.Payload())
+		mapData, err := DecodeMapData(payload)
 		if err != nil {
 			log.Printf("Error decoding map data for %s: %v", vacuumID, err)
 			if c.messageHandler != nil {
-				c.messageHandler(vacuumID, nil, err)
+				// Pass raw payload so caller can handle raw PNGs
+				c.messageHandler(vacuumID, payload, nil, err)
 			}
 			return
 		}
 
-		// Call the user's message handler
+		// Call the user's message handler with raw payload and decoded data
 		if c.messageHandler != nil {
-			c.messageHandler(vacuumID, mapData, nil)
+			c.messageHandler(vacuumID, payload, mapData, nil)
 		}
 	}
 }

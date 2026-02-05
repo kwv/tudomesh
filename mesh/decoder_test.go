@@ -38,9 +38,9 @@ func TestIsPNG(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isPNG(tt.data)
+			result := IsPNG(tt.data)
 			if result != tt.expected {
-				t.Errorf("isPNG() = %v, want %v", result, tt.expected)
+				t.Errorf("IsPNG() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
