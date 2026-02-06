@@ -558,13 +558,7 @@ func (a *App) RunCalibration() {
 		worldCharger := mesh.TransformPoint(srcCharger, result.Transform)
 
 		// Adjust robot angle by the transform rotation
-		worldAngle := srcAngle + totalRotation
-		for worldAngle >= 360 {
-			worldAngle -= 360
-		}
-		for worldAngle < 0 {
-			worldAngle += 360
-		}
+		worldAngle := mesh.TransformAngle(srcAngle, result.Transform)
 
 		fmt.Printf("  Robot: local(%.0f,%.0f) -> world(%.0f,%.0f)\n",
 			srcPos.X, srcPos.Y, worldPos.X, worldPos.Y)
@@ -806,14 +800,7 @@ func (a *App) RunService() {
 				transformedPos := mesh.TransformPoint(gridPos, transform)
 				gridX = transformedPos.X
 				gridY = transformedPos.Y
-				transformRotation := math.Atan2(transform.C, transform.A) * 180 / math.Pi
-				worldAngle = robotAngle + transformRotation
-				for worldAngle >= 360 {
-					worldAngle -= 360
-				}
-				for worldAngle < 0 {
-					worldAngle += 360
-				}
+				worldAngle = mesh.TransformAngle(robotAngle, transform)
 			} else {
 				// No calibration - use grid coords directly
 				gridX = gridPos.X
@@ -901,22 +888,19 @@ func (a *App) RunService() {
 				gridX = transformedPos.X
 				gridY = transformedPos.Y
 
-				// Calculate rotation from transform matrix
-				transformRotation := math.Atan2(transform.C, transform.A) * 180 / math.Pi
-				worldAngle = robotAngle + transformRotation
+				// Calculate rotation from transform matrix and apply to angle
+				worldAngle = mesh.TransformAngle(robotAngle, transform)
 
-				// Normalize angle to [0, 360)
-				for worldAngle >= 360 {
-					worldAngle -= 360
-				}
-				for worldAngle < 0 {
-					worldAngle += 360
-				}
+				log.Printf("[CALIBRATION] %s: transform(A=%.4f,C=%.4f) rotation=%.1f° localAngle=%.0f° -> worldAngle=%.0f°",
+					vacuumID, transform.A, transform.C,
+					math.Atan2(transform.C, transform.A)*180/math.Pi,
+					robotAngle, worldAngle)
 			} else {
 				// No calibration - use grid coordinates directly
 				gridX = gridPos.X
 				gridY = gridPos.Y
 				worldAngle = robotAngle
+				log.Printf("[CALIBRATION] %s: no calibration loaded, using raw angle=%.0f°", vacuumID, robotAngle)
 			}
 
 			// Update state tracker with position (in grid coords)

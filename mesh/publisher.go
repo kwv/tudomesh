@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"sync"
 	"time"
@@ -174,19 +173,8 @@ func (p *Publisher) PublishTransformedPosition(vacuumID string, localPos Point, 
 	// Transform position from local to world coordinates
 	worldPos := TransformPoint(localPos, transform)
 
-	// Transform angle by extracting rotation from transform matrix
-	// The transform matrix encodes rotation as: cos(θ) = A, sin(θ) = C
-	// So rotation angle = atan2(C, A)
-	transformAngle := math.Atan2(transform.C, transform.A) * 180 / math.Pi
-	worldAngle := localAngle + transformAngle
-
-	// Normalize angle to [0, 360)
-	for worldAngle >= 360 {
-		worldAngle -= 360
-	}
-	for worldAngle < 0 {
-		worldAngle += 360
-	}
+	// Transform angle using the rotation component of the affine matrix
+	worldAngle := TransformAngle(localAngle, transform)
 
 	return p.PublishPosition(vacuumID, worldPos.X, worldPos.Y, worldAngle)
 }
