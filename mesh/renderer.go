@@ -6,8 +6,10 @@ import (
 	"image/color"
 	"image/png"
 	"math"
+	"math/rand"
 	"os"
 	"sort"
+	"time"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -621,7 +623,8 @@ func RenderWithForcedRotation(maps map[string]*ValetudoMap, vacuumID string, rot
 			// Use forced rotation
 			srcFeatures := ExtractFeatures(m)
 			tgtFeatures := ExtractFeatures(refMap)
-			transforms[id] = buildInitialTransform(srcFeatures, tgtFeatures, rotationDeg)
+			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+			transforms[id] = buildInitialTransform(srcFeatures, tgtFeatures, rotationDeg, rng)
 		} else {
 			// Use ICP
 			config := DefaultICPConfig()
@@ -659,7 +662,8 @@ func RenderWithCalibration(maps map[string]*ValetudoMap, rotations map[string]fl
 			// Use forced rotation
 			srcFeatures := ExtractFeatures(m)
 			tgtFeatures := ExtractFeatures(refMap)
-			transforms[id] = buildInitialTransform(srcFeatures, tgtFeatures, rotDeg)
+			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+			transforms[id] = buildInitialTransform(srcFeatures, tgtFeatures, rotDeg, rng)
 
 			// Apply translation if available
 			if trans, ok := translations[id]; ok && (trans.X != 0 || trans.Y != 0) {

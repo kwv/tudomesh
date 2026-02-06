@@ -4,16 +4,18 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"time"
 )
 
 // ICPConfig holds configuration for the ICP algorithm
 type ICPConfig struct {
-	MaxIterations     int     // Maximum number of iterations
-	ConvergenceThresh float64 // Stop when error improvement is below this
-	MaxCorrespondDist float64 // Maximum distance for point correspondence
-	SamplePoints      int     // Number of feature points to use
-	OutlierPercentile float64 // Reject correspondences above this percentile (0-1)
-	TryRotations      bool    // Try multiple initial rotations (0°, 90°, 180°, 270°)
+	MaxIterations     int        // Maximum number of iterations
+	ConvergenceThresh float64    // Stop when error improvement is below this
+	MaxCorrespondDist float64    // Maximum distance for point correspondence
+	SamplePoints      int        // Number of feature points to use
+	OutlierPercentile float64    // Reject correspondences above this percentile (0-1)
+	TryRotations      bool       // Try multiple initial rotations (0°, 90°, 180°, 270°)
+	RNG               *rand.Rand // Random number generator for deterministic behavior
 }
 
 // DefaultICPConfig returns sensible defaults for ICP
@@ -25,6 +27,7 @@ func DefaultICPConfig() ICPConfig {
 		SamplePoints:      300,    // Use up to 300 feature points
 		OutlierPercentile: 0.8,    // Keep 80% closest correspondences
 		TryRotations:      true,   // Try all 4 rotations
+		RNG:               rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -61,7 +64,7 @@ func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, ro
 	}
 
 	// Build initial transform from rotation hint
-	initialTransform := buildInitialTransform(srcFeatures, tgtFeatures, rotationHint)
+	initialTransform := buildInitialTransform(srcFeatures, tgtFeatures, rotationHint, config.RNG)
 
 	// Run full multi-scale ICP refinement starting from the hint
 	result := runMultiScaleICP(sourcePoints, targetPoints, initialTransform, config)
@@ -142,7 +145,7 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 	// Try each initial rotation
 	for _, rotDeg := range rotations {
 		// Use robust initialization to find best translation for this rotation
-		initialTransform := findBestInitialAlignment(sourcePoints, targetPoints, sourceFeatures.Centroid, targetFeatures.Centroid, rotDeg)
+		initialTransform := findBestInitialAlignment(sourcePoints, targetPoints, sourceFeatures.Centroid, targetFeatures.Centroid, rotDeg, config.RNG)
 
 		// Use multi-scale ICP for better coarse-to-fine convergence
 		result := runMultiScaleICP(sourcePoints, targetPoints, initialTransform, config)
@@ -363,7 +366,7 @@ func CalculateInlierScore(source, target []Point, maxDist float64) (float64, flo
 
 // findBestInitialAlignment tries multiple translations for a given rotation
 // to find the best initial overlap, robust to partial overlaps
-func findBestInitialAlignment(sourcePoints, targetPoints []Point, sourceCentroid, targetCentroid Point, rotationDeg float64) AffineMatrix {
+func findBestInitialAlignment(sourcePoints, targetPoints []Point, sourceCentroid, targetCentroid Point, rotationDeg float64, rng *rand.Rand) AffineMatrix {
 	// 1. Base transform: Rotate around source centroid
 	// Translate source centroid to origin -> Rotate
 	toOrigin := Translation(-sourceCentroid.X, -sourceCentroid.Y)
@@ -397,8 +400,8 @@ func findBestInitialAlignment(sourcePoints, targetPoints []Point, sourceCentroid
 		if len(rotatedSource) == 0 || len(targetPoints) == 0 {
 			break
 		}
-		s := rotatedSource[rand.Intn(len(rotatedSource))]
-		t := targetPoints[rand.Intn(len(targetPoints))]
+		s := rotatedSource[rng.Intn(len(rotatedSource))]
+		t := targetPoints[rng.Intn(len(targetPoints))]
 
 		// Candidate translation
 		tx := t.X - s.X
@@ -411,7 +414,7 @@ func findBestInitialAlignment(sourcePoints, targetPoints []Point, sourceCentroid
 	evalSource := rotatedSource
 	if len(evalSource) > 100 {
 		evalSource = make([]Point, 100)
-		perm := rand.Perm(len(rotatedSource))
+		perm := rng.Perm(len(rotatedSource))
 		for i := 0; i < 100; i++ {
 			evalSource[i] = rotatedSource[perm[i]]
 		}
@@ -465,7 +468,7 @@ func findBestInitialAlignment(sourcePoints, targetPoints []Point, sourceCentroid
 
 // buildInitialTransform creates an initial transform using robust point matching
 // This ensures that even when forcing a rotation, we find the best translation
-func buildInitialTransform(source, target FeatureSet, rotationDeg float64) AffineMatrix {
+func buildInitialTransform(source, target FeatureSet, rotationDeg float64, rng *rand.Rand) AffineMatrix {
 	// Sample points for matching
 	sourcePoints := SampleFeatures(source, 300)
 	targetPoints := SampleFeatures(target, 300)
@@ -480,7 +483,7 @@ func buildInitialTransform(source, target FeatureSet, rotationDeg float64) Affin
 		return MultiplyMatrices(toTarget, MultiplyMatrices(rotate, toOrigin))
 	}
 
-	return findBestInitialAlignment(sourcePoints, targetPoints, source.Centroid, target.Centroid, rotationDeg)
+	return findBestInitialAlignment(sourcePoints, targetPoints, source.Centroid, target.Centroid, rotationDeg, rng)
 }
 
 // runICP performs ICP iterations starting from an initial transform
@@ -794,8 +797,11 @@ func QuickAlign(source, target *ValetudoMap) AffineMatrix {
 	bestTransform := Identity()
 	bestError := math.MaxFloat64
 
+	// Create a default RNG for initialization
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	for _, rotDeg := range []float64{0, 90, 180, 270} {
-		transform := buildInitialTransform(sourceFeatures, targetFeatures, rotDeg)
+		transform := buildInitialTransform(sourceFeatures, targetFeatures, rotDeg, rng)
 		transformed := TransformPoints(sourcePoints, transform)
 		err := FeatureDistance(transformed, targetPoints)
 
