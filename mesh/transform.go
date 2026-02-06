@@ -21,6 +21,23 @@ func TransformPoints(points []Point, m AffineMatrix) []Point {
 	return result
 }
 
+// NormalizeAngle normalizes an angle in degrees to the range [0, 360).
+func NormalizeAngle(degrees float64) float64 {
+	degrees = math.Mod(degrees, 360)
+	if degrees < 0 {
+		degrees += 360
+	}
+	return degrees
+}
+
+// TransformAngle applies the rotation component of an affine transform to a local angle (in degrees).
+// The rotation is extracted from the transform matrix via atan2(C, A).
+// Returns the transformed angle normalized to [0, 360).
+func TransformAngle(localAngle float64, transform AffineMatrix) float64 {
+	transformRotation := math.Atan2(transform.C, transform.A) * 180 / math.Pi
+	return NormalizeAngle(localAngle + transformRotation)
+}
+
 // MultiplyMatrices composes two affine transforms: result = m1 * m2
 // Applying result is equivalent to applying m2 first, then m1
 func MultiplyMatrices(m1, m2 AffineMatrix) AffineMatrix {

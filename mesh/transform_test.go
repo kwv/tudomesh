@@ -941,3 +941,149 @@ func BenchmarkCentroid(b *testing.B) {
 		_ = Centroid(points)
 	}
 }
+
+// NormalizeAngle
+
+func TestNormalizeAngle(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    float64
+		expected float64
+	}{
+		{"zero", 0, 0},
+		{"positive in range", 90, 90},
+		{"exactly 360", 360, 0},
+		{"over 360", 450, 90},
+		{"negative", -90, 270},
+		{"negative -180", -180, 180},
+		{"large positive", 720, 0},
+		{"large negative", -720, 0},
+		{"just under 360", 359.9, 359.9},
+		{"small negative", -0.1, 359.9},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeAngle(tt.input)
+			if math.Abs(got-tt.expected) > 0.01 {
+				t.Errorf("NormalizeAngle(%f) = %f, want %f", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TransformAngle
+
+func TestTransformAngle(t *testing.T) {
+	tests := []struct {
+		name       string
+		localAngle float64
+		transform  AffineMatrix
+		expected   float64
+		tolerance  float64
+	}{
+		{
+			name:       "identity transform - no change",
+			localAngle: 182,
+			transform:  Identity(),
+			expected:   182,
+			tolerance:  0.01,
+		},
+		{
+			name:       "90 degree rotation",
+			localAngle: 0,
+			transform:  RotationDeg(90),
+			expected:   90,
+			tolerance:  0.01,
+		},
+		{
+			name:       "180 degree rotation",
+			localAngle: 0,
+			transform:  RotationDeg(180),
+			expected:   180,
+			tolerance:  0.01,
+		},
+		{
+			name:       "270 degree rotation",
+			localAngle: 0,
+			transform:  RotationDeg(270),
+			expected:   270,
+			tolerance:  0.01,
+		},
+		{
+			name:       "90 degree rotation with local angle 45",
+			localAngle: 45,
+			transform:  RotationDeg(90),
+			expected:   135,
+			tolerance:  0.01,
+		},
+		{
+			name:       "270 degree rotation wraps past 360",
+			localAngle: 200,
+			transform:  RotationDeg(270),
+			expected:   110,
+			tolerance:  0.01,
+		},
+		{
+			name:       "translation only - no angle change",
+			localAngle: 90,
+			transform:  Translation(100, 200),
+			expected:   90,
+			tolerance:  0.01,
+		},
+		// Real calibration data from .calibration-cache.json
+		{
+			name:       "AppropriateMinorAntelope calibration (~270 degree rotation)",
+			localAngle: 246,
+			transform: AffineMatrix{
+				A: 0.008252605176549174, B: 0.9999659466740853, Tx: -119.1931139847944,
+				C: -0.9999659466740853, D: 0.008252605176549174, Ty: 984.9278331936399,
+			},
+			expected:  156.53, // 246 + (-89.47) = 156.53
+			tolerance: 0.5,
+		},
+		{
+			name:       "TrickyZanyPartridge calibration (~180 degree rotation)",
+			localAngle: 182,
+			transform: AffineMatrix{
+				A: -0.9999511647570667, B: 0.009882717287546475, Tx: 1221.33038219282,
+				C: -0.009882717287546475, D: -0.9999511647570667, Ty: 1131.3205967300173,
+			},
+			expected:  2.43, // 182 + (-179.43) = 2.57 (approximately)
+			tolerance: 0.5,
+		},
+		{
+			name:       "FrugalLameLion identity calibration",
+			localAngle: 182,
+			transform: AffineMatrix{
+				A: 1, B: 0, Tx: 0,
+				C: 0, D: 1, Ty: 0,
+			},
+			expected:  182,
+			tolerance: 0.01,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TransformAngle(tt.localAngle, tt.transform)
+			diff := math.Abs(got - tt.expected)
+			// Handle wraparound (e.g., 359.9 vs 0.1)
+			if diff > 180 {
+				diff = 360 - diff
+			}
+			if diff > tt.tolerance {
+				t.Errorf("TransformAngle(%f, ...) = %f, want %f (diff=%f, tolerance=%f)",
+					tt.localAngle, got, tt.expected, diff, tt.tolerance)
+			}
+		})
+	}
+}
+
+func BenchmarkTransformAngle(b *testing.B) {
+	transform := RotationDeg(270)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = TransformAngle(float64(i%360), transform)
+	}
+}
