@@ -106,6 +106,7 @@ type VacuumConfig struct {
 	Color       string             `yaml:"color" json:"color"`
 	Rotation    *float64           `yaml:"rotation,omitempty" json:"rotation,omitempty"`       // Optional rotation hint/override (0, 90, 180, 270)
 	Translation *TranslationOffset `yaml:"translation,omitempty" json:"translation,omitempty"` // Optional manual translation override
+	ApiURL      *string            `yaml:"apiUrl,omitempty" json:"apiUrl,omitempty"`             // Optional API URL for fetching map data
 }
 
 // Config represents the full configuration file
