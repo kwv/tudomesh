@@ -9,7 +9,7 @@ bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --status in_progress  --actor <agent> # Claim work
 bd close <id>         # Complete work
-bd sync               # Sync with git
+bd sync --full        # Sync and push to beads-sync branch
 ```
 
 ## Landing the Plane (Session Completion)
@@ -24,8 +24,8 @@ bd sync               # Sync with git
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd sync
-   git push
+   bd sync --full       # Pushes beads-sync branch
+   git push             # Pushes code branch
    git status  # MUST show "up to date with origin"
    ```
 5. **Clean up** - Clear stashes, prune remote branches
@@ -38,4 +38,4 @@ bd sync               # Sync with git
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 - Track all work in beads. Before starting any task, run `bd ready`.
-- Before ending any session, run `bd sync`. File discovered work with `bd create`.
+- Before ending any session, run `bd sync --full`. File discovered work with `bd create`.
