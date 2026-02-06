@@ -2,6 +2,7 @@ package mesh
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -142,6 +143,55 @@ func Summarize(m *ValetudoMap) MapSummary {
 	_, summary.HasWall = ExtractWallLayer(m)
 
 	return summary
+}
+
+// MinAreaRatio is the minimum ratio of new map area to last known good map area
+// required for the new map to be considered complete.
+const MinAreaRatio = 0.8
+
+// Sentinel errors for map validation failures.
+var (
+	ErrNilMap            = errors.New("map is nil")
+	ErrNoDrawablePixels  = errors.New("map has no drawable pixels")
+	ErrNoRobotPosition   = errors.New("map is missing robot_position entity")
+	ErrNoChargerLocation = errors.New("map is missing charger_location entity")
+	ErrAreaTooSmall      = errors.New("map area is too small compared to last known good map")
+)
+
+// ValidateMapForCalibration checks that a map has all required data for calibration.
+// It returns a descriptive error for the first validation failure found, or nil if valid.
+func ValidateMapForCalibration(m *ValetudoMap) error {
+	if m == nil {
+		return ErrNilMap
+	}
+	if !HasDrawablePixels(m) {
+		return ErrNoDrawablePixels
+	}
+	if _, _, ok := ExtractRobotPosition(m); !ok {
+		return ErrNoRobotPosition
+	}
+	if _, ok := ExtractChargerPosition(m); !ok {
+		return ErrNoChargerLocation
+	}
+	return nil
+}
+
+// IsMapComplete validates that newMap is a complete, usable map that should replace
+// the lastKnownGood map. It checks structural completeness via ValidateMapForCalibration,
+// then optionally verifies that the new map's total layer area has not shrunk
+// below MinAreaRatio of the last known good map (to guard against partial updates).
+// If lastKnownGood is nil, only structural checks are performed.
+func IsMapComplete(newMap, lastKnownGood *ValetudoMap) bool {
+	if err := ValidateMapForCalibration(newMap); err != nil {
+		return false
+	}
+	if lastKnownGood != nil && lastKnownGood.MetaData.TotalLayerArea > 0 {
+		ratio := float64(newMap.MetaData.TotalLayerArea) / float64(lastKnownGood.MetaData.TotalLayerArea)
+		if ratio < MinAreaRatio {
+			return false
+		}
+	}
+	return true
 }
 
 // HasDrawablePixels returns true if the map contains any pixels in floor, wall or segment layers
