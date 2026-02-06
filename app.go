@@ -1016,11 +1016,6 @@ func (a *App) loadInitialMaps(dataDir string) map[string]*mesh.ValetudoMap {
 		return maps
 	}
 
-	if len(files) == 0 {
-		// Try current directory
-		files, _ = filepath.Glob("ValetudoMapExport-*.json")
-	}
-
 	for _, file := range files {
 		base := filepath.Base(file)
 		name := strings.TrimPrefix(base, "ValetudoMapExport-")
