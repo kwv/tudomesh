@@ -1,6 +1,8 @@
 package mesh
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -307,5 +309,397 @@ func TestInitMQTT_ReturnsImmediately(t *testing.T) {
 
 	if client != nil {
 		client.Disconnect()
+	}
+}
+
+// --- Docking detection tests ---
+
+func TestDeriveStateTopic(t *testing.T) {
+	tests := []struct {
+		name      string
+		mapTopic  string
+		wantTopic string
+		wantOK    bool
+	}{
+		{
+			name:      "standard valetudo topic",
+			mapTopic:  "valetudo/rocky7/MapData/map-data",
+			wantTopic: "valetudo/rocky7/StatusStateAttribute/status",
+			wantOK:    true,
+		},
+		{
+			name:      "different vacuum name",
+			mapTopic:  "valetudo/dusty/MapData/map-data",
+			wantTopic: "valetudo/dusty/StatusStateAttribute/status",
+			wantOK:    true,
+		},
+		{
+			name:      "longer prefix path",
+			mapTopic:  "home/floor1/valetudo/vacuum1/MapData/map-data",
+			wantTopic: "home/floor1/valetudo/vacuum1/StatusStateAttribute/status",
+			wantOK:    true,
+		},
+		{
+			name:      "exactly four segments",
+			mapTopic:  "a/b/c/d",
+			wantTopic: "a/b/StatusStateAttribute/status",
+			wantOK:    true,
+		},
+		{
+			name:      "too few segments - three",
+			mapTopic:  "a/b/c",
+			wantTopic: "",
+			wantOK:    false,
+		},
+		{
+			name:      "too few segments - two",
+			mapTopic:  "test/topic",
+			wantTopic: "",
+			wantOK:    false,
+		},
+		{
+			name:      "single segment",
+			mapTopic:  "topic",
+			wantTopic: "",
+			wantOK:    false,
+		},
+		{
+			name:      "empty string",
+			mapTopic:  "",
+			wantTopic: "",
+			wantOK:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := deriveStateTopic(tt.mapTopic)
+			if got != tt.wantTopic || ok != tt.wantOK {
+				t.Errorf("deriveStateTopic(%q) = (%q, %v), want (%q, %v)",
+					tt.mapTopic, got, ok, tt.wantTopic, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestSetDockingHandler(t *testing.T) {
+	client := &MQTTClient{}
+
+	// Initially nil
+	if h := client.getDockingHandler(); h != nil {
+		t.Error("Docking handler should be nil initially")
+	}
+
+	// Set handler
+	called := false
+	client.SetDockingHandler(func(vacuumID string) {
+		called = true
+	})
+
+	h := client.getDockingHandler()
+	if h == nil {
+		t.Fatal("Docking handler should not be nil after SetDockingHandler")
+	}
+
+	h("test")
+	if !called {
+		t.Error("Docking handler was not invoked")
+	}
+}
+
+func TestSetDockingHandler_ConcurrentAccess(t *testing.T) {
+	client := &MQTTClient{}
+	var count atomic.Int64
+
+	done := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			for j := 0; j < 100; j++ {
+				client.SetDockingHandler(func(vacuumID string) {
+					count.Add(1)
+				})
+				if h := client.getDockingHandler(); h != nil {
+					h("test")
+				}
+			}
+		}()
+	}
+
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+	// No race condition = success
+}
+
+func TestCreateStateMessageHandler_DockedState(t *testing.T) {
+	client := &MQTTClient{}
+
+	var receivedVacuumID string
+	var mu sync.Mutex
+
+	client.SetDockingHandler(func(vacuumID string) {
+		mu.Lock()
+		receivedVacuumID = vacuumID
+		mu.Unlock()
+	})
+
+	handler := client.createStateMessageHandler("rocky7")
+
+	// Simulate a docked state message
+	mock := NewMockClient()
+	mock.SetConnected(true)
+	mock.Subscribe("valetudo/rocky7/StatusStateAttribute/status", 0, handler)
+	mock.SimulateMessage("valetudo/rocky7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
+
+	mu.Lock()
+	got := receivedVacuumID
+	mu.Unlock()
+
+	if got != "rocky7" {
+		t.Errorf("DockingHandler received vacuumID = %q, want %q", got, "rocky7")
+	}
+}
+
+func TestCreateStateMessageHandler_NonDockedStates(t *testing.T) {
+	client := &MQTTClient{}
+
+	handlerCalled := false
+	client.SetDockingHandler(func(vacuumID string) {
+		handlerCalled = true
+	})
+
+	handler := client.createStateMessageHandler("vacuum1")
+	mock := NewMockClient()
+	mock.SetConnected(true)
+	topic := "valetudo/vacuum1/StatusStateAttribute/status"
+	mock.Subscribe(topic, 0, handler)
+
+	states := []string{
+		`{"value":"cleaning"}`,
+		`{"value":"idle"}`,
+		`{"value":"returning"}`,
+		`{"value":"paused"}`,
+		`{"value":"error"}`,
+	}
+
+	for _, state := range states {
+		handlerCalled = false
+		mock.SimulateMessage(topic, []byte(state))
+		if handlerCalled {
+			t.Errorf("DockingHandler should not be called for state %s", state)
+		}
+	}
+}
+
+func TestCreateStateMessageHandler_InvalidJSON(t *testing.T) {
+	client := &MQTTClient{}
+
+	handlerCalled := false
+	client.SetDockingHandler(func(vacuumID string) {
+		handlerCalled = true
+	})
+
+	handler := client.createStateMessageHandler("vacuum1")
+	mock := NewMockClient()
+	mock.SetConnected(true)
+	topic := "valetudo/vacuum1/StatusStateAttribute/status"
+	mock.Subscribe(topic, 0, handler)
+
+	// Send invalid JSON
+	mock.SimulateMessage(topic, []byte(`not json at all`))
+
+	if handlerCalled {
+		t.Error("DockingHandler should not be called for invalid JSON")
+	}
+}
+
+func TestCreateStateMessageHandler_EmptyPayload(t *testing.T) {
+	client := &MQTTClient{}
+
+	handlerCalled := false
+	client.SetDockingHandler(func(vacuumID string) {
+		handlerCalled = true
+	})
+
+	handler := client.createStateMessageHandler("vacuum1")
+	mock := NewMockClient()
+	mock.SetConnected(true)
+	topic := "valetudo/vacuum1/StatusStateAttribute/status"
+	mock.Subscribe(topic, 0, handler)
+
+	mock.SimulateMessage(topic, []byte{})
+
+	if handlerCalled {
+		t.Error("DockingHandler should not be called for empty payload")
+	}
+}
+
+func TestCreateStateMessageHandler_NilHandler(t *testing.T) {
+	client := &MQTTClient{}
+	// No docking handler set
+
+	handler := client.createStateMessageHandler("vacuum1")
+	mock := NewMockClient()
+	mock.SetConnected(true)
+	topic := "valetudo/vacuum1/StatusStateAttribute/status"
+	mock.Subscribe(topic, 0, handler)
+
+	// Should not panic even without a handler set
+	mock.SimulateMessage(topic, []byte(`{"value":"docked"}`))
+}
+
+func TestCreateStateMessageHandler_EmptyValue(t *testing.T) {
+	client := &MQTTClient{}
+
+	handlerCalled := false
+	client.SetDockingHandler(func(vacuumID string) {
+		handlerCalled = true
+	})
+
+	handler := client.createStateMessageHandler("vacuum1")
+	mock := NewMockClient()
+	mock.SetConnected(true)
+	topic := "valetudo/vacuum1/StatusStateAttribute/status"
+	mock.Subscribe(topic, 0, handler)
+
+	mock.SimulateMessage(topic, []byte(`{"value":""}`))
+
+	if handlerCalled {
+		t.Error("DockingHandler should not be called for empty value")
+	}
+}
+
+func TestCreateStateMessageHandler_MissingValueField(t *testing.T) {
+	client := &MQTTClient{}
+
+	handlerCalled := false
+	client.SetDockingHandler(func(vacuumID string) {
+		handlerCalled = true
+	})
+
+	handler := client.createStateMessageHandler("vacuum1")
+	mock := NewMockClient()
+	mock.SetConnected(true)
+	topic := "valetudo/vacuum1/StatusStateAttribute/status"
+	mock.Subscribe(topic, 0, handler)
+
+	mock.SimulateMessage(topic, []byte(`{"other":"field"}`))
+
+	if handlerCalled {
+		t.Error("DockingHandler should not be called when value field is missing")
+	}
+}
+
+func TestOnConnect_SubscribesStateTopics(t *testing.T) {
+	mock := NewMockClient()
+	mock.SetConnected(true)
+
+	config := &Config{
+		Vacuums: []VacuumConfig{
+			{ID: "vacuum1", Topic: "valetudo/vacuum1/MapData/map-data"},
+			{ID: "vacuum2", Topic: "valetudo/vacuum2/MapData/map-data"},
+		},
+	}
+
+	client := newMQTTClientWithMock(mock, config, func(string, []byte, *ValetudoMap, error) {})
+
+	client.onConnect(mock)
+
+	// Should have 4 subscriptions: 2 map data + 2 state topics
+	mock.mu.RLock()
+	handlers := len(mock.messageHandlers)
+	topics := make([]string, 0, len(mock.messageHandlers))
+	for topic := range mock.messageHandlers {
+		topics = append(topics, topic)
+	}
+	mock.mu.RUnlock()
+
+	if handlers != 4 {
+		t.Errorf("Number of subscriptions = %d, want 4 (got topics: %v)", handlers, topics)
+	}
+
+	// Verify specific state topics are subscribed
+	expectedStateTopics := []string{
+		"valetudo/vacuum1/StatusStateAttribute/status",
+		"valetudo/vacuum2/StatusStateAttribute/status",
+	}
+
+	mock.mu.RLock()
+	for _, topic := range expectedStateTopics {
+		if _, ok := mock.messageHandlers[topic]; !ok {
+			t.Errorf("Expected subscription to %s, but not found", topic)
+		}
+	}
+	mock.mu.RUnlock()
+}
+
+func TestOnConnect_ShortTopicSkipsStateSubscription(t *testing.T) {
+	mock := NewMockClient()
+	mock.SetConnected(true)
+
+	config := &Config{
+		Vacuums: []VacuumConfig{
+			{ID: "vacuum1", Topic: "short/topic"},
+		},
+	}
+
+	client := newMQTTClientWithMock(mock, config, func(string, []byte, *ValetudoMap, error) {})
+
+	client.onConnect(mock)
+
+	// Should only have 1 subscription (map data only, no state topic derivable)
+	mock.mu.RLock()
+	handlers := len(mock.messageHandlers)
+	mock.mu.RUnlock()
+
+	if handlers != 1 {
+		t.Errorf("Number of subscriptions = %d, want 1 (short topic cannot derive state topic)", handlers)
+	}
+}
+
+func TestDockingHandler_EndToEnd(t *testing.T) {
+	mock := NewMockClient()
+	mock.SetConnected(true)
+
+	config := &Config{
+		Vacuums: []VacuumConfig{
+			{ID: "rocky7", Topic: "valetudo/rocky7/MapData/map-data"},
+		},
+	}
+
+	client := newMQTTClientWithMock(mock, config, func(string, []byte, *ValetudoMap, error) {})
+
+	var dockedVacuum string
+	client.SetDockingHandler(func(vacuumID string) {
+		dockedVacuum = vacuumID
+	})
+
+	// Trigger onConnect to subscribe to all topics
+	client.onConnect(mock)
+
+	// Simulate state message arriving on the state topic
+	mock.SimulateMessage("valetudo/rocky7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
+
+	if dockedVacuum != "rocky7" {
+		t.Errorf("End-to-end docking: got vacuumID = %q, want %q", dockedVacuum, "rocky7")
+	}
+}
+
+func BenchmarkDeriveStateTopic(b *testing.B) {
+	topic := "valetudo/rocky7/MapData/map-data"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		deriveStateTopic(topic)
+	}
+}
+
+func BenchmarkCreateStateMessageHandler(b *testing.B) {
+	client := &MQTTClient{}
+	client.SetDockingHandler(func(string) {})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = client.createStateMessageHandler("vacuum1")
 	}
 }

@@ -1,20 +1,26 @@
 package mesh
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+// DockingHandler is called when a vacuum enters the 'docked' state
+type DockingHandler func(vacuumID string)
+
 // MQTTClient manages MQTT connection and subscriptions for vacuum map data
 type MQTTClient struct {
 	client         mqtt.Client
 	config         *Config
 	messageHandler MessageHandler
+	dockingHandler DockingHandler
 	isConnected    bool
 	mu             sync.RWMutex
 }
@@ -164,6 +170,18 @@ func (c *MQTTClient) onConnect(client mqtt.Client) {
 		} else {
 			log.Printf("Successfully subscribed to %s", vacuum.Topic)
 		}
+
+		// Subscribe to state topic for docking detection
+		if stateTopic, ok := deriveStateTopic(vacuum.Topic); ok {
+			log.Printf("Subscribing to %s for vacuum %s state", stateTopic, vacuum.ID)
+			stateToken := client.Subscribe(stateTopic, 0, c.createStateMessageHandler(vacuum.ID))
+
+			if stateToken.WaitTimeout(5*time.Second) && stateToken.Error() != nil {
+				log.Printf("Error subscribing to %s: %v", stateTopic, stateToken.Error())
+			} else {
+				log.Printf("Successfully subscribed to %s", stateTopic)
+			}
+		}
 	}
 }
 
@@ -200,6 +218,65 @@ func (c *MQTTClient) createMessageHandler(vacuumID string) mqtt.MessageHandler {
 		// Call the user's message handler with raw payload and decoded data
 		if c.messageHandler != nil {
 			c.messageHandler(vacuumID, payload, mapData, nil)
+		}
+	}
+}
+
+// SetDockingHandler registers a callback that is invoked when a vacuum docks
+func (c *MQTTClient) SetDockingHandler(handler DockingHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dockingHandler = handler
+}
+
+// getDockingHandler returns the current docking handler in a thread-safe manner
+func (c *MQTTClient) getDockingHandler() DockingHandler {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dockingHandler
+}
+
+// deriveStateTopic converts a map data topic to a state topic.
+// Example: "valetudo/rocky7/MapData/map-data" -> "valetudo/rocky7/StatusStateAttribute/status"
+// Returns the derived topic and true if the conversion succeeded, or empty string and false otherwise.
+func deriveStateTopic(mapDataTopic string) (string, bool) {
+	// Expected format: valetudo/{name}/MapData/map-data
+	parts := strings.Split(mapDataTopic, "/")
+	if len(parts) < 4 {
+		return "", false
+	}
+	// Replace the last two segments with StatusStateAttribute/status
+	parts[len(parts)-2] = "StatusStateAttribute"
+	parts[len(parts)-1] = "status"
+	return strings.Join(parts, "/"), true
+}
+
+// statePayload represents the JSON structure of a Valetudo state message
+type statePayload struct {
+	Value string `json:"value"`
+}
+
+// createStateMessageHandler creates a handler for state topic messages that
+// detects docking events and invokes the docking handler
+func (c *MQTTClient) createStateMessageHandler(vacuumID string) mqtt.MessageHandler {
+	return func(client mqtt.Client, msg mqtt.Message) {
+		payload := msg.Payload()
+		log.Printf("Received state update for %s (topic: %s, size: %d bytes)",
+			vacuumID, msg.Topic(), len(payload))
+
+		var state statePayload
+		if err := json.Unmarshal(payload, &state); err != nil {
+			log.Printf("Error parsing state payload for %s: %v", vacuumID, err)
+			return
+		}
+
+		log.Printf("Vacuum %s state: %s", vacuumID, state.Value)
+
+		if state.Value == "docked" {
+			handler := c.getDockingHandler()
+			if handler != nil {
+				handler(vacuumID)
+			}
 		}
 	}
 }
