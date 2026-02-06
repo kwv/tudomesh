@@ -88,8 +88,10 @@ func InitMQTT(config *Config, handler MessageHandler) (*MQTTClient, error) {
 	opts.SetConnectRetry(true)
 	opts.SetConnectRetryInterval(5 * time.Second)
 	opts.SetMaxReconnectInterval(60 * time.Second)
-	opts.SetCleanSession(false) // Preserve subscriptions on reconnect
-	opts.SetOrderMatters(false) // Allow concurrent processing
+	opts.SetKeepAlive(60 * time.Second)   // Longer than default 30s to reduce spurious disconnects
+	opts.SetPingTimeout(10 * time.Second) // Timeout for ping response
+	opts.SetCleanSession(false)           // Preserve subscriptions on reconnect
+	opts.SetOrderMatters(false)           // Allow concurrent processing
 
 	// Callbacks
 	opts.SetOnConnectHandler(client.onConnect)
@@ -166,8 +168,9 @@ func (c *MQTTClient) onConnect(client mqtt.Client) {
 }
 
 // onConnectionLost is called when the MQTT connection is lost
+// Auto-reconnect is enabled, so this is typically a transient event
 func (c *MQTTClient) onConnectionLost(client mqtt.Client, err error) {
-	log.Printf("MQTT connection lost: %v", err)
+	log.Printf("MQTT connection interrupted (%v), auto-reconnect will retry", err)
 	c.setConnected(false)
 }
 
