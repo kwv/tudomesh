@@ -81,10 +81,10 @@ func TestICP_LargeTranslation_NeedsInit(t *testing.T) {
 	srcCentroid := original.Centroid
 	tgtCentroid := TransformPoint(srcCentroid, Translation(expectedTx, expectedTy))
 
-	initialTx := findBestInitialAlignment(original.WallPoints, targetPoints, srcCentroid, tgtCentroid, 0)
-
 	config := DefaultICPConfig()
 	config.SamplePoints = 2000
+	config.RNG = rng
+	initialTx := findBestInitialAlignment(original.WallPoints, targetPoints, srcCentroid, tgtCentroid, 0, rng)
 	result := runICP(original.WallPoints, targetPoints, initialTx, config)
 
 	if math.Abs(result.Transform.Tx-expectedTx) > 1.0 || math.Abs(result.Transform.Ty-expectedTy) > 1.0 {
@@ -101,9 +101,10 @@ func TestICP_Rotation(t *testing.T) {
 	srcCentroid := original.Centroid
 	tgtCentroid := TransformPoint(original.Centroid, rotation)
 
-	initialTx := findBestInitialAlignment(original.WallPoints, targetPoints, srcCentroid, tgtCentroid, 45)
+	initialTx := findBestInitialAlignment(original.WallPoints, targetPoints, srcCentroid, tgtCentroid, 45, rng)
 
 	config := DefaultICPConfig()
+	config.RNG = rng
 	result := runICP(original.WallPoints, targetPoints, initialTx, config)
 
 	angle := math.Atan2(result.Transform.C, result.Transform.A) * 180 / math.Pi
