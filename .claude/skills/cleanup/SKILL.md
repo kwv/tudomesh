@@ -14,7 +14,7 @@ Use this skill when you need to clean up the project state after finishing a ser
 3.  **Deletes merged branches**: Deletes local branches that have been merged into `main`.
 4.  **Prunes remote branches**: Runs `git remote prune origin`.
 5.  **Closes inreview beads**: Finds all beads with status `inreview` and sets them to `closed`.
-6.  **Syncs beads**: Runs `bd sync` to finalize the state.
+6.  **Syncs beads**: Runs `bd sync --full` to export and push to the beads-sync branch.
 
 ## Usage
 

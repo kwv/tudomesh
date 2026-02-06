@@ -66,8 +66,8 @@ else
     done
 fi
 
-# 6. Final Sync
-echo "🔄 Final bd sync..."
-bd sync
+# 6. Final Sync (full sync to push beads-sync branch)
+echo "🔄 Final bd sync --full..."
+bd sync --full
 
 echo "✨ Cleanup complete!"
