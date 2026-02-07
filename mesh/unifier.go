@@ -1,0 +1,431 @@
+package mesh
+
+import (
+	"encoding/json"
+	"math"
+	"sort"
+	"time"
+
+	"github.com/paulmach/orb"
+)
+
+// UnifiedMap represents a composite map built from multiple vacuum observations.
+// Each feature category (walls, floors, segments) contains consensus features
+// derived by clustering and merging observations from individual vacuums.
+type UnifiedMap struct {
+	Walls    []*UnifiedFeature `json:"walls"`
+	Floors   []*UnifiedFeature `json:"floors"`
+	Segments []*UnifiedFeature `json:"segments"`
+	Metadata UnifiedMetadata   `json:"metadata"`
+}
+
+// UnifiedFeature is a feature derived from multiple vacuum observations.
+// It carries the merged geometry, a confidence score indicating how many
+// vacuums observed it, and provenance information via Sources.
+type UnifiedFeature struct {
+	Geometry         *Geometry              `json:"geometry"`
+	Properties       map[string]interface{} `json:"properties"`
+	Sources          []FeatureSource        `json:"sources"`
+	Confidence       float64                `json:"confidence"`
+	ObservationCount int                    `json:"observationCount"`
+}
+
+// FeatureSource tracks which vacuum contributed to a unified feature.
+type FeatureSource struct {
+	VacuumID     string    `json:"vacuumId"`
+	OriginalGeom *Geometry `json:"originalGeometry"`
+	Timestamp    int64     `json:"timestamp"`
+	ICPScore     float64   `json:"icpScore"`
+}
+
+// UnifiedMetadata provides provenance information for a UnifiedMap.
+type UnifiedMetadata struct {
+	VacuumCount     int     `json:"vacuumCount"`
+	ReferenceVacuum string  `json:"referenceVacuum"`
+	LastUpdated     int64   `json:"lastUpdated"`
+	TotalArea       float64 `json:"totalArea"`
+	CoverageOverlap float64 `json:"coverageOverlap"`
+}
+
+// DefaultWallClusterDistance is the maximum distance (in mm) between wall
+// feature centroids for them to be grouped into the same cluster.
+const DefaultWallClusterDistance = 50.0
+
+// DefaultConfidenceThreshold is the minimum confidence score a unified
+// feature must reach to be included in the final map.
+const DefaultConfidenceThreshold = 0.5
+
+// UnifyWalls clusters wall features by proximity, computes a median line for
+// each cluster, and returns unified features that meet the confidence threshold.
+//
+// Parameters:
+//   - features: wall features from all vacuums (LineString geometry expected)
+//   - sources: one FeatureSource per feature, in the same order
+//   - totalVacuums: total number of vacuums contributing to the map
+//
+// The function uses ClusterByProximity with DefaultWallClusterDistance,
+// computes the median line for each cluster, and filters by
+// DefaultConfidenceThreshold.
+func UnifyWalls(features []*Feature, sources []FeatureSource, totalVacuums int) []*UnifiedFeature {
+	return UnifyWallsWithOptions(features, sources, totalVacuums, DefaultWallClusterDistance, DefaultConfidenceThreshold)
+}
+
+// UnifyWallsWithOptions is like UnifyWalls but accepts custom clustering
+// distance and confidence threshold parameters.
+func UnifyWallsWithOptions(features []*Feature, sources []FeatureSource, totalVacuums int, clusterDist, confidenceThreshold float64) []*UnifiedFeature {
+	if len(features) == 0 || totalVacuums <= 0 {
+		return nil
+	}
+
+	// Build a lookup from feature pointer to its source.
+	sourceMap := make(map[*Feature]FeatureSource, len(features))
+	for i, f := range features {
+		if i < len(sources) {
+			sourceMap[f] = sources[i]
+		}
+	}
+
+	// Cluster walls by proximity of their bounding-box centroids.
+	clusters := ClusterByProximity(features, clusterDist)
+
+	var result []*UnifiedFeature
+	for _, cluster := range clusters {
+		// Collect the orb.LineStrings and sources for this cluster.
+		var lines []orb.LineString
+		var clusterSources []FeatureSource
+		for _, f := range cluster {
+			ls := orbLineString(f.Geometry)
+			if ls == nil {
+				continue
+			}
+			lines = append(lines, ls)
+			if s, ok := sourceMap[f]; ok {
+				clusterSources = append(clusterSources, s)
+			}
+		}
+		if len(lines) == 0 {
+			continue
+		}
+
+		// Count distinct vacuums that observed this wall cluster.
+		vacuumSet := make(map[string]struct{})
+		for _, s := range clusterSources {
+			vacuumSet[s.VacuumID] = struct{}{}
+		}
+		observationCount := len(vacuumSet)
+		confidence := float64(observationCount) / float64(totalVacuums)
+
+		if confidence < confidenceThreshold {
+			continue
+		}
+
+		// Compute the median line from all lines in the cluster.
+		medianGeom := medianLine(lines)
+
+		// Merge properties: collect all unique property keys, preferring values
+		// from the source with the highest ICP score.
+		mergedProps := mergeProperties(cluster, clusterSources)
+		mergedProps["observationCount"] = observationCount
+		mergedProps["confidence"] = confidence
+
+		uf := &UnifiedFeature{
+			Geometry:         medianGeom,
+			Properties:       mergedProps,
+			Sources:          clusterSources,
+			Confidence:       confidence,
+			ObservationCount: observationCount,
+		}
+		result = append(result, uf)
+	}
+
+	// Sort by confidence descending for deterministic output.
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Confidence > result[j].Confidence
+	})
+
+	return result
+}
+
+// medianLine computes a consensus line from multiple observed lines.
+// It resamples each line to a common number of points, then computes the
+// coordinate-wise median at each station along the line.
+func medianLine(lines []orb.LineString) *Geometry {
+	if len(lines) == 0 {
+		return nil
+	}
+	if len(lines) == 1 {
+		return lineStringToGeometry(lines[0])
+	}
+
+	// Determine the number of sample points. Use the maximum point count
+	// among input lines, clamped to a reasonable range.
+	maxPts := 0
+	for _, ls := range lines {
+		if len(ls) > maxPts {
+			maxPts = len(ls)
+		}
+	}
+	numSamples := maxPts
+	if numSamples < 2 {
+		numSamples = 2
+	}
+	if numSamples > 100 {
+		numSamples = 100
+	}
+
+	// Resample each line to numSamples equidistant points.
+	resampled := make([][]orb.Point, len(lines))
+	for i, ls := range lines {
+		resampled[i] = resampleLine(ls, numSamples)
+	}
+
+	// Compute the coordinate-wise median at each station.
+	median := make(orb.LineString, numSamples)
+	xs := make([]float64, len(lines))
+	ys := make([]float64, len(lines))
+	for s := 0; s < numSamples; s++ {
+		for i := range lines {
+			xs[i] = resampled[i][s][0]
+			ys[i] = resampled[i][s][1]
+		}
+		sort.Float64s(xs)
+		sort.Float64s(ys)
+		median[s] = orb.Point{
+			medianOfSorted(xs),
+			medianOfSorted(ys),
+		}
+	}
+
+	return lineStringToGeometry(median)
+}
+
+// resampleLine returns n equidistant points along the given line string.
+// The first and last points of the result correspond to the first and last
+// points of the input.
+func resampleLine(ls orb.LineString, n int) []orb.Point {
+	if len(ls) < 2 || n < 2 {
+		pts := make([]orb.Point, n)
+		if len(ls) > 0 {
+			for i := range pts {
+				pts[i] = ls[0]
+			}
+		}
+		return pts
+	}
+
+	// Compute cumulative arc lengths along the line.
+	cumLen := make([]float64, len(ls))
+	for i := 1; i < len(ls); i++ {
+		dx := ls[i][0] - ls[i-1][0]
+		dy := ls[i][1] - ls[i-1][1]
+		cumLen[i] = cumLen[i-1] + math.Hypot(dx, dy)
+	}
+	totalLen := cumLen[len(cumLen)-1]
+	if totalLen == 0 {
+		pts := make([]orb.Point, n)
+		for i := range pts {
+			pts[i] = ls[0]
+		}
+		return pts
+	}
+
+	result := make([]orb.Point, n)
+	result[0] = ls[0]
+	result[n-1] = ls[len(ls)-1]
+
+	segIdx := 0
+	for i := 1; i < n-1; i++ {
+		targetLen := totalLen * float64(i) / float64(n-1)
+
+		// Advance segIdx to the segment containing targetLen.
+		for segIdx < len(cumLen)-2 && cumLen[segIdx+1] < targetLen {
+			segIdx++
+		}
+
+		segLen := cumLen[segIdx+1] - cumLen[segIdx]
+		if segLen == 0 {
+			result[i] = ls[segIdx]
+			continue
+		}
+
+		t := (targetLen - cumLen[segIdx]) / segLen
+		result[i] = orb.Point{
+			ls[segIdx][0] + t*(ls[segIdx+1][0]-ls[segIdx][0]),
+			ls[segIdx][1] + t*(ls[segIdx+1][1]-ls[segIdx][1]),
+		}
+	}
+
+	return result
+}
+
+// medianOfSorted returns the median of a pre-sorted slice of float64 values.
+func medianOfSorted(sorted []float64) float64 {
+	n := len(sorted)
+	if n == 0 {
+		return 0
+	}
+	if n%2 == 1 {
+		return sorted[n/2]
+	}
+	return (sorted[n/2-1] + sorted[n/2]) / 2.0
+}
+
+// mergeProperties combines properties from all features in a cluster.
+// When multiple features define the same key, the value from the feature
+// whose source has the highest ICP score wins.
+func mergeProperties(cluster []*Feature, sources []FeatureSource) map[string]interface{} {
+	merged := make(map[string]interface{})
+	bestScore := make(map[string]float64)
+
+	for i, f := range cluster {
+		var score float64
+		if i < len(sources) {
+			score = sources[i].ICPScore
+		}
+
+		for k, v := range f.Properties {
+			prev, exists := bestScore[k]
+			if !exists || score > prev {
+				merged[k] = v
+				bestScore[k] = score
+			}
+		}
+	}
+
+	return merged
+}
+
+// NewUnifiedMap creates an empty UnifiedMap with initialized slices and metadata.
+func NewUnifiedMap(vacuumCount int, referenceVacuum string) *UnifiedMap {
+	return &UnifiedMap{
+		Walls:    make([]*UnifiedFeature, 0),
+		Floors:   make([]*UnifiedFeature, 0),
+		Segments: make([]*UnifiedFeature, 0),
+		Metadata: UnifiedMetadata{
+			VacuumCount:     vacuumCount,
+			ReferenceVacuum: referenceVacuum,
+			LastUpdated:     time.Now().Unix(),
+		},
+	}
+}
+
+// ToFeatureCollection converts the UnifiedMap into a GeoJSON FeatureCollection.
+// Each unified feature becomes a GeoJSON Feature with confidence and source
+// count stored in properties.
+func (um *UnifiedMap) ToFeatureCollection() *FeatureCollection {
+	fc := NewFeatureCollection()
+
+	addFeatures := func(features []*UnifiedFeature, layerType string) {
+		for _, uf := range features {
+			props := make(map[string]interface{})
+			for k, v := range uf.Properties {
+				props[k] = v
+			}
+			props["layerType"] = layerType
+			props["confidence"] = uf.Confidence
+			props["observationCount"] = uf.ObservationCount
+			props["sourceVacuums"] = sourceVacuumIDs(uf.Sources)
+
+			f := NewFeature(uf.Geometry, props)
+			fc.AddFeature(f)
+		}
+	}
+
+	addFeatures(um.Walls, "wall")
+	addFeatures(um.Floors, "floor")
+	addFeatures(um.Segments, "segment")
+
+	return fc
+}
+
+// sourceVacuumIDs extracts unique vacuum IDs from a slice of FeatureSource.
+func sourceVacuumIDs(sources []FeatureSource) []string {
+	seen := make(map[string]struct{}, len(sources))
+	var ids []string
+	for _, s := range sources {
+		if _, ok := seen[s.VacuumID]; !ok {
+			seen[s.VacuumID] = struct{}{}
+			ids = append(ids, s.VacuumID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// ComputeConfidence calculates the confidence score for a set of sources
+// relative to the total number of vacuums. It counts distinct vacuum IDs
+// and returns the ratio to totalVacuums.
+func ComputeConfidence(sources []FeatureSource, totalVacuums int) float64 {
+	if totalVacuums <= 0 {
+		return 0
+	}
+	seen := make(map[string]struct{}, len(sources))
+	for _, s := range sources {
+		seen[s.VacuumID] = struct{}{}
+	}
+	return float64(len(seen)) / float64(totalVacuums)
+}
+
+// AlignLinesToDirection ensures all lines in a cluster point in a consistent
+// direction. Lines whose start-to-end vector is more than 90 degrees from
+// the reference direction are reversed. This prevents the median computation
+// from averaging misaligned endpoints.
+func alignLinesToDirection(lines []orb.LineString) []orb.LineString {
+	if len(lines) == 0 {
+		return lines
+	}
+
+	// Use the first line's direction as reference.
+	ref := lines[0]
+	refDx := ref[len(ref)-1][0] - ref[0][0]
+	refDy := ref[len(ref)-1][1] - ref[0][1]
+
+	aligned := make([]orb.LineString, len(lines))
+	aligned[0] = ref
+
+	for i := 1; i < len(lines); i++ {
+		ls := lines[i]
+		dx := ls[len(ls)-1][0] - ls[0][0]
+		dy := ls[len(ls)-1][1] - ls[0][1]
+
+		// Dot product: if negative, the line points in the opposite direction.
+		dot := refDx*dx + refDy*dy
+		if dot < 0 {
+			reversed := make(orb.LineString, len(ls))
+			for j := range ls {
+				reversed[j] = ls[len(ls)-1-j]
+			}
+			aligned[i] = reversed
+		} else {
+			aligned[i] = ls
+		}
+	}
+
+	return aligned
+}
+
+// extractWallFeatures filters features to only include wall-type features
+// (LayerType property is "wall" and geometry is LineString).
+func extractWallFeatures(features []*Feature) []*Feature {
+	var walls []*Feature
+	for _, f := range features {
+		if f.Geometry == nil {
+			continue
+		}
+		if f.Geometry.Type != GeometryLineString {
+			continue
+		}
+		lt, _ := f.Properties["layerType"].(string)
+		if lt == "wall" || lt == "" {
+			walls = append(walls, f)
+		}
+	}
+	return walls
+}
+
+// marshalCoordinate is a test helper - kept unexported. Encodes a 2-element
+// float array to JSON for creating test geometries.
+func marshalCoordinate(coords interface{}) json.RawMessage {
+	b, _ := json.Marshal(coords)
+	return b
+}
