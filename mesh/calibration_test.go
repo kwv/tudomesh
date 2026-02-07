@@ -27,9 +27,9 @@ func TestLoadCalibration_NotExists(t *testing.T) {
 func TestLoadCalibration_ValidFile(t *testing.T) {
 	want := &CalibrationData{
 		ReferenceVacuum: "vac-a",
-		Vacuums: map[string]AffineMatrix{
-			"vac-a": Identity(),
-			"vac-b": {A: 0, B: -1, Tx: 100, C: 1, D: 0, Ty: 200},
+		Vacuums: map[string]VacuumCalibration{
+			"vac-a": {Transform: Identity(), LastUpdated: 1700000000},
+			"vac-b": {Transform: AffineMatrix{A: 0, B: -1, Tx: 100, C: 1, D: 0, Ty: 200}, LastUpdated: 1700000000},
 		},
 		LastUpdated: 1700000000,
 	}
@@ -57,8 +57,48 @@ func TestLoadCalibration_ValidFile(t *testing.T) {
 	if len(got.Vacuums) != 2 {
 		t.Errorf("len(Vacuums) = %d, want 2", len(got.Vacuums))
 	}
-	if got.Vacuums["vac-b"].Tx != 100 {
-		t.Errorf("vac-b.Tx = %g, want 100", got.Vacuums["vac-b"].Tx)
+	if got.Vacuums["vac-b"].Transform.Tx != 100 {
+		t.Errorf("vac-b.Transform.Tx = %g, want 100", got.Vacuums["vac-b"].Transform.Tx)
+	}
+}
+
+func TestLoadCalibration_LegacyFormat(t *testing.T) {
+	// Simulate old cache file where Vacuums was map[string]AffineMatrix
+	legacy := `{
+		"referenceVacuum": "vac-a",
+		"vacuums": {
+			"vac-a": {"a":1,"b":0,"tx":0,"c":0,"d":1,"ty":0},
+			"vac-b": {"a":0,"b":-1,"tx":100,"c":1,"d":0,"ty":200}
+		},
+		"lastUpdated": 1700000000
+	}`
+
+	path := filepath.Join(t.TempDir(), "legacy.json")
+	if err := os.WriteFile(path, []byte(legacy), 0644); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+
+	got, err := LoadCalibration(path)
+	if err != nil {
+		t.Fatalf("LoadCalibration (legacy): %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil CalibrationData from legacy format")
+	}
+	if got.ReferenceVacuum != "vac-a" {
+		t.Errorf("ReferenceVacuum = %q, want %q", got.ReferenceVacuum, "vac-a")
+	}
+	if len(got.Vacuums) != 2 {
+		t.Errorf("len(Vacuums) = %d, want 2", len(got.Vacuums))
+	}
+	// Verify the transform was migrated correctly
+	vacB := got.Vacuums["vac-b"]
+	if vacB.Transform.Tx != 100 {
+		t.Errorf("vac-b.Transform.Tx = %g, want 100", vacB.Transform.Tx)
+	}
+	// Legacy entries inherit the global LastUpdated
+	if vacB.LastUpdated != 1700000000 {
+		t.Errorf("vac-b.LastUpdated = %d, want 1700000000", vacB.LastUpdated)
 	}
 }
 
@@ -85,8 +125,8 @@ func TestSaveCalibration(t *testing.T) {
 	before := time.Now().Unix()
 	cal := &CalibrationData{
 		ReferenceVacuum: "vac-a",
-		Vacuums: map[string]AffineMatrix{
-			"vac-a": Identity(),
+		Vacuums: map[string]VacuumCalibration{
+			"vac-a": {Transform: Identity(), LastUpdated: before},
 		},
 		LastUpdated: 0, // should be overwritten
 	}
@@ -120,9 +160,9 @@ func TestSaveCalibration(t *testing.T) {
 
 func TestCalibrationData_GetTransform(t *testing.T) {
 	cal := &CalibrationData{
-		Vacuums: map[string]AffineMatrix{
-			"vac-a": Identity(),
-			"vac-b": {A: 2, B: 0, Tx: 50, C: 0, D: 2, Ty: 75},
+		Vacuums: map[string]VacuumCalibration{
+			"vac-a": {Transform: Identity()},
+			"vac-b": {Transform: AffineMatrix{A: 2, B: 0, Tx: 50, C: 0, D: 2, Ty: 75}},
 		},
 	}
 
@@ -159,7 +199,7 @@ func TestCalibrationData_GetTransform(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CalibrationData.NeedsRecalibration
+// CalibrationData.NeedsRecalibration (global)
 // ---------------------------------------------------------------------------
 
 func TestCalibrationData_NeedsRecalibration(t *testing.T) {
@@ -191,6 +231,201 @@ func TestCalibrationData_NeedsRecalibration(t *testing.T) {
 		cal := &CalibrationData{LastUpdated: stale}
 		if !cal.NeedsRecalibration(maxAge) {
 			t.Error("48h-old timestamp should need recalibration with 24h maxAge")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// CalibrationData.ShouldRecalibrate (per-vacuum)
+// ---------------------------------------------------------------------------
+
+func TestCalibrationData_ShouldRecalibrate(t *testing.T) {
+	debounce := 30 * time.Minute
+
+	t.Run("nil receiver", func(t *testing.T) {
+		var nilCal *CalibrationData
+		if !nilCal.ShouldRecalibrate("vac-a", 5000, debounce) {
+			t.Error("nil receiver should need recalibration")
+		}
+	})
+
+	t.Run("never calibrated", func(t *testing.T) {
+		cal := &CalibrationData{
+			Vacuums: map[string]VacuumCalibration{
+				"vac-a": {Transform: Identity(), LastUpdated: time.Now().Unix()},
+			},
+		}
+		if !cal.ShouldRecalibrate("vac-b", 5000, debounce) {
+			t.Error("uncalibrated vacuum should need recalibration")
+		}
+	})
+
+	t.Run("map area changed", func(t *testing.T) {
+		cal := &CalibrationData{
+			Vacuums: map[string]VacuumCalibration{
+				"vac-a": {
+					Transform:            Identity(),
+					LastUpdated:          time.Now().Unix(),
+					MapAreaAtCalibration: 5000,
+				},
+			},
+		}
+		if !cal.ShouldRecalibrate("vac-a", 6000, debounce) {
+			t.Error("changed map area should trigger recalibration")
+		}
+	})
+
+	t.Run("within debounce window", func(t *testing.T) {
+		cal := &CalibrationData{
+			Vacuums: map[string]VacuumCalibration{
+				"vac-a": {
+					Transform:            Identity(),
+					LastUpdated:          time.Now().Unix(),
+					MapAreaAtCalibration: 5000,
+				},
+			},
+		}
+		if cal.ShouldRecalibrate("vac-a", 5000, debounce) {
+			t.Error("recent calibration with same area should NOT need recalibration")
+		}
+	})
+
+	t.Run("outside debounce window", func(t *testing.T) {
+		stale := time.Now().Add(-1 * time.Hour).Unix()
+		cal := &CalibrationData{
+			Vacuums: map[string]VacuumCalibration{
+				"vac-a": {
+					Transform:            Identity(),
+					LastUpdated:          stale,
+					MapAreaAtCalibration: 5000,
+				},
+			},
+		}
+		if !cal.ShouldRecalibrate("vac-a", 5000, debounce) {
+			t.Error("stale calibration should need recalibration")
+		}
+	})
+
+	t.Run("zero LastUpdated", func(t *testing.T) {
+		cal := &CalibrationData{
+			Vacuums: map[string]VacuumCalibration{
+				"vac-a": {Transform: Identity(), LastUpdated: 0},
+			},
+		}
+		if !cal.ShouldRecalibrate("vac-a", 5000, debounce) {
+			t.Error("zero LastUpdated should need recalibration")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// CalibrationData.UpdateVacuumCalibration
+// ---------------------------------------------------------------------------
+
+func TestCalibrationData_UpdateVacuumCalibration(t *testing.T) {
+	t.Run("nil map initializes", func(t *testing.T) {
+		cal := &CalibrationData{}
+		now := time.Now().Unix()
+		cal.UpdateVacuumCalibration("vac-a", VacuumCalibration{
+			Transform:            Identity(),
+			LastUpdated:          now,
+			MapAreaAtCalibration: 5000,
+		})
+		if len(cal.Vacuums) != 1 {
+			t.Fatalf("expected 1 vacuum, got %d", len(cal.Vacuums))
+		}
+		vc := cal.Vacuums["vac-a"]
+		if vc.Transform != Identity() {
+			t.Errorf("transform = %+v, want identity", vc.Transform)
+		}
+		if vc.MapAreaAtCalibration != 5000 {
+			t.Errorf("MapAreaAtCalibration = %d, want 5000", vc.MapAreaAtCalibration)
+		}
+	})
+
+	t.Run("updates global LastUpdated", func(t *testing.T) {
+		cal := &CalibrationData{
+			LastUpdated: 100,
+			Vacuums:     map[string]VacuumCalibration{},
+		}
+		cal.UpdateVacuumCalibration("vac-a", VacuumCalibration{
+			Transform:   Identity(),
+			LastUpdated: 200,
+		})
+		if cal.LastUpdated != 200 {
+			t.Errorf("global LastUpdated = %d, want 200", cal.LastUpdated)
+		}
+	})
+
+	t.Run("does not regress global LastUpdated", func(t *testing.T) {
+		cal := &CalibrationData{
+			LastUpdated: 300,
+			Vacuums:     map[string]VacuumCalibration{},
+		}
+		cal.UpdateVacuumCalibration("vac-a", VacuumCalibration{
+			Transform:   Identity(),
+			LastUpdated: 200,
+		})
+		if cal.LastUpdated != 300 {
+			t.Errorf("global LastUpdated = %d, want 300 (should not regress)", cal.LastUpdated)
+		}
+	})
+
+	t.Run("replaces existing", func(t *testing.T) {
+		cal := &CalibrationData{
+			Vacuums: map[string]VacuumCalibration{
+				"vac-a": {Transform: Identity(), LastUpdated: 100},
+			},
+		}
+		newTransform := AffineMatrix{A: 2, D: 2}
+		cal.UpdateVacuumCalibration("vac-a", VacuumCalibration{
+			Transform:            newTransform,
+			LastUpdated:          200,
+			MapAreaAtCalibration: 9000,
+		})
+		vc := cal.Vacuums["vac-a"]
+		if vc.Transform != newTransform {
+			t.Errorf("transform = %+v, want %+v", vc.Transform, newTransform)
+		}
+		if vc.MapAreaAtCalibration != 9000 {
+			t.Errorf("MapAreaAtCalibration = %d, want 9000", vc.MapAreaAtCalibration)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// CalibrationData.GetVacuumCalibration
+// ---------------------------------------------------------------------------
+
+func TestCalibrationData_GetVacuumCalibration(t *testing.T) {
+	t.Run("nil receiver", func(t *testing.T) {
+		var nilCal *CalibrationData
+		if nilCal.GetVacuumCalibration("vac-a") != nil {
+			t.Error("nil receiver should return nil")
+		}
+	})
+
+	t.Run("missing vacuum", func(t *testing.T) {
+		cal := &CalibrationData{
+			Vacuums: map[string]VacuumCalibration{},
+		}
+		if cal.GetVacuumCalibration("vac-a") != nil {
+			t.Error("missing vacuum should return nil")
+		}
+	})
+
+	t.Run("present vacuum", func(t *testing.T) {
+		cal := &CalibrationData{
+			Vacuums: map[string]VacuumCalibration{
+				"vac-a": {Transform: Identity(), LastUpdated: 100, MapAreaAtCalibration: 5000},
+			},
+		}
+		vc := cal.GetVacuumCalibration("vac-a")
+		if vc == nil {
+			t.Fatal("expected non-nil VacuumCalibration")
+		}
+		if vc.MapAreaAtCalibration != 5000 {
+			t.Errorf("MapAreaAtCalibration = %d, want 5000", vc.MapAreaAtCalibration)
 		}
 	})
 }

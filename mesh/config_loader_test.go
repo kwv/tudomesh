@@ -247,9 +247,9 @@ func TestMergeCalibrationIntoConfig(t *testing.T) {
 			},
 		}
 		cache := &CalibrationData{
-			Vacuums: map[string]AffineMatrix{
-				"vac-a": {A: 1, B: 0, Tx: 10, C: 0, D: 1, Ty: 20},
-				"vac-b": Identity(),
+			Vacuums: map[string]VacuumCalibration{
+				"vac-a": {Transform: AffineMatrix{A: 1, B: 0, Tx: 10, C: 0, D: 1, Ty: 20}},
+				"vac-b": {Transform: Identity()},
 			},
 		}
 		result := MergeCalibrationIntoConfig(cfg, cache)
@@ -268,8 +268,8 @@ func TestMergeCalibrationIntoConfig(t *testing.T) {
 			},
 		}
 		cache := &CalibrationData{
-			Vacuums: map[string]AffineMatrix{
-				"vac-a": {A: 1, B: 0, Tx: 10, C: 0, D: 1, Ty: 20}, // should be overridden
+			Vacuums: map[string]VacuumCalibration{
+				"vac-a": {Transform: AffineMatrix{A: 1, B: 0, Tx: 10, C: 0, D: 1, Ty: 20}}, // should be overridden
 			},
 		}
 		result := MergeCalibrationIntoConfig(cfg, cache)

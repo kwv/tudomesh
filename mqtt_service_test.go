@@ -265,8 +265,8 @@ func TestReferenceVacuumSelection(t *testing.T) {
 			if tt.cacheRef != "" {
 				cache = &mesh.CalibrationData{
 					ReferenceVacuum: tt.cacheRef,
-					Vacuums: map[string]mesh.AffineMatrix{
-						tt.cacheRef: mesh.Identity(),
+					Vacuums: map[string]mesh.VacuumCalibration{
+						tt.cacheRef: {Transform: mesh.Identity(), LastUpdated: time.Now().Unix()},
 					},
 					LastUpdated: time.Now().Unix(),
 				}
@@ -450,12 +450,9 @@ func TestMessageHandlerErrorCases(t *testing.T) {
 func TestCalibrationTransformRetrieval(t *testing.T) {
 	cache := &mesh.CalibrationData{
 		ReferenceVacuum: "RefVacuum",
-		Vacuums: map[string]mesh.AffineMatrix{
-			"RefVacuum": mesh.Identity(),
-			"OtherVacuum": {
-				A: -1, B: 0, Tx: 100,
-				C: 0, D: -1, Ty: 200,
-			},
+		Vacuums: map[string]mesh.VacuumCalibration{
+			"RefVacuum":   {Transform: mesh.Identity()},
+			"OtherVacuum": {Transform: mesh.AffineMatrix{A: -1, B: 0, Tx: 100, C: 0, D: -1, Ty: 200}},
 		},
 	}
 

@@ -64,8 +64,8 @@ func MergeCalibrationIntoConfig(config *Config, cache *CalibrationData) map[stri
 
 	// Start with cached transforms if available
 	if cache != nil {
-		for id, matrix := range cache.Vacuums {
-			transforms[id] = matrix
+		for id, vc := range cache.Vacuums {
+			transforms[id] = vc.Transform
 		}
 	}
 

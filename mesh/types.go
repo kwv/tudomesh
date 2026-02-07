@@ -1,5 +1,7 @@
 package mesh
 
+import "encoding/json"
+
 // ValetudoMap represents the root map structure from Valetudo JSON export
 type ValetudoMap struct {
 	Class     string      `json:"__class"`
@@ -163,10 +165,79 @@ func (vc *VacuumConfig) GetTranslation() TranslationOffset {
 	return TranslationOffset{X: 0, Y: 0}
 }
 
-// CalibrationData stores calibration matrices for all vacuums
-// This is the auto-computed ICP transform cache stored as JSON
+// VacuumCalibration stores per-vacuum calibration metadata alongside the transform.
+type VacuumCalibration struct {
+	Transform            AffineMatrix `json:"transform"`
+	LastUpdated          int64        `json:"lastUpdated"`
+	MapAreaAtCalibration int          `json:"mapAreaAtCalibration"`
+}
+
+// CalibrationData stores calibration matrices for all vacuums.
+// This is the auto-computed ICP transform cache stored as JSON.
 type CalibrationData struct {
-	ReferenceVacuum string                  `json:"referenceVacuum"`
-	Vacuums         map[string]AffineMatrix `json:"vacuums"`
-	LastUpdated     int64                   `json:"lastUpdated"`
+	ReferenceVacuum string                       `json:"referenceVacuum"`
+	Vacuums         map[string]VacuumCalibration `json:"vacuums"`
+	LastUpdated     int64                        `json:"lastUpdated"`
+}
+
+// UnmarshalJSON provides backward compatibility with old cache files where
+// Vacuums was map[string]AffineMatrix (no VacuumCalibration wrapper).
+// It probes the raw JSON to detect the format and falls back to the legacy
+// format when the vacuum entries lack a "transform" key.
+func (c *CalibrationData) UnmarshalJSON(data []byte) error {
+	// Step 1: Unmarshal the envelope with raw vacuum entries.
+	var envelope struct {
+		ReferenceVacuum string                        `json:"referenceVacuum"`
+		Vacuums         map[string]json.RawMessage    `json:"vacuums"`
+		LastUpdated     int64                         `json:"lastUpdated"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return err
+	}
+
+	c.ReferenceVacuum = envelope.ReferenceVacuum
+	c.LastUpdated = envelope.LastUpdated
+
+	if len(envelope.Vacuums) == 0 {
+		c.Vacuums = make(map[string]VacuumCalibration)
+		return nil
+	}
+
+	// Step 2: Detect format by probing the first entry for a "transform" key.
+	isNewFormat := false
+	for _, raw := range envelope.Vacuums {
+		var probe struct {
+			Transform *json.RawMessage `json:"transform"`
+		}
+		if err := json.Unmarshal(raw, &probe); err == nil && probe.Transform != nil {
+			isNewFormat = true
+		}
+		break
+	}
+
+	c.Vacuums = make(map[string]VacuumCalibration, len(envelope.Vacuums))
+
+	if isNewFormat {
+		for id, raw := range envelope.Vacuums {
+			var vc VacuumCalibration
+			if err := json.Unmarshal(raw, &vc); err != nil {
+				return err
+			}
+			c.Vacuums[id] = vc
+		}
+	} else {
+		// Legacy format: bare AffineMatrix values.
+		for id, raw := range envelope.Vacuums {
+			var m AffineMatrix
+			if err := json.Unmarshal(raw, &m); err != nil {
+				return err
+			}
+			c.Vacuums[id] = VacuumCalibration{
+				Transform:   m,
+				LastUpdated: envelope.LastUpdated,
+			}
+		}
+	}
+
+	return nil
 }
