@@ -461,6 +461,79 @@ func TestCreateStateMessageHandler_DockedState(t *testing.T) {
 	}
 }
 
+func TestCreateStateMessageHandler_PayloadFormats(t *testing.T) {
+	tests := []struct {
+		name       string
+		payload    []byte
+		wantDocked bool
+	}{
+		{
+			name:       "JSON object docked",
+			payload:    []byte(`{"value":"docked"}`),
+			wantDocked: true,
+		},
+		{
+			name:       "JSON string docked",
+			payload:    []byte(`"docked"`),
+			wantDocked: true,
+		},
+		{
+			name:       "raw string docked",
+			payload:    []byte(`docked`),
+			wantDocked: true,
+		},
+		{
+			name:       "raw string with whitespace",
+			payload:    []byte("  docked\n"),
+			wantDocked: true,
+		},
+		{
+			name:       "JSON object cleaning",
+			payload:    []byte(`{"value":"cleaning"}`),
+			wantDocked: false,
+		},
+		{
+			name:       "JSON string cleaning",
+			payload:    []byte(`"cleaning"`),
+			wantDocked: false,
+		},
+		{
+			name:       "raw string cleaning",
+			payload:    []byte(`cleaning`),
+			wantDocked: false,
+		},
+		{
+			name:       "empty payload",
+			payload:    []byte{},
+			wantDocked: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &MQTTClient{}
+			handlerCalled := false
+
+			client.SetDockingHandler(func(vacuumID string) {
+				handlerCalled = true
+			})
+
+			handler := client.createStateMessageHandler("vacuum1")
+			mock := NewMockClient()
+			mock.SetConnected(true)
+			topic := "valetudo/vacuum1/StatusStateAttribute/status"
+			mock.Subscribe(topic, 0, handler)
+
+			mock.SimulateMessage(topic, tt.payload)
+
+			if handlerCalled != tt.wantDocked {
+				t.Errorf("DockingHandler called = %v, want %v (payload: %q)",
+					handlerCalled, tt.wantDocked, string(tt.payload))
+			}
+		})
+	}
+}
+
 func TestCreateStateMessageHandler_NonDockedStates(t *testing.T) {
 	client := &MQTTClient{}
 
