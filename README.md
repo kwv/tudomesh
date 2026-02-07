@@ -11,7 +11,52 @@ Combines multiple Valetudo vacuum robot maps into a single unified coordinate sy
   - **Transform Cache**: Stores alignment results in `.calibration-cache.json` for instant startups.
 - **Real-time MQTT**: Transforms robot positions in milliseconds and republishes to a unified topic.
 - **Live Visualization**: Generates a unified composite floorplan reachable via HTTP.
+- **Auto-Calibration on Docking**: Automatically recalibrates vacuum alignment when a robot returns to its charger.
 
+## Auto-Calibration
+
+TudoMesh can automatically keep vacuum alignment up to date without manual intervention. When a vacuum finishes cleaning and docks at its charger, TudoMesh detects the state change and recalibrates the coordinate transform.
+
+### How It Works
+
+1. **Docking Detection**: TudoMesh subscribes to each vacuum's `StatusStateAttribute/status` MQTT topic (derived automatically from the MapData topic). When the state changes to `docked`, the calibration handler fires.
+
+2. **Debounce (30 minutes)**: To avoid excessive recalibration, TudoMesh skips recalibration if the last calibration for that vacuum was less than 30 minutes ago and the map area has not changed.
+
+3. **Map Fetch**: TudoMesh fetches the vacuum's full map via its REST API (`apiUrl` in config). This provides a complete, high-quality map suitable for ICP alignment.
+
+4. **ICP Alignment**: The fetched map is aligned against the reference vacuum using the same ICP algorithm used in batch calibration. The resulting affine transform is stored.
+
+5. **Cache Update**: The updated transform is written to `.calibration-cache.json` so it persists across restarts.
+
+### Configuration
+
+Add `apiUrl` to each vacuum in your `config.yaml`:
+
+```yaml
+vacuums:
+  - id: vacuum1
+    topic: valetudo/vacuum1/MapData/map-data
+    color: "#43b0f1"
+    apiUrl: "http://192.168.1.100/api/v2/robot/state/map"
+  - id: vacuum2
+    topic: valetudo/vacuum2/MapData/map-data
+    color: "#057dcd"
+    apiUrl: "http://192.168.1.101/api/v2/robot/state/map"
+```
+
+The `apiUrl` field is optional. Vacuums without it will not be auto-calibrated but will still work with cached or manually configured transforms.
+
+### State Topic Derivation
+
+The state topic is derived automatically from the MapData topic by replacing the last two path segments:
+
+| MapData topic | State topic |
+|---|---|
+| `valetudo/vacuum1/MapData/map-data` | `valetudo/vacuum1/StatusStateAttribute/status` |
+| `home/floor1/valetudo/dusty/MapData/map-data` | `home/floor1/valetudo/dusty/StatusStateAttribute/status` |
+
+Topics with fewer than 4 path segments cannot derive a state topic and will not support docking detection.
 
 ## Installation
 
@@ -333,6 +378,22 @@ You should see JSON messages like:
 **Vector SVG endpoints 404:**
 - Vector rendering is only available on HTTP server (not in batch render)
 - Use `GET /composite-map.svg` and `GET /floorplan.svg` endpoints
+
+**Auto-calibration not triggering:**
+- Verify `apiUrl` is set for the vacuum in `config.yaml`
+- Check that the vacuum's MapData topic has at least 4 path segments (e.g., `valetudo/name/MapData/map-data`) so the state topic can be derived
+- Look for `Subscribing to ... StatusStateAttribute/status` in the startup logs to confirm state topic subscription
+- Check that the vacuum actually reports `{"value":"docked"}` on its state topic: `mosquitto_sub -t 'valetudo/+/StatusStateAttribute/status'`
+
+**Auto-calibration triggers but transform is not changing:**
+- The 30-minute debounce prevents recalibration if the last run was recent and the map area has not changed
+- If the map area is identical, the debounce must expire before recalibration runs again
+- Force immediate recalibration with: `./tudomesh --data-dir ./tudomesh-data --calibrate`
+
+**API fetch failing during auto-calibration:**
+- Verify the `apiUrl` is reachable from the TudoMesh host: `curl -H 'Accept: application/json' http://192.168.1.100/api/v2/robot/state/map`
+- Check for network/firewall issues between TudoMesh and the vacuum
+- TudoMesh retries failed fetches with exponential backoff (up to 3 attempts)
 
 ## Service Features
 
