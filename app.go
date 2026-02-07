@@ -19,11 +19,12 @@ import (
 
 // App encapsulates the application state and dependencies
 type App struct {
-	Config       *mesh.Config
-	Calibration  *mesh.CalibrationData
-	StateTracker *mesh.StateTracker
-	MQTTClient   *mesh.MQTTClient
-	Publisher    *mesh.Publisher
+	Config          *mesh.Config
+	Calibration     *mesh.CalibrationData
+	StateTracker    *mesh.StateTracker
+	MQTTClient      *mesh.MQTTClient
+	Publisher       *mesh.Publisher
+	AutoCalibrator  *mesh.AutoCalibrator
 
 	// CLI Flags (effectively dependencies)
 	DataDir          string
@@ -956,6 +957,11 @@ func (a *App) RunService() {
 		// Initialize publisher now that we have MQTT client
 		a.Publisher = mesh.NewPublisher(mqttClient.GetClient())
 		fmt.Println("MQTT position publisher initialized")
+
+		// Initialize auto-calibrator and register docking handler
+		a.AutoCalibrator = mesh.NewAutoCalibrator(config, cache, resolvedCache, a.StateTracker)
+		mqttClient.SetDockingHandler(a.AutoCalibrator.OnDockingEvent)
+		fmt.Println("Auto-calibrator initialized (triggers on docking events)")
 	}
 
 	// 8. Start HTTP server if enabled
