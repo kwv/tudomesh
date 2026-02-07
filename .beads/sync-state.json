@@ -1,0 +1,7 @@
+{
+  "last_failure": "2026-02-06T21:33:57.659455595-06:00",
+  "failure_count": 1,
+  "backoff_until": "2026-02-06T21:34:27.659455891-06:00",
+  "needs_manual_sync": false,
+  "failure_reason": "git pull failed in worktree: exit status 1\nFrom github.com:kwv/tudomesh\n * branch            beads-sync -\u003e FETCH_HEAD\nThere are no candidates for merging among the refs that you just fetched.\nGenerally this means that you provided a wildcard refspec which had no\nmatches on the remote end.\n"
+}
