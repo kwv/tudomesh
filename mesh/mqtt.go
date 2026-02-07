@@ -264,15 +264,32 @@ func (c *MQTTClient) createStateMessageHandler(vacuumID string) mqtt.MessageHand
 		log.Printf("Received state update for %s (topic: %s, size: %d bytes)",
 			vacuumID, msg.Topic(), len(payload))
 
+		var stateValue string
+
+		// Try parsing as JSON object {"value": "..."}
 		var state statePayload
-		if err := json.Unmarshal(payload, &state); err != nil {
-			log.Printf("Error parsing state payload for %s: %v", vacuumID, err)
-			return
+		if err := json.Unmarshal(payload, &state); err == nil {
+			stateValue = state.Value
+		} else {
+			// Try parsing as JSON string "docked"
+			var plainStr string
+			if err2 := json.Unmarshal(payload, &plainStr); err2 == nil {
+				stateValue = plainStr
+				log.Printf("State payload for %s is JSON string (not object), value: %s", vacuumID, plainStr)
+			} else {
+				// Use raw string with whitespace trimmed
+				stateValue = strings.TrimSpace(string(payload))
+				if stateValue == "" {
+					log.Printf("Empty state payload for %s, skipping", vacuumID)
+					return
+				}
+				log.Printf("State payload for %s is raw string (not JSON), value: %s", vacuumID, stateValue)
+			}
 		}
 
-		log.Printf("Vacuum %s state: %s", vacuumID, state.Value)
+		log.Printf("Vacuum %s state: %s", vacuumID, stateValue)
 
-		if state.Value == "docked" {
+		if stateValue == "docked" {
 			handler := c.getDockingHandler()
 			if handler != nil {
 				handler(vacuumID)
