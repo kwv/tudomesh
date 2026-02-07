@@ -28,17 +28,23 @@ reference: vacuum1  # Use vacuum1 as the reference coordinate system
 #   * If provided, takes precedence over auto-computed rotation
 # - translation: Manual translation override in pixels {x, y}
 #   * Rarely needed - ICP usually computes this correctly
+# - apiUrl: REST API URL for fetching the vacuum's full map data (optional)
+#   * Required for auto-calibration on docking
+#   * Format: http://<vacuum-ip>/api/v2/robot/state/map
+#   * TudoMesh fetches the map via this URL when the vacuum docks
 vacuums:
   # Reference vacuum - no rotation or translation needed
   - id: vacuum1
     topic: valetudo/YourVacuumID/MapData/map-data
     color: "#FF6B6B"
+    apiUrl: "http://192.168.1.100/api/v2/robot/state/map"
 
   # Vacuum with rotation hint (recommended approach)
   - id: vacuum2
     topic: valetudo/AnotherVacuumID/MapData/map-data
     color: "#4ECDC4"
     rotation: 180  # ICP will use this as starting point
+    apiUrl: "http://192.168.1.101/api/v2/robot/state/map"
 
   # Vacuum with full manual calibration (advanced/rare)
   - id: vacuum3
@@ -48,6 +54,7 @@ vacuums:
     translation:
       x: 50
       y: -100
+    apiUrl: "http://192.168.1.102/api/v2/robot/state/map"
 
 # Calibration workflow:
 # 1. Rotation hints in config are used as ICP starting points
@@ -76,3 +83,28 @@ vacuums:
 # 4. Manual calibration (rare - only if ICP fails):
 #    - Set both rotation and translation in config.yaml
 #    - Bypasses ICP completely for that vacuum
+
+# Auto-calibration on docking:
+#
+# When a vacuum docks (returns to charger), TudoMesh can automatically
+# recalibrate its coordinate transform. This keeps alignment accurate
+# as the vacuum's map evolves over time.
+#
+# Requirements:
+#   - apiUrl must be set for each vacuum you want auto-calibrated
+#   - The vacuum must publish state updates to its StatusStateAttribute topic
+#     (auto-derived from the MapData topic)
+#
+# How it works:
+#   1. TudoMesh subscribes to valetudo/{name}/StatusStateAttribute/status
+#      (derived automatically from the MapData topic)
+#   2. When a "docked" state is received, the docking handler fires
+#   3. TudoMesh checks if recalibration is needed (30-minute debounce)
+#   4. If needed, it fetches the full map via the vacuum's apiUrl
+#   5. ICP alignment runs against the reference vacuum
+#   6. The updated transform is saved to .calibration-cache.json
+#
+# State topic derivation:
+#   MapData topic:  valetudo/rocky7/MapData/map-data
+#   State topic:    valetudo/rocky7/StatusStateAttribute/status
+#   (The last two path segments are replaced automatically)
