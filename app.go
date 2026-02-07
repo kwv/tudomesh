@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/kwv/tudomesh/mesh"
 )
@@ -254,8 +255,8 @@ func (a *App) RunRender() {
 
 		// Priority 1: Check cache
 		if cache != nil && cache.ReferenceVacuum == effectiveRef {
-			if cachedTransform, ok := cache.Vacuums[id]; ok {
-				transform = cachedTransform
+			if vc, ok := cache.Vacuums[id]; ok {
+				transform = vc.Transform
 				source = "cache"
 			}
 		}
@@ -316,9 +317,22 @@ func (a *App) RunRender() {
 	// Update cache if any transforms were recomputed
 	if needsRecalibration {
 		fmt.Printf("\nUpdating calibration cache with new transforms...\n")
+		nowUnix := time.Now().Unix()
+		vacCals := make(map[string]mesh.VacuumCalibration, len(transforms))
+		for id, t := range transforms {
+			area := 0
+			if m, ok := maps[id]; ok {
+				area = m.MetaData.TotalLayerArea
+			}
+			vacCals[id] = mesh.VacuumCalibration{
+				Transform:            t,
+				LastUpdated:          nowUnix,
+				MapAreaAtCalibration: area,
+			}
+		}
 		newCache := mesh.CalibrationData{
 			ReferenceVacuum: effectiveRef,
-			Vacuums:         transforms,
+			Vacuums:         vacCals,
 		}
 		if err := mesh.SaveCalibration(a.CalibrationCache, &newCache); err != nil {
 			log.Printf("Warning: Failed to save calibration cache: %v", err)
@@ -577,11 +591,16 @@ func (a *App) RunCalibration() {
 	fmt.Printf("  Charger: (%.0f, %.0f)\n", refCharger.X, refCharger.Y)
 
 	// Save calibration cache
+	now := time.Now().Unix()
 	cache := mesh.CalibrationData{
 		ReferenceVacuum: refID,
-		Vacuums:         make(map[string]mesh.AffineMatrix),
+		Vacuums:         make(map[string]mesh.VacuumCalibration),
 	}
-	cache.Vacuums[refID] = mesh.Identity()
+	cache.Vacuums[refID] = mesh.VacuumCalibration{
+		Transform:            mesh.Identity(),
+		LastUpdated:          now,
+		MapAreaAtCalibration: refMap.MetaData.TotalLayerArea,
+	}
 
 	// Re-run alignment to get transforms for cache
 	fmt.Println()
@@ -593,7 +612,11 @@ func (a *App) RunCalibration() {
 		}
 		config := mesh.DefaultICPConfig()
 		result := mesh.AlignMaps(m, refMap, config)
-		cache.Vacuums[id] = result.Transform
+		cache.Vacuums[id] = mesh.VacuumCalibration{
+			Transform:            result.Transform,
+			LastUpdated:          now,
+			MapAreaAtCalibration: m.MetaData.TotalLayerArea,
+		}
 		fmt.Printf("  %s: cached transform (rotation %.1f°)\n", id, math.Atan2(result.Transform.C, result.Transform.A)*180/math.Pi)
 	}
 

@@ -256,8 +256,8 @@ func TestBuildTransforms_NilCache(t *testing.T) {
 func TestBuildTransforms_WithCache(t *testing.T) {
 	customMatrix := mesh.AffineMatrix{A: 2, B: 0, Tx: 10, C: 0, D: 2, Ty: 20}
 	cache := &mesh.CalibrationData{
-		Vacuums: map[string]mesh.AffineMatrix{
-			"vac1": customMatrix,
+		Vacuums: map[string]mesh.VacuumCalibration{
+			"vac1": {Transform: customMatrix},
 			// vac2 deliberately missing -- GetTransform returns identity
 		},
 	}
@@ -537,8 +537,8 @@ func TestEndpoints_EmptyRefID_AutoSelects(t *testing.T) {
 func TestEndpoints_WithCache(t *testing.T) {
 	cache := &mesh.CalibrationData{
 		ReferenceVacuum: "vac1",
-		Vacuums: map[string]mesh.AffineMatrix{
-			"vac1": mesh.Identity(),
+		Vacuums: map[string]mesh.VacuumCalibration{
+			"vac1": {Transform: mesh.Identity()},
 		},
 	}
 	handler := newHTTPServer(populatedTracker(), cache, nil, "vac1", 0)

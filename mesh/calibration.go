@@ -61,14 +61,19 @@ func CalibrateVacuums(maps map[string]*ValetudoMap, referenceID string) (*Calibr
 		return nil, fmt.Errorf("reference vacuum %q not found", referenceID)
 	}
 
+	now := time.Now().Unix()
 	cal := &CalibrationData{
 		ReferenceVacuum: referenceID,
-		Vacuums:         make(map[string]AffineMatrix),
-		LastUpdated:     time.Now().Unix(),
+		Vacuums:         make(map[string]VacuumCalibration),
+		LastUpdated:     now,
 	}
 
 	// Reference vacuum gets identity transform
-	cal.Vacuums[referenceID] = Identity()
+	cal.Vacuums[referenceID] = VacuumCalibration{
+		Transform:            Identity(),
+		LastUpdated:          now,
+		MapAreaAtCalibration: referenceMap.MetaData.TotalLayerArea,
+	}
 
 	// Align other vacuums to reference
 	for id, vacuumMap := range maps {
@@ -78,10 +83,18 @@ func CalibrateVacuums(maps map[string]*ValetudoMap, referenceID string) (*Calibr
 
 		transform, err := AlignToReference(vacuumMap, referenceMap)
 		if err != 0 && err < 100 { // Reasonable error threshold
-			cal.Vacuums[id] = transform
+			cal.Vacuums[id] = VacuumCalibration{
+				Transform:            transform,
+				LastUpdated:          now,
+				MapAreaAtCalibration: vacuumMap.MetaData.TotalLayerArea,
+			}
 		} else {
 			// Fallback to quick charger-based alignment
-			cal.Vacuums[id] = QuickAlign(vacuumMap, referenceMap)
+			cal.Vacuums[id] = VacuumCalibration{
+				Transform:            QuickAlign(vacuumMap, referenceMap),
+				LastUpdated:          now,
+				MapAreaAtCalibration: vacuumMap.MetaData.TotalLayerArea,
+			}
 		}
 	}
 
@@ -106,16 +119,61 @@ func SelectReferenceVacuum(maps map[string]*ValetudoMap, configs []VacuumConfig)
 	return bestID
 }
 
-// GetTransform retrieves the transformation matrix for a vacuum
-// Returns identity if not found
+// GetTransform retrieves the transformation matrix for a vacuum.
+// Returns identity if not found.
 func (c *CalibrationData) GetTransform(vacuumID string) AffineMatrix {
 	if c == nil || c.Vacuums == nil {
 		return Identity()
 	}
-	if m, ok := c.Vacuums[vacuumID]; ok {
-		return m
+	if vc, ok := c.Vacuums[vacuumID]; ok {
+		return vc.Transform
 	}
 	return Identity()
+}
+
+// GetVacuumCalibration retrieves the full per-vacuum calibration metadata.
+// Returns nil if the vacuum is not calibrated.
+func (c *CalibrationData) GetVacuumCalibration(vacuumID string) *VacuumCalibration {
+	if c == nil || c.Vacuums == nil {
+		return nil
+	}
+	if vc, ok := c.Vacuums[vacuumID]; ok {
+		return &vc
+	}
+	return nil
+}
+
+// UpdateVacuumCalibration stores or replaces calibration metadata for a single vacuum.
+func (c *CalibrationData) UpdateVacuumCalibration(vacuumID string, cal VacuumCalibration) {
+	if c.Vacuums == nil {
+		c.Vacuums = make(map[string]VacuumCalibration)
+	}
+	c.Vacuums[vacuumID] = cal
+	// Keep the global LastUpdated in sync for backward-compatible readers.
+	if cal.LastUpdated > c.LastUpdated {
+		c.LastUpdated = cal.LastUpdated
+	}
+}
+
+// ShouldRecalibrate returns true when the given vacuum should be recalibrated.
+// It triggers recalibration when:
+//   - the vacuum has never been calibrated,
+//   - the map area has changed (indicating a map reset or significant change), or
+//   - more than minInterval has elapsed since the last calibration.
+//
+// The minInterval acts as a debounce to avoid recalibrating too frequently.
+func (c *CalibrationData) ShouldRecalibrate(vacuumID string, newMapArea int, minInterval time.Duration) bool {
+	if c == nil || c.Vacuums == nil {
+		return true
+	}
+	vc, ok := c.Vacuums[vacuumID]
+	if !ok || vc.LastUpdated == 0 {
+		return true // never calibrated
+	}
+	if vc.MapAreaAtCalibration != newMapArea {
+		return true // map changed
+	}
+	return time.Since(time.Unix(vc.LastUpdated, 0)) > minInterval
 }
 
 // TransformPosition transforms a vacuum's local position to world coordinates
