@@ -423,6 +423,296 @@ func extractWallFeatures(features []*Feature) []*Feature {
 	return walls
 }
 
+// DefaultFloorClusterDistance is the maximum distance (in mm) between floor
+// polygon centroids for them to be grouped into the same cluster.
+const DefaultFloorClusterDistance = 100.0
+
+// UnifyFloors clusters floor/segment polygon features by proximity, unions
+// overlapping polygons within each cluster, and returns unified features.
+//
+// Parameters:
+//   - features: floor/segment features from all vacuums (Polygon geometry expected)
+//   - sources: one FeatureSource per feature, in the same order
+//   - totalVacuums: total number of vacuums contributing to the map
+//
+// Floor polygons are clustered by centroid proximity. Within each cluster,
+// polygons are merged via UnionPolygons. Segment names are resolved by choosing
+// the name from the vacuum with the highest coverage area for that segment.
+func UnifyFloors(features []*Feature, sources []FeatureSource, totalVacuums int) []*UnifiedFeature {
+	return UnifyFloorsWithOptions(features, sources, totalVacuums, DefaultFloorClusterDistance)
+}
+
+// UnifyFloorsWithOptions is like UnifyFloors but accepts a custom clustering
+// distance parameter.
+func UnifyFloorsWithOptions(features []*Feature, sources []FeatureSource, totalVacuums int, clusterDist float64) []*UnifiedFeature {
+	if len(features) == 0 || totalVacuums <= 0 {
+		return nil
+	}
+
+	// Filter to polygon features only.
+	var polyFeatures []*Feature
+	var polySources []FeatureSource
+	for i, f := range features {
+		if f.Geometry == nil || f.Geometry.Type != GeometryPolygon {
+			continue
+		}
+		polyFeatures = append(polyFeatures, f)
+		if i < len(sources) {
+			polySources = append(polySources, sources[i])
+		}
+	}
+
+	if len(polyFeatures) == 0 {
+		return nil
+	}
+
+	// Group features by segment name. Features with the same segment name
+	// are merged together regardless of spatial proximity. Features without
+	// a segment name are grouped by spatial proximity instead.
+	namedGroups := make(map[string][]*floorEntry)
+	var unnamedFeatures []*Feature
+	var unnamedSources []FeatureSource
+
+	for i, f := range polyFeatures {
+		name := segmentName(f)
+		var src FeatureSource
+		if i < len(polySources) {
+			src = polySources[i]
+		}
+		if name != "" {
+			namedGroups[name] = append(namedGroups[name], &floorEntry{
+				feature: f,
+				source:  src,
+			})
+		} else {
+			unnamedFeatures = append(unnamedFeatures, f)
+			if i < len(polySources) {
+				unnamedSources = append(unnamedSources, polySources[i])
+			}
+		}
+	}
+
+	var result []*UnifiedFeature
+
+	// Process named groups: merge all features sharing the same segment name.
+	for name, entries := range namedGroups {
+		uf := mergeFloorGroup(entries, name, totalVacuums)
+		if uf != nil {
+			result = append(result, uf)
+		}
+	}
+
+	// Process unnamed features: cluster by proximity, then merge each cluster.
+	if len(unnamedFeatures) > 0 {
+		sourceMap := make(map[*Feature]FeatureSource, len(unnamedFeatures))
+		for i, f := range unnamedFeatures {
+			if i < len(unnamedSources) {
+				sourceMap[f] = unnamedSources[i]
+			}
+		}
+
+		clusters := ClusterByProximity(unnamedFeatures, clusterDist)
+		for _, cluster := range clusters {
+			var entries []*floorEntry
+			for _, f := range cluster {
+				src := sourceMap[f]
+				entries = append(entries, &floorEntry{feature: f, source: src})
+			}
+			uf := mergeFloorGroup(entries, "", totalVacuums)
+			if uf != nil {
+				result = append(result, uf)
+			}
+		}
+	}
+
+	// Sort by area descending for deterministic output.
+	sort.Slice(result, func(i, j int) bool {
+		areaI := floorArea(result[i])
+		areaJ := floorArea(result[j])
+		return areaI > areaJ
+	})
+
+	return result
+}
+
+// floorEntry pairs a feature with its provenance source.
+type floorEntry struct {
+	feature *Feature
+	source  FeatureSource
+}
+
+// mergeFloorGroup unions the polygons from a group of floor entries and
+// produces a single UnifiedFeature. The segment name is resolved using
+// resolveSegmentName (highest area wins). The confidence score reflects
+// how many distinct vacuums observed the floor region.
+func mergeFloorGroup(entries []*floorEntry, name string, totalVacuums int) *UnifiedFeature {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Collect polygon geometries for union.
+	var geoms []*Geometry
+	var clusterSources []FeatureSource
+	var clusterFeatures []*Feature
+	for _, e := range entries {
+		geoms = append(geoms, e.feature.Geometry)
+		clusterSources = append(clusterSources, e.source)
+		clusterFeatures = append(clusterFeatures, e.feature)
+	}
+
+	// Union all polygons into one.
+	var mergedGeom *Geometry
+	if len(geoms) == 1 {
+		mergedGeom = geoms[0]
+	} else {
+		mergedGeom = UnionPolygons(geoms)
+	}
+	if mergedGeom == nil {
+		return nil
+	}
+
+	// Count distinct vacuums.
+	vacuumSet := make(map[string]struct{})
+	for _, s := range clusterSources {
+		if s.VacuumID != "" {
+			vacuumSet[s.VacuumID] = struct{}{}
+		}
+	}
+	observationCount := len(vacuumSet)
+	confidence := float64(observationCount) / float64(totalVacuums)
+
+	// Resolve segment name: highest area wins among conflicting names.
+	resolvedName := name
+	if resolvedName == "" {
+		resolvedName = resolveSegmentName(clusterFeatures)
+	}
+
+	// Merge properties, preferring highest area source for conflicts.
+	mergedProps := mergeFloorProperties(clusterFeatures, clusterSources)
+	if resolvedName != "" {
+		mergedProps["segmentName"] = resolvedName
+	}
+	mergedProps["observationCount"] = observationCount
+	mergedProps["confidence"] = confidence
+
+	return &UnifiedFeature{
+		Geometry:         mergedGeom,
+		Properties:       mergedProps,
+		Sources:          clusterSources,
+		Confidence:       confidence,
+		ObservationCount: observationCount,
+	}
+}
+
+// resolveSegmentName picks the segment name from the feature with the highest
+// reported area. When features have conflicting names, the largest-area
+// observation is considered the most authoritative.
+func resolveSegmentName(features []*Feature) string {
+	var bestName string
+	var bestArea float64
+
+	for _, f := range features {
+		name := segmentName(f)
+		if name == "" {
+			continue
+		}
+		area := featureArea(f)
+		if bestName == "" || area > bestArea {
+			bestName = name
+			bestArea = area
+		}
+	}
+
+	return bestName
+}
+
+// segmentName extracts the segmentName property from a feature.
+func segmentName(f *Feature) string {
+	if f == nil || f.Properties == nil {
+		return ""
+	}
+	name, _ := f.Properties["segmentName"].(string)
+	return name
+}
+
+// featureArea extracts the area property from a feature.
+// Returns 0 if the property is missing or not a number.
+func featureArea(f *Feature) float64 {
+	if f == nil || f.Properties == nil {
+		return 0
+	}
+	switch v := f.Properties["area"].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	case json.Number:
+		n, _ := v.Float64()
+		return n
+	default:
+		return 0
+	}
+}
+
+// mergeFloorProperties combines properties from floor features, preferring
+// values from the feature with the highest area when keys conflict.
+func mergeFloorProperties(features []*Feature, sources []FeatureSource) map[string]interface{} {
+	merged := make(map[string]interface{})
+	bestArea := make(map[string]float64)
+
+	for i, f := range features {
+		area := featureArea(f)
+		// Fall back to ICP score if no area is set.
+		if area == 0 && i < len(sources) {
+			area = sources[i].ICPScore
+		}
+
+		for k, v := range f.Properties {
+			prev, exists := bestArea[k]
+			if !exists || area > prev {
+				merged[k] = v
+				bestArea[k] = area
+			}
+		}
+	}
+
+	return merged
+}
+
+// floorArea extracts the area from a UnifiedFeature's properties.
+func floorArea(uf *UnifiedFeature) float64 {
+	if uf == nil || uf.Properties == nil {
+		return 0
+	}
+	switch v := uf.Properties["area"].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	default:
+		return 0
+	}
+}
+
+// extractFloorFeatures filters features to only include floor/segment-type
+// features (LayerType property is "floor" or "segment" and geometry is Polygon).
+func extractFloorFeatures(features []*Feature) []*Feature {
+	var floors []*Feature
+	for _, f := range features {
+		if f.Geometry == nil {
+			continue
+		}
+		if f.Geometry.Type != GeometryPolygon {
+			continue
+		}
+		lt, _ := f.Properties["layerType"].(string)
+		if lt == "floor" || lt == "segment" || lt == "" {
+			floors = append(floors, f)
+		}
+	}
+	return floors
+}
+
 // marshalCoordinate is a test helper - kept unexported. Encodes a 2-element
 // float array to JSON for creating test geometries.
 func marshalCoordinate(coords interface{}) json.RawMessage {

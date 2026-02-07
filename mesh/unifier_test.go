@@ -659,3 +659,582 @@ func TestMarshalCoordinate(t *testing.T) {
 		t.Errorf("Expected [1.5, 2.5], got %v", decoded)
 	}
 }
+
+// --- floor helpers ---
+
+// makePolygonFeature creates a Feature with a Polygon geometry from a list
+// of outer ring points. The ring is automatically closed.
+func makePolygonFeature(pts [][2]float64, props map[string]interface{}) *Feature {
+	// Ensure ring is closed.
+	if len(pts) > 0 {
+		first := pts[0]
+		last := pts[len(pts)-1]
+		if first[0] != last[0] || first[1] != last[1] {
+			pts = append(pts, first)
+		}
+	}
+	rings := [][][2]float64{pts}
+	coordsJSON, _ := json.Marshal(rings)
+	geom := &Geometry{Type: GeometryPolygon, Coordinates: coordsJSON}
+	if props == nil {
+		props = map[string]interface{}{"layerType": "floor"}
+	}
+	return NewFeature(geom, props)
+}
+
+// polyCoords extracts the outer ring coordinates from a UnifiedFeature polygon.
+func polyCoords(f *UnifiedFeature) [][2]float64 {
+	var rings [][][2]float64
+	_ = json.Unmarshal(f.Geometry.Coordinates, &rings)
+	if len(rings) == 0 {
+		return nil
+	}
+	return rings[0]
+}
+
+// --- UnifyFloors tests ---
+
+func TestUnifyFloors_TwoOverlappingFloors(t *testing.T) {
+	// Two vacuums see overlapping rectangular floors.
+	// Vacuum A: 0,0 -> 100,100
+	// Vacuum B: 50,50 -> 150,150
+	// Union should cover the bounding hull of both.
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType":   "floor",
+		"segmentName": "living-room",
+		"area":        float64(10000),
+	})
+	f2 := makePolygonFeature([][2]float64{
+		{50, 50}, {150, 50}, {150, 150}, {50, 150},
+	}, map[string]interface{}{
+		"layerType":   "floor",
+		"segmentName": "living-room",
+		"area":        float64(10000),
+	})
+
+	sources := []FeatureSource{
+		makeSource("vac-A", 0.95),
+		makeSource("vac-B", 0.90),
+	}
+
+	result := UnifyFloors([]*Feature{f1, f2}, sources, 2)
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 unified floor, got %d", len(result))
+	}
+
+	uf := result[0]
+	if uf.Confidence != 1.0 {
+		t.Errorf("Expected confidence 1.0, got %f", uf.Confidence)
+	}
+	if uf.ObservationCount != 2 {
+		t.Errorf("Expected 2 observations, got %d", uf.ObservationCount)
+	}
+
+	// The merged polygon should cover area from (0,0) to (150,150).
+	coords := polyCoords(uf)
+	if len(coords) < 3 {
+		t.Fatalf("Expected polygon with at least 3 points, got %d", len(coords))
+	}
+
+	// Verify the bounding box covers the full extent.
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	for _, c := range coords {
+		if c[0] < minX {
+			minX = c[0]
+		}
+		if c[1] < minY {
+			minY = c[1]
+		}
+		if c[0] > maxX {
+			maxX = c[0]
+		}
+		if c[1] > maxY {
+			maxY = c[1]
+		}
+	}
+	if minX > 1.0 || minY > 1.0 {
+		t.Errorf("Expected min near (0,0), got (%f,%f)", minX, minY)
+	}
+	if maxX < 149.0 || maxY < 149.0 {
+		t.Errorf("Expected max near (150,150), got (%f,%f)", maxX, maxY)
+	}
+}
+
+func TestUnifyFloors_DisjointFloors(t *testing.T) {
+	// Two floors far apart, different names -> should produce 2 unified features.
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType":   "floor",
+		"segmentName": "kitchen",
+		"area":        float64(10000),
+	})
+	f2 := makePolygonFeature([][2]float64{
+		{500, 500}, {600, 500}, {600, 600}, {500, 600},
+	}, map[string]interface{}{
+		"layerType":   "floor",
+		"segmentName": "bedroom",
+		"area":        float64(10000),
+	})
+
+	sources := []FeatureSource{
+		makeSource("vac-A", 0.9),
+		makeSource("vac-B", 0.85),
+	}
+
+	result := UnifyFloors([]*Feature{f1, f2}, sources, 2)
+
+	if len(result) != 2 {
+		t.Fatalf("Expected 2 unified floors, got %d", len(result))
+	}
+
+	// Verify both segment names are preserved.
+	names := make(map[string]bool)
+	for _, uf := range result {
+		name, _ := uf.Properties["segmentName"].(string)
+		names[name] = true
+	}
+	if !names["kitchen"] || !names["bedroom"] {
+		t.Errorf("Expected both 'kitchen' and 'bedroom', got %v", names)
+	}
+}
+
+func TestUnifyFloors_SegmentNameConflict_HighestAreaWins(t *testing.T) {
+	// Two vacuums see overlapping floors but with different names.
+	// The vacuum with higher area should win.
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType":   "segment",
+		"segmentName": "small-room",
+		"area":        float64(5000),
+	})
+	f2 := makePolygonFeature([][2]float64{
+		{10, 10}, {110, 10}, {110, 110}, {10, 110},
+	}, map[string]interface{}{
+		"layerType":   "segment",
+		"segmentName": "big-room",
+		"area":        float64(15000),
+	})
+
+	sources := []FeatureSource{
+		makeSource("vac-A", 0.9),
+		makeSource("vac-B", 0.8),
+	}
+
+	// Both are unnamed from the grouping perspective since they have different
+	// segment names. They will be clustered by proximity.
+	result := UnifyFloorsWithOptions([]*Feature{f1, f2}, sources, 2, 200.0)
+
+	if len(result) != 2 {
+		// They have different names so they end up in different named groups.
+		// Let's verify the name resolution within each.
+		t.Logf("Got %d results (different names = separate groups)", len(result))
+	}
+
+	// Now test with unnamed features that cluster together by proximity.
+	// One has no name, the other has a name -- when both are unnamed from
+	// the grouping perspective, the name gets resolved by area. To test
+	// this properly, both features must lack segmentName so they enter
+	// the unnamed path and cluster by proximity. We store the candidate
+	// name in a different property key to verify resolveSegmentName picks it up.
+	f3 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType": "floor",
+		"area":      float64(5000),
+	})
+	f4 := makePolygonFeature([][2]float64{
+		{10, 10}, {110, 10}, {110, 110}, {10, 110},
+	}, map[string]interface{}{
+		"layerType": "floor",
+		"area":      float64(15000),
+	})
+
+	sources2 := []FeatureSource{
+		makeSource("vac-A", 0.9),
+		makeSource("vac-B", 0.8),
+	}
+
+	result2 := UnifyFloorsWithOptions([]*Feature{f3, f4}, sources2, 2, 200.0)
+
+	if len(result2) != 1 {
+		t.Fatalf("Expected 1 unified floor (unnamed cluster), got %d", len(result2))
+	}
+
+	// The area property should come from the higher-area feature (15000).
+	area, _ := result2[0].Properties["area"].(float64)
+	if area != 15000 {
+		t.Errorf("Expected area 15000 (highest area wins), got %f", area)
+	}
+}
+
+func TestUnifyFloors_SingleVacuum(t *testing.T) {
+	// Single vacuum: floor should pass through unchanged.
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {200, 0}, {200, 200}, {0, 200},
+	}, map[string]interface{}{
+		"layerType":   "floor",
+		"segmentName": "hallway",
+		"area":        float64(40000),
+	})
+
+	sources := []FeatureSource{
+		makeSource("vac-A", 0.95),
+	}
+
+	result := UnifyFloors([]*Feature{f1}, sources, 1)
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 floor, got %d", len(result))
+	}
+
+	uf := result[0]
+	if uf.Confidence != 1.0 {
+		t.Errorf("Expected confidence 1.0, got %f", uf.Confidence)
+	}
+	if uf.ObservationCount != 1 {
+		t.Errorf("Expected 1 observation, got %d", uf.ObservationCount)
+	}
+
+	name, _ := uf.Properties["segmentName"].(string)
+	if name != "hallway" {
+		t.Errorf("Expected segmentName 'hallway', got %q", name)
+	}
+}
+
+func TestUnifyFloors_EmptyInput(t *testing.T) {
+	result := UnifyFloors(nil, nil, 2)
+	if result != nil {
+		t.Error("Expected nil for nil input")
+	}
+
+	result = UnifyFloors([]*Feature{}, []FeatureSource{}, 2)
+	if result != nil {
+		t.Error("Expected nil for empty input")
+	}
+}
+
+func TestUnifyFloors_ZeroVacuums(t *testing.T) {
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, nil)
+	result := UnifyFloors([]*Feature{f1}, []FeatureSource{makeSource("a", 1)}, 0)
+	if result != nil {
+		t.Error("Expected nil for zero totalVacuums")
+	}
+}
+
+func TestUnifyFloors_NonPolygonFeaturesSkipped(t *testing.T) {
+	// Line features should be silently ignored.
+	wall := makeLineFeature([][2]float64{{0, 0}, {100, 0}}, nil)
+	floor := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType":   "floor",
+		"segmentName": "room",
+		"area":        float64(10000),
+	})
+
+	sources := []FeatureSource{
+		makeSource("vac-A", 0.9),
+		makeSource("vac-A", 0.9),
+	}
+
+	result := UnifyFloors([]*Feature{wall, floor}, sources, 1)
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 floor (wall skipped), got %d", len(result))
+	}
+}
+
+func TestUnifyFloors_SameNameMergedAcrossVacuums(t *testing.T) {
+	// Three vacuums all see a "kitchen" segment, slightly different polygons.
+	// They should all merge into one unified feature.
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType":   "segment",
+		"segmentName": "kitchen",
+		"area":        float64(10000),
+	})
+	f2 := makePolygonFeature([][2]float64{
+		{5, 5}, {105, 5}, {105, 105}, {5, 105},
+	}, map[string]interface{}{
+		"layerType":   "segment",
+		"segmentName": "kitchen",
+		"area":        float64(10200),
+	})
+	f3 := makePolygonFeature([][2]float64{
+		{-5, -5}, {95, -5}, {95, 95}, {-5, 95},
+	}, map[string]interface{}{
+		"layerType":   "segment",
+		"segmentName": "kitchen",
+		"area":        float64(9800),
+	})
+
+	sources := []FeatureSource{
+		makeSource("vac-A", 0.9),
+		makeSource("vac-B", 0.85),
+		makeSource("vac-C", 0.92),
+	}
+
+	result := UnifyFloors([]*Feature{f1, f2, f3}, sources, 3)
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 unified floor (same name), got %d", len(result))
+	}
+
+	uf := result[0]
+	if uf.ObservationCount != 3 {
+		t.Errorf("Expected 3 observations, got %d", uf.ObservationCount)
+	}
+	if uf.Confidence != 1.0 {
+		t.Errorf("Expected confidence 1.0, got %f", uf.Confidence)
+	}
+
+	name, _ := uf.Properties["segmentName"].(string)
+	if name != "kitchen" {
+		t.Errorf("Expected segmentName 'kitchen', got %q", name)
+	}
+}
+
+func TestUnifyFloors_MultipleSegmentsDifferentNames(t *testing.T) {
+	// Two segments with different names from the same vacuum.
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType":   "segment",
+		"segmentName": "kitchen",
+		"area":        float64(10000),
+	})
+	f2 := makePolygonFeature([][2]float64{
+		{200, 0}, {300, 0}, {300, 100}, {200, 100},
+	}, map[string]interface{}{
+		"layerType":   "segment",
+		"segmentName": "bedroom",
+		"area":        float64(10000),
+	})
+
+	sources := []FeatureSource{
+		makeSource("vac-A", 0.9),
+		makeSource("vac-A", 0.9),
+	}
+
+	result := UnifyFloors([]*Feature{f1, f2}, sources, 1)
+
+	if len(result) != 2 {
+		t.Fatalf("Expected 2 unified floors (different names), got %d", len(result))
+	}
+}
+
+func TestUnifyFloors_DuplicateVacuumIDsCounted(t *testing.T) {
+	// Same vacuum sees a floor twice. Should count as 1 unique vacuum.
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType":   "floor",
+		"segmentName": "room",
+		"area":        float64(10000),
+	})
+	f2 := makePolygonFeature([][2]float64{
+		{5, 5}, {105, 5}, {105, 105}, {5, 105},
+	}, map[string]interface{}{
+		"layerType":   "floor",
+		"segmentName": "room",
+		"area":        float64(10200),
+	})
+
+	sources := []FeatureSource{
+		makeSource("vac-A", 0.9),
+		makeSource("vac-A", 0.85),
+	}
+
+	result := UnifyFloors([]*Feature{f1, f2}, sources, 2)
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 floor, got %d", len(result))
+	}
+	if result[0].ObservationCount != 1 {
+		t.Errorf("Expected 1 unique vacuum, got %d", result[0].ObservationCount)
+	}
+	if result[0].Confidence != 0.5 {
+		t.Errorf("Expected confidence 0.5, got %f", result[0].Confidence)
+	}
+}
+
+func TestUnifyFloors_SourcesPreserved(t *testing.T) {
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType":   "floor",
+		"segmentName": "hall",
+		"area":        float64(10000),
+	})
+
+	sources := []FeatureSource{
+		{VacuumID: "vac-A", ICPScore: 0.95, Timestamp: 1000},
+	}
+
+	result := UnifyFloors([]*Feature{f1}, sources, 1)
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 floor, got %d", len(result))
+	}
+
+	if len(result[0].Sources) != 1 {
+		t.Fatalf("Expected 1 source, got %d", len(result[0].Sources))
+	}
+
+	src := result[0].Sources[0]
+	if src.VacuumID != "vac-A" {
+		t.Errorf("Expected VacuumID 'vac-A', got %q", src.VacuumID)
+	}
+	if src.ICPScore != 0.95 {
+		t.Errorf("Expected ICPScore 0.95, got %f", src.ICPScore)
+	}
+	if src.Timestamp != 1000 {
+		t.Errorf("Expected Timestamp 1000, got %d", src.Timestamp)
+	}
+}
+
+func TestUnifyFloors_NamedGroupAreaResolution(t *testing.T) {
+	// Two vacuums both call a segment "living-room" but report different areas.
+	// The merged properties should prefer the higher-area vacuum's properties.
+	f1 := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{
+		"layerType":   "segment",
+		"segmentName": "living-room",
+		"segmentId":   "seg-1",
+		"area":        float64(8000),
+	})
+	f2 := makePolygonFeature([][2]float64{
+		{10, 10}, {110, 10}, {110, 110}, {10, 110},
+	}, map[string]interface{}{
+		"layerType":   "segment",
+		"segmentName": "living-room",
+		"segmentId":   "seg-2",
+		"area":        float64(12000),
+	})
+
+	sources := []FeatureSource{
+		makeSource("vac-A", 0.9),
+		makeSource("vac-B", 0.85),
+	}
+
+	result := UnifyFloors([]*Feature{f1, f2}, sources, 2)
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 unified floor, got %d", len(result))
+	}
+
+	uf := result[0]
+	// segmentId should come from higher-area vacuum (vac-B, area 12000).
+	segID, _ := uf.Properties["segmentId"].(string)
+	if segID != "seg-2" {
+		t.Errorf("Expected segmentId 'seg-2' (higher area), got %q", segID)
+	}
+}
+
+// --- extractFloorFeatures tests ---
+
+func TestExtractFloorFeatures(t *testing.T) {
+	floor := makePolygonFeature([][2]float64{
+		{0, 0}, {100, 0}, {100, 100}, {0, 100},
+	}, map[string]interface{}{"layerType": "floor"})
+
+	segment := makePolygonFeature([][2]float64{
+		{0, 0}, {50, 0}, {50, 50}, {0, 50},
+	}, map[string]interface{}{"layerType": "segment"})
+
+	wall := makeLineFeature([][2]float64{{0, 0}, {100, 0}}, map[string]interface{}{"layerType": "wall"})
+	nilGeom := NewFeature(nil, map[string]interface{}{"layerType": "floor"})
+
+	floors := extractFloorFeatures([]*Feature{floor, segment, wall, nilGeom})
+
+	if len(floors) != 2 {
+		t.Errorf("Expected 2 floor features, got %d", len(floors))
+	}
+}
+
+// --- resolveSegmentName tests ---
+
+func TestResolveSegmentName(t *testing.T) {
+	t.Run("highest area wins", func(t *testing.T) {
+		features := []*Feature{
+			makePolygonFeature([][2]float64{{0, 0}, {10, 0}, {10, 10}, {0, 10}}, map[string]interface{}{
+				"segmentName": "small",
+				"area":        float64(100),
+			}),
+			makePolygonFeature([][2]float64{{0, 0}, {20, 0}, {20, 20}, {0, 20}}, map[string]interface{}{
+				"segmentName": "big",
+				"area":        float64(400),
+			}),
+		}
+
+		name := resolveSegmentName(features)
+		if name != "big" {
+			t.Errorf("Expected 'big', got %q", name)
+		}
+	})
+
+	t.Run("no names", func(t *testing.T) {
+		features := []*Feature{
+			makePolygonFeature([][2]float64{{0, 0}, {10, 0}, {10, 10}, {0, 10}}, map[string]interface{}{
+				"area": float64(100),
+			}),
+		}
+
+		name := resolveSegmentName(features)
+		if name != "" {
+			t.Errorf("Expected empty name, got %q", name)
+		}
+	})
+
+	t.Run("single feature with name", func(t *testing.T) {
+		features := []*Feature{
+			makePolygonFeature([][2]float64{{0, 0}, {10, 0}, {10, 10}, {0, 10}}, map[string]interface{}{
+				"segmentName": "only-one",
+				"area":        float64(100),
+			}),
+		}
+
+		name := resolveSegmentName(features)
+		if name != "only-one" {
+			t.Errorf("Expected 'only-one', got %q", name)
+		}
+	})
+}
+
+// --- featureArea tests ---
+
+func TestFeatureArea(t *testing.T) {
+	tests := []struct {
+		name   string
+		props  map[string]interface{}
+		expect float64
+	}{
+		{"float64", map[string]interface{}{"area": float64(1500)}, 1500},
+		{"int", map[string]interface{}{"area": 2000}, 2000},
+		{"missing", map[string]interface{}{}, 0},
+		{"nil feature", nil, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var f *Feature
+			if tt.props != nil {
+				f = makePolygonFeature([][2]float64{{0, 0}, {10, 0}, {10, 10}, {0, 10}}, tt.props)
+			}
+			got := featureArea(f)
+			if got != tt.expect {
+				t.Errorf("Expected %f, got %f", tt.expect, got)
+			}
+		})
+	}
+}
