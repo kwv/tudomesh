@@ -1,10 +1,12 @@
 package mesh
 
 import (
+	"fmt"
 	"image/color"
 	"image/png"
 	"io"
 	"math"
+	"sort"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
@@ -321,4 +323,247 @@ func (r *VectorRenderer) applyGlobalRotation(p Point, centerX, centerY float64) 
 	newX := x*math.Cos(rad) - y*math.Sin(rad)
 	newY := x*math.Sin(rad) + y*math.Cos(rad)
 	return Point{X: newX + centerX, Y: newY + centerY}
+}
+
+// RenderLiveToSVG renders a live view SVG with a single greyscale base map
+// and colored vacuum position overlays. The base map is selected using
+// SelectReferenceVacuum (largest total layer area). Each vacuum position is
+// drawn as a colored circle with the vacuum ID as a label.
+//
+// The positions parameter maps vacuum IDs to their current LivePosition.
+// Positions with coordinates outside the base map bounds are still rendered
+// (the SVG viewport is expanded to include them).
+func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*LivePosition) error {
+	if len(r.Maps) == 0 {
+		return fmt.Errorf("no maps available for live rendering")
+	}
+
+	// Select the base map (largest area).
+	baseID := SelectReferenceVacuum(r.Maps, nil)
+	baseMap := r.Maps[baseID]
+	baseTransform := r.Transforms[baseID]
+
+	// Calculate world-space bounds from the base map only.
+	minX, minY := math.MaxFloat64, math.MaxFloat64
+	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
+
+	for _, layer := range baseMap.Layers {
+		if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
+			points := PixelsToPoints(layer.Pixels)
+			for _, p := range points {
+				tp := TransformPoint(p, baseTransform)
+				worldP := Point{
+					X: tp.X * float64(baseMap.PixelSize),
+					Y: tp.Y * float64(baseMap.PixelSize),
+				}
+				if worldP.X < minX {
+					minX = worldP.X
+				}
+				if worldP.Y < minY {
+					minY = worldP.Y
+				}
+				if worldP.X > maxX {
+					maxX = worldP.X
+				}
+				if worldP.Y > maxY {
+					maxY = worldP.Y
+				}
+			}
+		}
+	}
+
+	// Expand bounds to include all vacuum positions.
+	for _, pos := range positions {
+		if pos.X < minX {
+			minX = pos.X
+		}
+		if pos.Y < minY {
+			minY = pos.Y
+		}
+		if pos.X > maxX {
+			maxX = pos.X
+		}
+		if pos.Y > maxY {
+			maxY = pos.Y
+		}
+	}
+
+	centerX := (minX + maxX) / 2
+	centerY := (minY + maxY) / 2
+
+	width := (maxX - minX) + 2*r.Padding
+	height := (maxY - minY) + 2*r.Padding
+
+	svgRenderer := svg.New(w, width, height, nil)
+
+	r.renderLiveToCanvas(svgRenderer, baseMap, baseTransform, positions,
+		minX, minY, maxX, maxY, centerX, centerY, width, height)
+
+	return svgRenderer.Close()
+}
+
+// renderLiveToCanvas draws the live view onto a canvas renderer. It renders
+// the base map in greyscale, overlays grid lines, then draws each vacuum
+// position as a colored circle with a text label.
+func (r *VectorRenderer) renderLiveToCanvas(
+	renderer canvasRenderer,
+	baseMap *ValetudoMap,
+	baseTransform AffineMatrix,
+	positions map[string]*LivePosition,
+	minX, minY, maxX, maxY, centerX, centerY, width, height float64,
+) {
+	// White background.
+	bgStyle := canvas.DefaultStyle
+	bgStyle.Fill = canvas.Paint{Color: canvas.White}
+	renderer.RenderPath(canvas.Rectangle(width, height), bgStyle, canvas.Identity)
+
+	toCanvas := func(p Point) (float64, float64) {
+		rp := r.applyGlobalRotation(p, centerX, centerY)
+		tx := (rp.X - minX) + r.Padding
+		ty := (rp.Y - minY) + r.Padding
+		return tx, ty
+	}
+
+	// Greyscale colours for the base map.
+	greyFloor := color.RGBA{R: 200, G: 200, B: 200, A: 255}
+	greyWall := color.RGBA{R: 80, G: 80, B: 80, A: 255}
+
+	// Render floor/segment layers (filled, greyscale).
+	floorStyle := canvas.DefaultStyle
+	floorStyle.Fill = canvas.Paint{Color: greyFloor}
+	floorStyle.Stroke = canvas.Paint{Color: canvas.Transparent}
+
+	for _, layer := range baseMap.Layers {
+		if layer.Type == "floor" || layer.Type == "segment" {
+			paths := VectorizeLayer(&layer, baseMap.PixelSize, 5.0)
+			for _, p := range paths {
+				cp := &canvas.Path{}
+				for i, pt := range p {
+					transformedPt := TransformPoint(pt, baseTransform)
+					worldPt := Point{
+						X: transformedPt.X * float64(baseMap.PixelSize),
+						Y: transformedPt.Y * float64(baseMap.PixelSize),
+					}
+					cx, cy := toCanvas(worldPt)
+					if i == 0 {
+						cp.MoveTo(cx, cy)
+					} else {
+						cp.LineTo(cx, cy)
+					}
+				}
+				cp.Close()
+				renderer.RenderPath(cp, floorStyle, canvas.Identity)
+			}
+		}
+	}
+
+	// Render wall layers (stroked, greyscale).
+	wallStyle := canvas.DefaultStyle
+	wallStyle.Fill = canvas.Paint{Color: canvas.Transparent}
+	wallStyle.Stroke = canvas.Paint{Color: greyWall}
+	wallStyle.StrokeWidth = 20.0
+
+	for _, layer := range baseMap.Layers {
+		if layer.Type == "wall" {
+			paths := VectorizeLayer(&layer, baseMap.PixelSize, 2.0)
+			for _, p := range paths {
+				cp := &canvas.Path{}
+				for i, pt := range p {
+					transformedPt := TransformPoint(pt, baseTransform)
+					worldPt := Point{
+						X: transformedPt.X * float64(baseMap.PixelSize),
+						Y: transformedPt.Y * float64(baseMap.PixelSize),
+					}
+					cx, cy := toCanvas(worldPt)
+					if i == 0 {
+						cp.MoveTo(cx, cy)
+					} else {
+						cp.LineTo(cx, cy)
+					}
+				}
+				renderer.RenderPath(cp, wallStyle, canvas.Identity)
+			}
+		}
+	}
+
+	// Render grid lines.
+	if r.GridSpacing > 0 {
+		gridStyle := canvas.DefaultStyle
+		gridStyle.Fill = canvas.Paint{Color: canvas.Transparent}
+		gridStyle.Stroke = canvas.Paint{Color: canvas.Gray}
+		gridStyle.StrokeWidth = 2.0
+		gridStyle.Dashes = []float64{10.0, 10.0}
+
+		for x := math.Floor(minX/r.GridSpacing) * r.GridSpacing; x <= maxX; x += r.GridSpacing {
+			gridPath := &canvas.Path{}
+			x1, y1 := toCanvas(Point{X: x, Y: minY})
+			x2, y2 := toCanvas(Point{X: x, Y: maxY})
+			gridPath.MoveTo(x1, y1)
+			gridPath.LineTo(x2, y2)
+			renderer.RenderPath(gridPath, gridStyle, canvas.Identity)
+		}
+
+		for y := math.Floor(minY/r.GridSpacing) * r.GridSpacing; y <= maxY; y += r.GridSpacing {
+			gridPath := &canvas.Path{}
+			x1, y1 := toCanvas(Point{X: minX, Y: y})
+			x2, y2 := toCanvas(Point{X: maxX, Y: y})
+			gridPath.MoveTo(x1, y1)
+			gridPath.LineTo(x2, y2)
+			renderer.RenderPath(gridPath, gridStyle, canvas.Identity)
+		}
+	}
+
+	// Render vacuum positions as colored circles.
+	// Sort by vacuum ID for deterministic rendering order.
+	vacIDs := make([]string, 0, len(positions))
+	for id := range positions {
+		vacIDs = append(vacIDs, id)
+	}
+	sort.Strings(vacIDs)
+
+	for _, id := range vacIDs {
+		pos := positions[id]
+		cx, cy := toCanvas(Point{X: pos.X, Y: pos.Y})
+		vacColor := parseHexColor(pos.Color)
+
+		// Outer circle (border).
+		outerStyle := canvas.DefaultStyle
+		outerStyle.Fill = canvas.Paint{Color: vacColor}
+		outerStyle.Stroke = canvas.Paint{Color: canvas.Black}
+		outerStyle.StrokeWidth = 8.0
+
+		outerPath := canvas.Circle(120.0)
+		outerPath = outerPath.Translate(cx, cy)
+		renderer.RenderPath(outerPath, outerStyle, canvas.Identity)
+
+		// Direction indicator: a small line from center in the heading direction.
+		rad := pos.Angle * math.Pi / 180
+		dirLen := 200.0
+		dx := dirLen * math.Cos(rad)
+		dy := dirLen * math.Sin(rad)
+
+		dirStyle := canvas.DefaultStyle
+		dirStyle.Fill = canvas.Paint{Color: canvas.Transparent}
+		dirStyle.Stroke = canvas.Paint{Color: vacColor}
+		dirStyle.StrokeWidth = 12.0
+
+		dirPath := &canvas.Path{}
+		dirPath.MoveTo(cx, cy)
+		dirPath.LineTo(cx+dx, cy+dy)
+		renderer.RenderPath(dirPath, dirStyle, canvas.Identity)
+
+		// Label: render vacuum ID as a simple marker below the circle.
+		// Full text rendering requires font loading in tdewolff/canvas.
+		// For now, render a small unique-color rectangle as an identifier tag.
+		tagStyle := canvas.DefaultStyle
+		tagStyle.Fill = canvas.Paint{Color: vacColor}
+		tagStyle.Stroke = canvas.Paint{Color: canvas.Black}
+		tagStyle.StrokeWidth = 2.0
+
+		tagWidth := 160.0
+		tagHeight := 60.0
+		tagPath := canvas.Rectangle(tagWidth, tagHeight)
+		tagPath = tagPath.Translate(cx-tagWidth/2, cy-180.0)
+		renderer.RenderPath(tagPath, tagStyle, canvas.Identity)
+	}
 }
