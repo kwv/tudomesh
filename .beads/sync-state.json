@@ -1,0 +1,7 @@
+{
+  "last_failure": "2026-02-08T08:43:56.210737481-06:00",
+  "failure_count": 1,
+  "backoff_until": "2026-02-08T08:44:26.210738397-06:00",
+  "needs_manual_sync": false,
+  "failure_reason": "git pull failed in worktree: signal: killed\nkex_exchange_identification: read: Connection timed out\r\nbanner exchange: Connection to 140.82.112.3 port 22: Connection timed out\r\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n"
+}
