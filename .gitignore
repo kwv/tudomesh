@@ -10,6 +10,9 @@ config.yaml
 .beads/
 .mcp.json
 
+# Agent workspace (multi-agent support)
+.claude
+
 # Git worktrees
 .worktrees/
 
