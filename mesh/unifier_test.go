@@ -1238,3 +1238,414 @@ func TestFeatureArea(t *testing.T) {
 		})
 	}
 }
+
+// --- Outlier Detection tests ---
+
+// makeUnifiedFeature creates a UnifiedFeature with the given geometry, sources,
+// and observation count for testing.
+func makeUnifiedFeature(geom *Geometry, sources []FeatureSource, confidence float64, obsCount int) *UnifiedFeature {
+	return &UnifiedFeature{
+		Geometry:         geom,
+		Properties:       map[string]interface{}{},
+		Sources:          sources,
+		Confidence:       confidence,
+		ObservationCount: obsCount,
+	}
+}
+
+func TestDetectOutliers_GhostRoom(t *testing.T) {
+	// Feature seen by only 1 vacuum out of 3 should be flagged as ghost room.
+	ghostGeom := PathToLineString(Path{{X: 0, Y: 0}, {X: 100, Y: 0}})
+	goodGeom := PathToLineString(Path{{X: 10, Y: 10}, {X: 110, Y: 10}})
+
+	ghost := makeUnifiedFeature(ghostGeom, []FeatureSource{
+		makeSource("vac-A", 0.95),
+	}, 1.0/3.0, 1)
+
+	good := makeUnifiedFeature(goodGeom, []FeatureSource{
+		makeSource("vac-A", 0.95),
+		makeSource("vac-B", 0.90),
+		makeSource("vac-C", 0.85),
+	}, 1.0, 3)
+
+	config := DefaultOutlierConfig(3)
+	retained, outliers := DetectOutliers([]*UnifiedFeature{ghost, good}, config)
+
+	if len(retained) != 1 {
+		t.Fatalf("Expected 1 retained feature, got %d", len(retained))
+	}
+	if len(outliers) != 1 {
+		t.Fatalf("Expected 1 outlier, got %d", len(outliers))
+	}
+
+	// Verify the ghost room has the correct reason.
+	found := false
+	for _, r := range outliers[0].Reasons {
+		if r == OutlierGhostRoom {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Expected ghost_room reason, got %v", outliers[0].Reasons)
+	}
+}
+
+func TestDetectOutliers_LowICPConfidence(t *testing.T) {
+	// Feature seen by 1 vacuum with very low ICP score.
+	// With TotalVacuums=2, 1 vacuum with low ICP -> weighted 0.5/2 = 0.25 < 0.3 threshold.
+	geom := PathToLineString(Path{{X: 0, Y: 0}, {X: 100, Y: 0}})
+
+	lowICP := makeUnifiedFeature(geom, []FeatureSource{
+		makeSource("vac-A", 0.2), // below minICPScore of 0.5
+	}, 0.5, 1)
+
+	config := DefaultOutlierConfig(2)
+	retained, outliers := DetectOutliers([]*UnifiedFeature{lowICP}, config)
+
+	if len(retained) != 0 {
+		t.Errorf("Expected 0 retained, got %d", len(retained))
+	}
+	if len(outliers) != 1 {
+		t.Fatalf("Expected 1 outlier, got %d", len(outliers))
+	}
+
+	hasLowConf := false
+	for _, r := range outliers[0].Reasons {
+		if r == OutlierLowConfidence {
+			hasLowConf = true
+		}
+	}
+	if !hasLowConf {
+		t.Errorf("Expected low_confidence reason, got %v", outliers[0].Reasons)
+	}
+}
+
+func TestDetectOutliers_SpatialIsolation(t *testing.T) {
+	// Many features clustered near origin, one extremely far away.
+	// With enough near features the centroid stays close to origin, so the
+	// far feature's distance exceeds 3x the mean distance.
+	mkSources := func(ids ...string) []FeatureSource {
+		var s []FeatureSource
+		for _, id := range ids {
+			s = append(s, makeSource(id, 0.95))
+		}
+		return s
+	}
+
+	var features []*UnifiedFeature
+	// 10 features near origin, spread across a small area
+	for i := 0; i < 10; i++ {
+		x := float64(i * 5)
+		y := float64(i * 3)
+		geom := PathToLineString(Path{{X: x, Y: y}, {X: x + 10, Y: y}})
+		features = append(features, makeUnifiedFeature(geom, mkSources("a", "b", "c"), 1.0, 3))
+	}
+	// 1 feature extremely far away
+	farGeom := PathToLineString(Path{{X: 1000000, Y: 1000000}, {X: 1000010, Y: 1000000}})
+	features = append(features, makeUnifiedFeature(farGeom, mkSources("a", "b", "c"), 1.0, 3))
+
+	config := DefaultOutlierConfig(3)
+	retained, outliers := DetectOutliers(features, config)
+
+	if len(retained) != 10 {
+		t.Errorf("Expected 10 retained, got %d", len(retained))
+	}
+	if len(outliers) != 1 {
+		t.Fatalf("Expected 1 outlier (isolated), got %d", len(outliers))
+	}
+
+	hasIsolated := false
+	for _, r := range outliers[0].Reasons {
+		if r == OutlierIsolated {
+			hasIsolated = true
+		}
+	}
+	if !hasIsolated {
+		t.Errorf("Expected isolated reason, got %v", outliers[0].Reasons)
+	}
+}
+
+func TestDetectOutliers_MultipleReasons(t *testing.T) {
+	// Feature that is both a ghost room AND spatially isolated AND low confidence.
+	// Use many near features so the centroid stays near origin.
+	goodSources := []FeatureSource{
+		makeSource("a", 0.95),
+		makeSource("b", 0.90),
+		makeSource("c", 0.85),
+	}
+
+	var features []*UnifiedFeature
+	for i := 0; i < 10; i++ {
+		x := float64(i * 5)
+		y := float64(i * 3)
+		geom := PathToLineString(Path{{X: x, Y: y}, {X: x + 10, Y: y}})
+		features = append(features, makeUnifiedFeature(geom, goodSources, 1.0, 3))
+	}
+
+	// Add the far ghost with low ICP
+	farGhostGeom := PathToLineString(Path{{X: 5000000, Y: 5000000}, {X: 5000010, Y: 5000000}})
+	features = append(features, makeUnifiedFeature(farGhostGeom, []FeatureSource{
+		makeSource("a", 0.2), // low ICP, single vacuum
+	}, 1.0/3.0, 1))
+
+	config := DefaultOutlierConfig(3)
+	retained, outliers := DetectOutliers(features, config)
+
+	if len(retained) != 10 {
+		t.Errorf("Expected 10 retained, got %d", len(retained))
+	}
+	if len(outliers) != 1 {
+		t.Fatalf("Expected 1 outlier, got %d", len(outliers))
+	}
+
+	// Should have all three reasons.
+	reasonSet := make(map[OutlierReason]bool)
+	for _, r := range outliers[0].Reasons {
+		reasonSet[r] = true
+	}
+	if !reasonSet[OutlierGhostRoom] {
+		t.Error("Expected ghost_room reason")
+	}
+	if !reasonSet[OutlierLowConfidence] {
+		t.Error("Expected low_confidence reason")
+	}
+	if !reasonSet[OutlierIsolated] {
+		t.Error("Expected isolated reason")
+	}
+}
+
+func TestDetectOutliers_AllGood(t *testing.T) {
+	// All features have high confidence, multiple vacuums, not isolated.
+	geom1 := PathToLineString(Path{{X: 0, Y: 0}, {X: 100, Y: 0}})
+	geom2 := PathToLineString(Path{{X: 50, Y: 50}, {X: 150, Y: 50}})
+
+	features := []*UnifiedFeature{
+		makeUnifiedFeature(geom1, []FeatureSource{
+			makeSource("a", 0.95),
+			makeSource("b", 0.90),
+		}, 1.0, 2),
+		makeUnifiedFeature(geom2, []FeatureSource{
+			makeSource("a", 0.95),
+			makeSource("b", 0.90),
+		}, 1.0, 2),
+	}
+
+	config := DefaultOutlierConfig(2)
+	retained, outliers := DetectOutliers(features, config)
+
+	if len(retained) != 2 {
+		t.Errorf("Expected 2 retained, got %d", len(retained))
+	}
+	if len(outliers) != 0 {
+		t.Errorf("Expected 0 outliers, got %d", len(outliers))
+	}
+}
+
+func TestDetectOutliers_EmptyInput(t *testing.T) {
+	retained, outliers := DetectOutliers(nil, DefaultOutlierConfig(3))
+	if retained != nil {
+		t.Error("Expected nil retained for nil input")
+	}
+	if outliers != nil {
+		t.Error("Expected nil outliers for nil input")
+	}
+}
+
+func TestDetectOutliers_SingleVacuumSystem(t *testing.T) {
+	// With only 1 vacuum, ghost room detection should not trigger.
+	geom := PathToLineString(Path{{X: 0, Y: 0}, {X: 100, Y: 0}})
+
+	features := []*UnifiedFeature{
+		makeUnifiedFeature(geom, []FeatureSource{
+			makeSource("a", 0.95),
+		}, 1.0, 1),
+	}
+
+	config := DefaultOutlierConfig(1)
+	retained, outliers := DetectOutliers(features, config)
+
+	if len(retained) != 1 {
+		t.Errorf("Expected 1 retained, got %d", len(retained))
+	}
+	if len(outliers) != 0 {
+		t.Errorf("Expected 0 outliers for single vacuum, got %d", len(outliers))
+	}
+}
+
+func TestDetectOutliers_CustomConfig(t *testing.T) {
+	// Use a very high confidence threshold to filter more aggressively.
+	geom1 := PathToLineString(Path{{X: 0, Y: 0}, {X: 100, Y: 0}})
+	geom2 := PathToLineString(Path{{X: 10, Y: 10}, {X: 110, Y: 10}})
+
+	features := []*UnifiedFeature{
+		makeUnifiedFeature(geom1, []FeatureSource{
+			makeSource("a", 0.95),
+			makeSource("b", 0.90),
+		}, 1.0, 2),
+		makeUnifiedFeature(geom2, []FeatureSource{
+			makeSource("a", 0.95),
+		}, 0.5, 1), // 1 of 2 vacuums
+	}
+
+	config := OutlierConfig{
+		ConfidenceThreshold: 0.8, // very aggressive
+		IsolationMultiplier: 3.0,
+		MinICPScore:         0.5,
+		TotalVacuums:        2,
+	}
+	retained, outliers := DetectOutliers(features, config)
+
+	if len(retained) != 1 {
+		t.Errorf("Expected 1 retained with high threshold, got %d", len(retained))
+	}
+	if len(outliers) != 1 {
+		t.Errorf("Expected 1 outlier with high threshold, got %d", len(outliers))
+	}
+}
+
+// --- ComputeConfidenceWeighted tests ---
+
+func TestComputeConfidenceWeighted(t *testing.T) {
+	tests := []struct {
+		name         string
+		sources      []FeatureSource
+		totalVacuums int
+		minICP       float64
+		expect       float64
+	}{
+		{
+			name: "all high ICP",
+			sources: []FeatureSource{
+				makeSource("a", 0.9),
+				makeSource("b", 0.8),
+			},
+			totalVacuums: 2,
+			minICP:       0.5,
+			expect:       1.0, // 2 vacuums * 1.0 weight / 2
+		},
+		{
+			name: "one low ICP",
+			sources: []FeatureSource{
+				makeSource("a", 0.9),
+				makeSource("b", 0.3), // below minICP
+			},
+			totalVacuums: 2,
+			minICP:       0.5,
+			expect:       0.75, // (1.0 + 0.5) / 2
+		},
+		{
+			name: "all low ICP",
+			sources: []FeatureSource{
+				makeSource("a", 0.2),
+				makeSource("b", 0.1),
+			},
+			totalVacuums: 2,
+			minICP:       0.5,
+			expect:       0.5, // (0.5 + 0.5) / 2
+		},
+		{
+			name: "duplicate vacuum takes best score",
+			sources: []FeatureSource{
+				makeSource("a", 0.3), // low
+				makeSource("a", 0.9), // high - should win
+			},
+			totalVacuums: 2,
+			minICP:       0.5,
+			expect:       0.5, // 1 unique vacuum * 1.0 weight / 2
+		},
+		{
+			name:         "empty sources",
+			sources:      nil,
+			totalVacuums: 2,
+			minICP:       0.5,
+			expect:       0,
+		},
+		{
+			name: "zero vacuums",
+			sources: []FeatureSource{
+				makeSource("a", 0.9),
+			},
+			totalVacuums: 0,
+			minICP:       0.5,
+			expect:       0,
+		},
+		{
+			name: "single low ICP of three",
+			sources: []FeatureSource{
+				makeSource("a", 0.2),
+			},
+			totalVacuums: 3,
+			minICP:       0.5,
+			expect:       0.5 / 3.0, // ~0.167
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ComputeConfidenceWeighted(tt.sources, tt.totalVacuums, tt.minICP)
+			if math.Abs(got-tt.expect) > 0.001 {
+				t.Errorf("Expected %f, got %f", tt.expect, got)
+			}
+		})
+	}
+}
+
+// --- FilterByConfidence tests ---
+
+func TestFilterByConfidence(t *testing.T) {
+	geom := PathToLineString(Path{{X: 0, Y: 0}, {X: 100, Y: 0}})
+
+	features := []*UnifiedFeature{
+		{Geometry: geom, Confidence: 0.9},
+		{Geometry: geom, Confidence: 0.5},
+		{Geometry: geom, Confidence: 0.2},
+		{Geometry: geom, Confidence: 0.1},
+	}
+
+	t.Run("threshold 0.3", func(t *testing.T) {
+		result := FilterByConfidence(features, 0.3)
+		if len(result) != 2 {
+			t.Errorf("Expected 2 features above 0.3, got %d", len(result))
+		}
+	})
+
+	t.Run("threshold 0.0", func(t *testing.T) {
+		result := FilterByConfidence(features, 0.0)
+		if len(result) != 4 {
+			t.Errorf("Expected 4 features above 0.0, got %d", len(result))
+		}
+	})
+
+	t.Run("threshold 1.0", func(t *testing.T) {
+		result := FilterByConfidence(features, 1.0)
+		if result != nil {
+			t.Errorf("Expected nil for threshold 1.0, got %d", len(result))
+		}
+	})
+
+	t.Run("empty input", func(t *testing.T) {
+		result := FilterByConfidence(nil, 0.3)
+		if result != nil {
+			t.Error("Expected nil for nil input")
+		}
+	})
+}
+
+// --- DefaultOutlierConfig tests ---
+
+func TestDefaultOutlierConfig(t *testing.T) {
+	config := DefaultOutlierConfig(5)
+
+	if config.ConfidenceThreshold != DefaultOutlierConfidenceThreshold {
+		t.Errorf("Expected threshold %f, got %f", DefaultOutlierConfidenceThreshold, config.ConfidenceThreshold)
+	}
+	if config.IsolationMultiplier != DefaultIsolationDistanceMultiplier {
+		t.Errorf("Expected multiplier %f, got %f", DefaultIsolationDistanceMultiplier, config.IsolationMultiplier)
+	}
+	if config.MinICPScore != 0.5 {
+		t.Errorf("Expected MinICPScore 0.5, got %f", config.MinICPScore)
+	}
+	if config.TotalVacuums != 5 {
+		t.Errorf("Expected TotalVacuums 5, got %d", config.TotalVacuums)
+	}
+}

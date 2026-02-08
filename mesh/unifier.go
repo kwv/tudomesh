@@ -713,6 +713,221 @@ func extractFloorFeatures(features []*Feature) []*Feature {
 	return floors
 }
 
+// --- Outlier Detection ---
+
+// DefaultOutlierConfidenceThreshold is the minimum confidence score a feature
+// must have to avoid being flagged as an outlier. Features below this threshold
+// are excluded from the unified map.
+const DefaultOutlierConfidenceThreshold = 0.3
+
+// DefaultIsolationDistanceMultiplier controls how far a feature's centroid must
+// be from the map centroid (as a multiple of the mean distance) to be considered
+// spatially isolated.
+const DefaultIsolationDistanceMultiplier = 3.0
+
+// OutlierConfig holds configurable thresholds for outlier detection.
+type OutlierConfig struct {
+	// ConfidenceThreshold is the minimum confidence score; features below
+	// this value are excluded. Default: 0.3.
+	ConfidenceThreshold float64
+
+	// IsolationMultiplier is the factor of mean centroid distance beyond which
+	// a feature is considered spatially isolated. Default: 3.0.
+	IsolationMultiplier float64
+
+	// MinICPScore is the minimum ICP alignment score for a source to be
+	// considered high quality. Sources below this contribute less to
+	// confidence. Default: 0.5.
+	MinICPScore float64
+
+	// TotalVacuums is the total number of vacuums in the system. Required
+	// for computing observation-based confidence.
+	TotalVacuums int
+}
+
+// DefaultOutlierConfig returns an OutlierConfig with sensible defaults.
+func DefaultOutlierConfig(totalVacuums int) OutlierConfig {
+	return OutlierConfig{
+		ConfidenceThreshold: DefaultOutlierConfidenceThreshold,
+		IsolationMultiplier: DefaultIsolationDistanceMultiplier,
+		MinICPScore:         0.5,
+		TotalVacuums:        totalVacuums,
+	}
+}
+
+// OutlierReason describes why a feature was flagged as an outlier.
+type OutlierReason string
+
+const (
+	// OutlierGhostRoom indicates the feature was observed by only one vacuum.
+	OutlierGhostRoom OutlierReason = "ghost_room"
+
+	// OutlierLowConfidence indicates the feature's weighted confidence fell
+	// below the configured threshold.
+	OutlierLowConfidence OutlierReason = "low_confidence"
+
+	// OutlierIsolated indicates the feature is spatially far from the map
+	// centroid relative to other features.
+	OutlierIsolated OutlierReason = "isolated"
+)
+
+// OutlierResult describes a feature that was flagged as an outlier.
+type OutlierResult struct {
+	Feature    *UnifiedFeature `json:"feature"`
+	Reasons    []OutlierReason `json:"reasons"`
+	Confidence float64         `json:"confidence"`
+}
+
+// DetectOutliers examines a slice of unified features and returns two slices:
+// retained features that pass quality checks, and outlier results for those
+// that do not. A feature is flagged if any of the following hold:
+//
+//   - Ghost room: observed by only 1 vacuum when TotalVacuums > 1
+//   - Low confidence: ICP-weighted confidence is below ConfidenceThreshold
+//   - Spatially isolated: centroid distance from map center exceeds
+//     IsolationMultiplier * mean distance
+//
+// Features may carry multiple reasons simultaneously.
+func DetectOutliers(features []*UnifiedFeature, config OutlierConfig) (retained []*UnifiedFeature, outliers []OutlierResult) {
+	if len(features) == 0 {
+		return nil, nil
+	}
+
+	if config.TotalVacuums <= 0 {
+		config.TotalVacuums = 1
+	}
+
+	// Compute the map-wide centroid and per-feature centroids.
+	centroids := make([]orb.Point, len(features))
+	var sumX, sumY float64
+	validCount := 0
+	for i, f := range features {
+		if c, ok := geometryCentroid(f.Geometry); ok {
+			centroids[i] = c
+			sumX += c[0]
+			sumY += c[1]
+			validCount++
+		}
+	}
+
+	var mapCentroid orb.Point
+	if validCount > 0 {
+		mapCentroid = orb.Point{sumX / float64(validCount), sumY / float64(validCount)}
+	}
+
+	// Compute distances from each feature centroid to the map centroid.
+	distances := make([]float64, len(features))
+	var totalDist float64
+	for i := range features {
+		dx := centroids[i][0] - mapCentroid[0]
+		dy := centroids[i][1] - mapCentroid[1]
+		distances[i] = math.Hypot(dx, dy)
+		totalDist += distances[i]
+	}
+
+	var meanDist float64
+	if validCount > 0 {
+		meanDist = totalDist / float64(validCount)
+	}
+
+	isolationThreshold := config.IsolationMultiplier * meanDist
+
+	for i, f := range features {
+		var reasons []OutlierReason
+
+		// 1. Ghost room: seen by only 1 vacuum when multiple exist.
+		if config.TotalVacuums > 1 && f.ObservationCount <= 1 {
+			reasons = append(reasons, OutlierGhostRoom)
+		}
+
+		// 2. Compute ICP-weighted confidence.
+		weightedConf := ComputeConfidenceWeighted(f.Sources, config.TotalVacuums, config.MinICPScore)
+
+		if weightedConf < config.ConfidenceThreshold {
+			reasons = append(reasons, OutlierLowConfidence)
+		}
+
+		// 3. Spatial isolation.
+		if meanDist > 0 && distances[i] > isolationThreshold {
+			reasons = append(reasons, OutlierIsolated)
+		}
+
+		if len(reasons) > 0 {
+			outliers = append(outliers, OutlierResult{
+				Feature:    f,
+				Reasons:    reasons,
+				Confidence: weightedConf,
+			})
+		} else {
+			retained = append(retained, f)
+		}
+	}
+
+	return retained, outliers
+}
+
+// ComputeConfidenceWeighted calculates a confidence score that accounts for
+// both observation coverage and ICP alignment quality. It extends
+// ComputeConfidence by applying a quality penalty: sources with an ICP score
+// below minICPScore are counted at half weight.
+//
+// The formula is:
+//
+//	weightedCount = sum(weight_i for each unique vacuum)
+//	weight_i = 1.0 if best ICP score for vacuum >= minICPScore, else 0.5
+//	confidence = weightedCount / totalVacuums
+//
+// This means a vacuum with poor ICP alignment contributes only half as much
+// confidence as one with good alignment.
+func ComputeConfidenceWeighted(sources []FeatureSource, totalVacuums int, minICPScore float64) float64 {
+	if totalVacuums <= 0 || len(sources) == 0 {
+		return 0
+	}
+
+	// For each unique vacuum, take the best ICP score among its observations.
+	bestScores := make(map[string]float64)
+	for _, s := range sources {
+		if s.VacuumID == "" {
+			continue
+		}
+		if prev, ok := bestScores[s.VacuumID]; !ok || s.ICPScore > prev {
+			bestScores[s.VacuumID] = s.ICPScore
+		}
+	}
+
+	var weightedCount float64
+	for _, score := range bestScores {
+		if score >= minICPScore {
+			weightedCount += 1.0
+		} else {
+			weightedCount += 0.5
+		}
+	}
+
+	return weightedCount / float64(totalVacuums)
+}
+
+// FilterByConfidence removes features whose confidence score falls below the
+// given threshold. This is a convenience function for post-processing unified
+// features independently of full outlier detection.
+func FilterByConfidence(features []*UnifiedFeature, threshold float64) []*UnifiedFeature {
+	if len(features) == 0 {
+		return nil
+	}
+
+	result := make([]*UnifiedFeature, 0, len(features))
+	for _, f := range features {
+		if f.Confidence >= threshold {
+			result = append(result, f)
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 // marshalCoordinate is a test helper - kept unexported. Encodes a 2-element
 // float array to JSON for creating test geometries.
 func marshalCoordinate(coords interface{}) json.RawMessage {
