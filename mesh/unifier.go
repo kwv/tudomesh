@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/simplify"
 )
 
 // UnifiedMap represents a composite map built from multiple vacuum observations.
@@ -933,4 +934,297 @@ func FilterByConfidence(features []*UnifiedFeature, threshold float64) []*Unifie
 func marshalCoordinate(coords interface{}) json.RawMessage {
 	b, _ := json.Marshal(coords)
 	return b
+}
+
+// --- Incremental Refinement ---
+
+// DefaultRefinementWeight controls how much weight the new observation gets
+// relative to the previous observation when blending geometries.
+// A value of 0.3 means the new observation contributes 30% and the previous
+// 70%, providing gradual convergence.
+const DefaultRefinementWeight = 0.3
+
+// DefaultWallSimplifyTolerance is the Douglas-Peucker tolerance (in mm)
+// applied to wall geometries after unification.
+const DefaultWallSimplifyTolerance = 10.0
+
+// DefaultFloorSimplifyTolerance is the Douglas-Peucker tolerance (in mm)
+// applied to floor/segment polygon geometries after unification.
+const DefaultFloorSimplifyTolerance = 20.0
+
+// DefaultGridSnap is the grid spacing (in mm) for snapping vertices to reduce
+// noise in unified features.
+const DefaultGridSnap = 10.0
+
+// refineFeatures blends previous unified features with newly computed ones
+// using weighted averaging. Features are matched by proximity of their
+// geometry centroids. Unmatched new features are appended as-is.
+func refineFeatures(previous, current []*UnifiedFeature) []*UnifiedFeature {
+	if len(previous) == 0 {
+		return current
+	}
+	if len(current) == 0 {
+		return current
+	}
+
+	// Build centroid index for previous features.
+	type indexed struct {
+		feature  *UnifiedFeature
+		centroid orb.Point
+		used     bool
+	}
+	prevIdx := make([]indexed, len(previous))
+	for i, f := range previous {
+		c, _ := geometryCentroid(f.Geometry)
+		prevIdx[i] = indexed{feature: f, centroid: c}
+	}
+
+	result := make([]*UnifiedFeature, 0, len(current))
+
+	for _, cur := range current {
+		curCentroid, curOk := geometryCentroid(cur.Geometry)
+		if !curOk {
+			result = append(result, cur)
+			continue
+		}
+
+		// Find the closest previous feature.
+		bestDist := math.MaxFloat64
+		bestIdx := -1
+		for i, prev := range prevIdx {
+			if prev.used {
+				continue
+			}
+			dist := math.Hypot(curCentroid[0]-prev.centroid[0], curCentroid[1]-prev.centroid[1])
+			if dist < bestDist {
+				bestDist = dist
+				bestIdx = i
+			}
+		}
+
+		// Match threshold: features within 200mm are considered the same.
+		const matchThreshold = 200.0
+		if bestIdx >= 0 && bestDist <= matchThreshold {
+			prevIdx[bestIdx].used = true
+			blended := blendGeometry(prevIdx[bestIdx].feature.Geometry, cur.Geometry, DefaultRefinementWeight)
+			if blended != nil {
+				cur.Geometry = blended
+			}
+			// Update observation count to accumulate.
+			cur.ObservationCount = max(cur.ObservationCount, prevIdx[bestIdx].feature.ObservationCount)
+		}
+
+		result = append(result, cur)
+	}
+
+	return result
+}
+
+// blendGeometry interpolates between two geometries of the same type.
+// The weight parameter (0-1) controls how much the new geometry contributes.
+// Returns nil if the geometries cannot be blended.
+func blendGeometry(old, new_ *Geometry, weight float64) *Geometry {
+	if old == nil || new_ == nil || old.Type != new_.Type {
+		return new_
+	}
+
+	switch old.Type {
+	case GeometryLineString:
+		return blendLineStrings(old, new_, weight)
+	case GeometryPolygon:
+		return blendPolygons(old, new_, weight)
+	default:
+		return new_
+	}
+}
+
+// blendLineStrings interpolates between two LineString geometries by
+// resampling both to the same number of points and blending coordinates.
+func blendLineStrings(old, new_ *Geometry, weight float64) *Geometry {
+	oldLS := orbLineString(old)
+	newLS := orbLineString(new_)
+	if oldLS == nil || newLS == nil {
+		return new_
+	}
+
+	// Resample both to the same number of points.
+	n := max(len(oldLS), len(newLS))
+	if n < 2 {
+		n = 2
+	}
+	if n > 100 {
+		n = 100
+	}
+
+	oldResampled := resampleLine(oldLS, n)
+	newResampled := resampleLine(newLS, n)
+
+	blended := make(orb.LineString, n)
+	oldWeight := 1.0 - weight
+	for i := 0; i < n; i++ {
+		blended[i] = orb.Point{
+			oldResampled[i][0]*oldWeight + newResampled[i][0]*weight,
+			oldResampled[i][1]*oldWeight + newResampled[i][1]*weight,
+		}
+	}
+
+	return lineStringToGeometry(blended)
+}
+
+// blendPolygons interpolates between two Polygon geometries by blending
+// the outer ring vertices. Only the outer ring is blended; inner rings
+// are taken from the new geometry.
+func blendPolygons(old, new_ *Geometry, weight float64) *Geometry {
+	oldPoly := orbPolygon(old)
+	newPoly := orbPolygon(new_)
+	if oldPoly == nil || newPoly == nil || len(oldPoly) == 0 || len(newPoly) == 0 {
+		return new_
+	}
+
+	oldRing := oldPoly[0]
+	newRing := newPoly[0]
+	if len(oldRing) < 3 || len(newRing) < 3 {
+		return new_
+	}
+
+	// Resample both outer rings to the same number of points.
+	n := max(len(oldRing), len(newRing))
+	if n > 200 {
+		n = 200
+	}
+
+	oldResampled := resampleRing(oldRing, n)
+	newResampled := resampleRing(newRing, n)
+
+	blendedRing := make(orb.Ring, n)
+	oldWeight := 1.0 - weight
+	for i := 0; i < n; i++ {
+		blendedRing[i] = orb.Point{
+			oldResampled[i][0]*oldWeight + newResampled[i][0]*weight,
+			oldResampled[i][1]*oldWeight + newResampled[i][1]*weight,
+		}
+	}
+
+	// Build result polygon with blended outer ring and new inner rings.
+	result := make(orb.Polygon, 0, len(newPoly))
+	result = append(result, blendedRing)
+	if len(newPoly) > 1 {
+		result = append(result, newPoly[1:]...)
+	}
+
+	return polygonToGeometry(result)
+}
+
+// resampleRing resamples a polygon ring to n equidistant points.
+// The ring is treated as a closed loop.
+func resampleRing(ring orb.Ring, n int) []orb.Point {
+	if len(ring) < 2 || n < 3 {
+		pts := make([]orb.Point, n)
+		if len(ring) > 0 {
+			for i := range pts {
+				pts[i] = ring[0]
+			}
+		}
+		return pts
+	}
+
+	// Convert ring to line string for resampling.
+	ls := make(orb.LineString, len(ring))
+	copy(ls, ring)
+
+	// Ensure the ring is closed for arc length computation.
+	if len(ls) > 0 && (ls[0][0] != ls[len(ls)-1][0] || ls[0][1] != ls[len(ls)-1][1]) {
+		ls = append(ls, ls[0])
+	}
+
+	return resampleLine(ls, n)
+}
+
+// simplifyUnifiedFeatures applies Douglas-Peucker simplification to all
+// features in the slice. LineString features are simplified directly;
+// Polygon features have their outer ring simplified.
+func simplifyUnifiedFeatures(features []*UnifiedFeature, tolerance float64) {
+	if tolerance <= 0 {
+		return
+	}
+	for _, f := range features {
+		if f.Geometry == nil {
+			continue
+		}
+		switch f.Geometry.Type {
+		case GeometryLineString:
+			simplified := SimplifyLineString(f.Geometry, tolerance)
+			if simplified != nil {
+				f.Geometry = simplified
+			}
+		case GeometryPolygon:
+			simplified := simplifyPolygon(f.Geometry, tolerance)
+			if simplified != nil {
+				f.Geometry = simplified
+			}
+		}
+	}
+}
+
+// simplifyPolygon applies Douglas-Peucker simplification to a polygon's
+// outer ring while preserving the polygon structure.
+func simplifyPolygon(geom *Geometry, tolerance float64) *Geometry {
+	poly := orbPolygon(geom)
+	if len(poly) == 0 {
+		return nil
+	}
+
+	simplified := make(orb.Polygon, len(poly))
+	for i, ring := range poly {
+		ls := orb.LineString(ring)
+		s := simplify.DouglasPeucker(tolerance).Simplify(ls.Clone())
+		result, ok := s.(orb.LineString)
+		if !ok || len(result) < 3 {
+			simplified[i] = ring
+			continue
+		}
+		simplified[i] = orb.Ring(result)
+	}
+
+	return polygonToGeometry(simplified)
+}
+
+// snapToGrid rounds all geometry coordinates to the nearest grid point.
+// This reduces floating-point noise from repeated blending operations.
+func snapToGrid(geom *Geometry, gridSize float64) *Geometry {
+	if geom == nil || gridSize <= 0 {
+		return geom
+	}
+
+	snap := func(v float64) float64 {
+		return math.Round(v/gridSize) * gridSize
+	}
+
+	switch geom.Type {
+	case GeometryLineString:
+		ls := orbLineString(geom)
+		if ls == nil {
+			return geom
+		}
+		for i := range ls {
+			ls[i] = orb.Point{snap(ls[i][0]), snap(ls[i][1])}
+		}
+		return lineStringToGeometry(ls)
+
+	case GeometryPolygon:
+		poly := orbPolygon(geom)
+		if poly == nil {
+			return geom
+		}
+		for i, ring := range poly {
+			for j := range ring {
+				ring[j] = orb.Point{snap(ring[j][0]), snap(ring[j][1])}
+			}
+			poly[i] = ring
+		}
+		return polygonToGeometry(poly)
+
+	default:
+		return geom
+	}
 }
