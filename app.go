@@ -998,9 +998,13 @@ func (a *App) RunService() {
 
 	if a.HttpMode {
 		fmt.Printf("\nHTTP endpoints (port %d):\n", a.HttpPort)
+		fmt.Println("  GET /                - Homepage (live SVG map)")
 		fmt.Println("  GET /health          - Health check")
+		fmt.Println("  GET /live.svg        - Live map with vacuum positions (SVG)")
+		fmt.Println("  GET /live.png        - Live map with vacuum positions (PNG)")
 		fmt.Println("  GET /composite-map.png - Color-coded composite map")
-		fmt.Println("  GET /live.png        - Greyscale floor plan with live positions")
+		fmt.Println("  GET /composite-map.svg - Color-coded composite map (SVG)")
+		fmt.Println("  GET /floorplan.svg   - Greyscale floor plan (SVG)")
 	}
 
 	fmt.Println("\nPress Ctrl+C to stop")
