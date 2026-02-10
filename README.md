@@ -10,7 +10,8 @@ Combines multiple Valetudo vacuum robot maps into a single unified coordinate sy
   - **Auto-Cache**: Automatically saves full maps received via MQTT to disk.
   - **Transform Cache**: Stores alignment results in `.calibration-cache.json` for instant startups.
 - **Real-time MQTT**: Transforms robot positions in milliseconds and republishes to a unified topic.
-- **Live Visualization**: Generates a unified composite floorplan reachable via HTTP.
+- **Live Visualization**: Serves a live SVG map with real-time vacuum positions via HTTP. The homepage auto-refreshes to show current robot locations on a unified floorplan.
+- **Unified Map**: Builds a consensus map by clustering and merging wall, floor, and segment observations from all vacuums. Features observed by multiple robots receive higher confidence scores, producing a more accurate and complete floorplan than any single vacuum could provide.
 - **Auto-Calibration on Docking**: Automatically recalibrates vacuum alignment when a robot returns to its charger.
 
 ## Auto-Calibration
@@ -275,7 +276,9 @@ MQTT:
   Combined positions: tudomesh/positions
 
 HTTP endpoints (port 4040):
+  GET /                - Homepage (embeds live SVG map)
   GET /health          - Health check
+  GET /live.svg        - Live greyscale map with vacuum positions (SVG)
   GET /composite-map.png - Color-coded composite map
   GET /live.png        - Greyscale floor plan with live positions
   GET /composite-map.svg - Color-coded composite map (SVG)
@@ -284,9 +287,27 @@ HTTP endpoints (port 4040):
 Press Ctrl+C to stop
 ```
 
-### 5. Test Endpoints (PNG)
+### 5. View Live Map
 
-In another terminal:
+Open `http://localhost:4040/` in a browser. The homepage embeds the live SVG map, which shows the unified floorplan with real-time vacuum positions. Each vacuum appears as a colored circle with its ID label.
+
+### 6. Test Endpoints (SVG)
+
+```bash
+# Live SVG with vacuum positions (primary live view)
+curl http://localhost:4040/live.svg > live.svg
+
+# Composite SVG (color-coded by vacuum)
+curl http://localhost:4040/composite-map.svg > composite.svg
+
+# Floorplan SVG (greyscale, no positions)
+curl http://localhost:4040/floorplan.svg > floorplan.svg
+
+# View in browser
+open live.svg
+```
+
+### 7. Test Endpoints (PNG)
 
 ```bash
 # Health check
@@ -299,20 +320,7 @@ curl http://localhost:4040/composite-map.png > composite.png
 curl http://localhost:4040/live.png > live.png
 ```
 
-### 6. Test Endpoints (SVG)
-
-```bash
-# Composite SVG
-curl http://localhost:4040/composite-map.svg > composite.svg
-
-# Floorplan SVG
-curl http://localhost:4040/floorplan.svg > floorplan.svg
-
-# View in browser or vector editor
-open composite.svg
-```
-
-### 7. Verify Calibration Cache
+### 8. Verify Calibration Cache
 
 After the first render or when robots send data, check the cache:
 
@@ -346,7 +354,7 @@ Expected output (example):
 }
 ```
 
-### 8. Verify MQTT Subscriptions
+### 9. Verify MQTT Subscriptions
 
 Monitor incoming position updates:
 
@@ -371,9 +379,14 @@ You should see JSON messages like:
 - Run `./tudomesh --data-dir ./tudomesh-data --calibrate` to force recalibration
 - Check file permissions on the data directory
 
+**Live SVG shows "No maps available":**
+- Ensure at least one vacuum has sent a full map via MQTT
+- Check that maps are cached in the data directory (they persist across restarts)
+- The `/live.svg` endpoint requires map data before it can render
+
 **Vector SVG endpoints 404:**
-- Vector rendering is only available on HTTP server (not in batch render)
-- Use `GET /composite-map.svg` and `GET /floorplan.svg` endpoints
+- Vector rendering is only available on the HTTP server (not in batch render)
+- Use `GET /live.svg`, `GET /composite-map.svg`, or `GET /floorplan.svg` endpoints
 
 **Auto-calibration not triggering:**
 - Verify `apiUrl` is set for the vacuum in `config.yaml`
@@ -453,16 +466,21 @@ When rendering vector to PNG, set DPI (default: 300):
 
 ## HTTP Endpoints
 
-### Raster Formats (PNG)
+### Homepage
+
+- `/` - HTML page embedding the live SVG map with auto-refresh
+
+### Live View
+
+- `/live.svg` - Greyscale unified floorplan with live vacuum positions (SVG). This is the primary live endpoint, used by the homepage. Renders the base map with colored position indicators and vacuum ID labels. SVG output scales cleanly to any display resolution.
+- `/live.png` - Greyscale floor plan with live position icons and legend (PNG)
+
+### Static Maps
 
 - `/health` - Service health check
-- `/composite-map.png` - Color-coded vacuum maps
-- `/live.png` - Greyscale floor plan with live position icons and legend
-
-### Vector Formats (SVG)
-
-- `/composite-map.svg` - Color-coded vacuum maps as scalable vector
-- `/floorplan.svg` - Greyscale unified floor plan as scalable vector
+- `/composite-map.png` - Color-coded vacuum maps (PNG)
+- `/composite-map.svg` - Color-coded vacuum maps (SVG)
+- `/floorplan.svg` - Greyscale unified floor plan without positions (SVG)
 
 ## CLI Flags
 
