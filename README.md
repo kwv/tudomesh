@@ -277,7 +277,6 @@ MQTT:
 HTTP endpoints (port 4040):
   GET /health          - Health check
   GET /composite-map.png - Color-coded composite map
-  GET /floorplan.png   - Greyscale floor plan
   GET /live.png        - Greyscale floor plan with live positions
   GET /composite-map.svg - Color-coded composite map (SVG)
   GET /floorplan.svg   - Greyscale floor plan (SVG)
@@ -295,9 +294,6 @@ curl http://localhost:4040/health
 
 # Composite PNG (color-coded)
 curl http://localhost:4040/composite-map.png > composite.png
-
-# Floorplan PNG (greyscale)
-curl http://localhost:4040/floorplan.png > floorplan.png
 
 # Live PNG with robot positions
 curl http://localhost:4040/live.png > live.png
@@ -461,7 +457,6 @@ When rendering vector to PNG, set DPI (default: 300):
 
 - `/health` - Service health check
 - `/composite-map.png` - Color-coded vacuum maps
-- `/floorplan.png` - Greyscale unified floor plan
 - `/live.png` - Greyscale floor plan with live position icons and legend
 
 ### Vector Formats (SVG)

@@ -1000,7 +1000,6 @@ func (a *App) RunService() {
 		fmt.Printf("\nHTTP endpoints (port %d):\n", a.HttpPort)
 		fmt.Println("  GET /health          - Health check")
 		fmt.Println("  GET /composite-map.png - Color-coded composite map")
-		fmt.Println("  GET /floorplan.png   - Greyscale floor plan")
 		fmt.Println("  GET /live.png        - Greyscale floor plan with live positions")
 	}
 
