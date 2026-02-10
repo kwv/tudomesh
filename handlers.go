@@ -289,7 +289,7 @@ img{display:block;width:100vw;height:100vh;object-fit:contain}
 </style>
 </head>
 <body>
-<img src="/composite-map.svg" alt="Composite Map">
+<img src="/live.svg" alt="Live Map">
 </body>
 </html>`)
 	})
