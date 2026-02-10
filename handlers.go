@@ -231,6 +231,43 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		}
 	})
 
+	// Live SVG endpoint
+	mux.HandleFunc("/live.svg", func(w http.ResponseWriter, r *http.Request) {
+		maps := stateTracker.GetMaps()
+		if len(maps) == 0 {
+			http.Error(w, "No maps available", http.StatusServiceUnavailable)
+			return
+		}
+
+		// Build transforms from cache
+		transforms := buildTransforms(maps, cache)
+
+		// Determine effective reference
+		effectiveRef := refID
+		if effectiveRef == "" {
+			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
+		}
+
+		// Create vector renderer
+		vectorRenderer := mesh.NewVectorRenderer(maps, transforms, effectiveRef)
+		vectorRenderer.GlobalRotation = rotateAll
+
+		// Apply grid spacing from config if available
+		if config != nil && config.GridSpacing > 0 {
+			vectorRenderer.Padding = config.GridSpacing / 2
+		}
+
+		// Get live positions
+		positions := stateTracker.GetPositions()
+
+		// Render live SVG
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "no-cache")
+		if err := vectorRenderer.RenderLiveToSVG(w, positions); err != nil {
+			log.Printf("Error encoding live SVG: %v", err)
+		}
+	})
+
 	// Default route serves HTML page embedding the SVG map
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {

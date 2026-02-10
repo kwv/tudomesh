@@ -348,6 +348,7 @@ func TestEndpoints_NoMaps_503(t *testing.T) {
 		"/live.png",
 		"/composite-map.svg",
 		"/floorplan.svg",
+		"/live.svg",
 	}
 
 	for _, ep := range endpoints {
@@ -449,6 +450,51 @@ func TestCompositeMapSVG_WithMaps(t *testing.T) {
 	}
 }
 
+func TestLiveSVG_WithMaps(t *testing.T) {
+	st := populatedTracker()
+	st.UpdatePosition("vac1", 15, 15, 90)
+
+	handler := newHTTPServer(st, nil, nil, "vac1", 0)
+	req := httptest.NewRequest(http.MethodGet, "/live.svg", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("/live.svg status = %d, want %d, body=%q", w.Code, http.StatusOK, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "image/svg+xml" {
+		t.Errorf("Content-Type = %q, want %q", ct, "image/svg+xml")
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Errorf("Cache-Control = %q, want %q", cc, "no-cache")
+	}
+	if w.Body.Len() == 0 {
+		t.Error("response body is empty; expected SVG data")
+	}
+	// Verify SVG content starts with expected XML/SVG prefix
+	body := w.Body.String()
+	if len(body) < 5 || body[:5] != "<?xml" && body[:4] != "<svg" {
+		t.Errorf("response body does not look like SVG: starts with %q", body[:min(50, len(body))])
+	}
+}
+
+func TestLiveSVG_NoPositions(t *testing.T) {
+	// With maps but no positions -- should still render the base map
+	handler := newHTTPServer(populatedTracker(), nil, nil, "vac1", 0)
+	req := httptest.NewRequest(http.MethodGet, "/live.svg", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("/live.svg no-positions status = %d, want %d, body=%q", w.Code, http.StatusOK, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "image/svg+xml" {
+		t.Errorf("Content-Type = %q, want %q", ct, "image/svg+xml")
+	}
+}
+
 func TestFloorplanSVG_WithMaps(t *testing.T) {
 	handler := newHTTPServer(populatedTracker(), nil, nil, "vac1", 0)
 	req := httptest.NewRequest(http.MethodGet, "/floorplan.svg", nil)
@@ -486,6 +532,24 @@ func TestCompositeMapSVG_WithGridSpacing(t *testing.T) {
 	}
 }
 
+func TestLiveSVG_WithGridSpacing(t *testing.T) {
+	st := populatedTracker()
+	st.UpdatePosition("vac1", 15, 15, 45)
+
+	cfg := &mesh.Config{
+		GridSpacing: 600,
+	}
+	handler := newHTTPServer(st, nil, cfg, "vac1", 0)
+	req := httptest.NewRequest(http.MethodGet, "/live.svg", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("/live.svg with GridSpacing status = %d, want %d, body=%q", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
 func TestFloorplanSVG_WithGridSpacing(t *testing.T) {
 	cfg := &mesh.Config{
 		GridSpacing: 800,
@@ -516,6 +580,7 @@ func TestEndpoints_EmptyRefID_AutoSelects(t *testing.T) {
 		"/live.png",
 		"/composite-map.svg",
 		"/floorplan.svg",
+		"/live.svg",
 	}
 	for _, ep := range endpoints {
 		t.Run(ep, func(t *testing.T) {
@@ -549,6 +614,7 @@ func TestEndpoints_WithCache(t *testing.T) {
 		"/live.png",
 		"/composite-map.svg",
 		"/floorplan.svg",
+		"/live.svg",
 	}
 	for _, ep := range endpoints {
 		t.Run(ep, func(t *testing.T) {
@@ -668,7 +734,7 @@ func TestFloorplanPNG_NoDrawableContent_503(t *testing.T) {
 func TestEndpoints_WithGlobalRotation(t *testing.T) {
 	handler := newHTTPServer(populatedTracker(), nil, nil, "vac1", 90)
 
-	endpoints := []string{"/composite-map.png", "/floorplan.png", "/live.png"}
+	endpoints := []string{"/composite-map.png", "/floorplan.png", "/live.png", "/live.svg"}
 	for _, ep := range endpoints {
 		t.Run(ep, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, ep, nil)
