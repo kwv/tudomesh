@@ -34,6 +34,7 @@ func TestFetchMapFromAPI_Success(t *testing.T) {
 	}
 	if m == nil {
 		t.Fatal("FetchMapFromAPI() returned nil map")
+		return
 	}
 	if m.MetaData.TotalLayerArea != 1000 {
 		t.Errorf("TotalLayerArea = %d, want 1000", m.MetaData.TotalLayerArea)

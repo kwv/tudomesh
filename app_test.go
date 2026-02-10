@@ -44,6 +44,7 @@ func TestNewApp(t *testing.T) {
 	app := NewApp()
 	if app == nil {
 		t.Fatal("NewApp returned nil")
+		return
 	}
 	if app.StateTracker == nil {
 		t.Error("StateTracker should be initialized")

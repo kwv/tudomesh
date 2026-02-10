@@ -263,6 +263,7 @@ func TestPublisherCreation(t *testing.T) {
 	publisher := NewPublisher(nil)
 	if publisher == nil {
 		t.Fatalf("NewPublisher() should not return nil even with nil client")
+		return
 	}
 	if publisher.publishPrefix != "tudomesh" {
 		t.Errorf("Default prefix = %s, want tudomesh", publisher.publishPrefix)

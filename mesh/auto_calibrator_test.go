@@ -18,6 +18,7 @@ func TestNewAutoCalibrator_NilCache(t *testing.T) {
 	ac := NewAutoCalibrator(cfg, nil, "/tmp/test-cal.json", st)
 	if ac == nil {
 		t.Fatal("expected non-nil AutoCalibrator")
+		return
 	}
 	if ac.cache == nil {
 		t.Fatal("expected cache to be initialized when nil is passed")

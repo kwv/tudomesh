@@ -55,6 +55,7 @@ func TestStateTracker_UpdatePosition(t *testing.T) {
 		pos := st.GetPositions()["vac-x"]
 		if pos == nil {
 			t.Fatal("vac-x not found")
+			return
 		}
 		if pos.Color != "#FF0000" {
 			t.Errorf("default Color = %q, want %q", pos.Color, "#FF0000")

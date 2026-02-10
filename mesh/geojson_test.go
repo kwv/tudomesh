@@ -307,6 +307,7 @@ func TestLayerToFeature(t *testing.T) {
 
 		if feature == nil {
 			t.Fatal("Expected non-nil feature")
+			return
 		}
 
 		if feature.Type != "Feature" {
@@ -344,6 +345,7 @@ func TestLayerToFeature(t *testing.T) {
 
 		if feature == nil {
 			t.Fatal("Expected non-nil feature")
+			return
 		}
 
 		if feature.Geometry.Type != GeometryMultiLineString {
@@ -432,6 +434,7 @@ func TestMapToFeatureCollection(t *testing.T) {
 
 		if fc == nil {
 			t.Fatal("Expected non-nil FeatureCollection")
+			return
 		}
 
 		if len(fc.Features) != 0 {

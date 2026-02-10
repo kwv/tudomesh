@@ -50,6 +50,7 @@ func TestLoadCalibration_ValidFile(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("expected non-nil CalibrationData")
+		return
 	}
 	if got.ReferenceVacuum != want.ReferenceVacuum {
 		t.Errorf("ReferenceVacuum = %q, want %q", got.ReferenceVacuum, want.ReferenceVacuum)
@@ -84,6 +85,7 @@ func TestLoadCalibration_LegacyFormat(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("expected non-nil CalibrationData from legacy format")
+		return
 	}
 	if got.ReferenceVacuum != "vac-a" {
 		t.Errorf("ReferenceVacuum = %q, want %q", got.ReferenceVacuum, "vac-a")
@@ -423,6 +425,7 @@ func TestCalibrationData_GetVacuumCalibration(t *testing.T) {
 		vc := cal.GetVacuumCalibration("vac-a")
 		if vc == nil {
 			t.Fatal("expected non-nil VacuumCalibration")
+			return
 		}
 		if vc.MapAreaAtCalibration != 5000 {
 			t.Errorf("MapAreaAtCalibration = %d, want 5000", vc.MapAreaAtCalibration)

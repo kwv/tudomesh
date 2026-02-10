@@ -147,6 +147,7 @@ func TestDockingAutoCalibrateFlow(t *testing.T) {
 	vc := calData.GetVacuumCalibration("vacuum2")
 	if vc == nil {
 		t.Fatal("expected vacuum2 to have calibration data")
+		return
 	}
 	if vc.LastUpdated == 0 {
 		t.Error("vacuum2 LastUpdated should be non-zero")
@@ -162,6 +163,7 @@ func TestDockingAutoCalibrateFlow(t *testing.T) {
 	}
 	if loaded == nil {
 		t.Fatal("expected non-nil calibration from disk")
+		return
 	}
 	if _, ok := loaded.Vacuums["vacuum2"]; !ok {
 		t.Error("vacuum2 missing from persisted calibration")
@@ -379,6 +381,7 @@ func TestDockingAutoCalibrateFlow_CachePersistence(t *testing.T) {
 	vc := loaded.GetVacuumCalibration("vacuum2")
 	if vc == nil {
 		t.Fatal("vacuum2 missing after round-trip")
+		return
 	}
 
 	const tolerance = 0.001

@@ -192,6 +192,7 @@ func TestCalibrationCacheLoading(t *testing.T) {
 				if tt.shouldExist {
 					if cache == nil {
 						t.Fatal("Expected cache to be non-nil")
+						return
 					}
 					if len(cache.Vacuums) != tt.expectVacuums {
 						t.Errorf("Expected %d vacuums, got %d", tt.expectVacuums, len(cache.Vacuums))

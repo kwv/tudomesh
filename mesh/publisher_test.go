@@ -10,6 +10,7 @@ func TestNewPublisher(t *testing.T) {
 	publisher := NewPublisher(nil)
 	if publisher == nil {
 		t.Fatal("NewPublisher() returned nil")
+		return
 	}
 
 	if publisher.publishPrefix != "tudomesh" {

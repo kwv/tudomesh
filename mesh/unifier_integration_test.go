@@ -72,6 +72,7 @@ func TestStateTracker_UpdateUnifiedMap_SingleVacuum(t *testing.T) {
 	um := st.GetUnifiedMap()
 	if um == nil {
 		t.Fatal("GetUnifiedMap returned nil")
+		return
 	}
 
 	if um.Metadata.VacuumCount != 1 {
@@ -142,6 +143,7 @@ func TestStateTracker_UpdateUnifiedMap_MultipleVacuums(t *testing.T) {
 	um := st.GetUnifiedMap()
 	if um == nil {
 		t.Fatal("GetUnifiedMap returned nil")
+		return
 	}
 
 	if um.Metadata.VacuumCount != 2 {
@@ -185,6 +187,7 @@ func TestStateTracker_IncrementalRefinement(t *testing.T) {
 	um1 := st.GetUnifiedMap()
 	if um1 == nil {
 		t.Fatal("first unified map is nil")
+		return
 	}
 
 	// Second update (same data - should trigger incremental refinement path).
@@ -194,6 +197,7 @@ func TestStateTracker_IncrementalRefinement(t *testing.T) {
 	um2 := st.GetUnifiedMap()
 	if um2 == nil {
 		t.Fatal("second unified map is nil")
+		return
 	}
 
 	// The refined map should exist and have the same or more features.
@@ -290,6 +294,7 @@ func TestNewStateTrackerWithCache(t *testing.T) {
 	loaded := st.GetUnifiedMap()
 	if loaded == nil {
 		t.Fatal("expected cached unified map to be loaded on creation")
+		return
 	}
 	if loaded.Metadata.ReferenceVacuum != "vac-cached" {
 		t.Errorf("cached ReferenceVacuum = %q, want %q", loaded.Metadata.ReferenceVacuum, "vac-cached")
@@ -417,6 +422,7 @@ func TestUnifiedMap_ToFeatureCollection_Integration(t *testing.T) {
 	fc := um.ToFeatureCollection()
 	if fc == nil {
 		t.Fatal("ToFeatureCollection returned nil")
+		return
 	}
 	if fc.Type != "FeatureCollection" {
 		t.Errorf("fc.Type = %q, want %q", fc.Type, "FeatureCollection")
@@ -451,6 +457,7 @@ func TestBlendLineStrings(t *testing.T) {
 	blended := blendGeometry(old, new_, 0.5)
 	if blended == nil {
 		t.Fatal("blendGeometry returned nil")
+		return
 	}
 	if blended.Type != GeometryLineString {
 		t.Errorf("blended type = %q, want %q", blended.Type, GeometryLineString)
@@ -490,6 +497,7 @@ func TestBlendPolygons(t *testing.T) {
 	blended := blendGeometry(old, new_, 0.5)
 	if blended == nil {
 		t.Fatal("blendGeometry returned nil for polygons")
+		return
 	}
 	if blended.Type != GeometryPolygon {
 		t.Errorf("blended type = %q, want %q", blended.Type, GeometryPolygon)
@@ -509,6 +517,7 @@ func TestSnapToGrid(t *testing.T) {
 	snapped := snapToGrid(geom, 5.0)
 	if snapped == nil {
 		t.Fatal("snapToGrid returned nil")
+		return
 	}
 
 	var coords [][2]float64

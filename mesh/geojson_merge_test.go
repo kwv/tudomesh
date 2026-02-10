@@ -17,6 +17,7 @@ func TestBufferLineString(t *testing.T) {
 		result := BufferLineString(geom, 10.0)
 		if result == nil {
 			t.Fatal("Expected non-nil result")
+			return
 		}
 		if result.Type != GeometryPolygon {
 			t.Errorf("Expected Polygon, got %s", result.Type)
@@ -58,6 +59,7 @@ func TestBufferLineString(t *testing.T) {
 		result := BufferLineString(geom, 5.0)
 		if result == nil {
 			t.Fatal("Expected non-nil result")
+			return
 		}
 
 		var rings [][][2]float64
@@ -91,6 +93,7 @@ func TestBufferLineString(t *testing.T) {
 		result := BufferLineString(geom, 10.0)
 		if result == nil {
 			t.Fatal("Expected non-nil result for multi-segment line")
+			return
 		}
 		if result.Type != GeometryPolygon {
 			t.Errorf("Expected Polygon, got %s", result.Type)
@@ -148,6 +151,7 @@ func TestUnionPolygons(t *testing.T) {
 		result := UnionPolygons([]*Geometry{geom1, geom2})
 		if result == nil {
 			t.Fatal("Expected non-nil result")
+			return
 		}
 		if result.Type != GeometryPolygon {
 			t.Errorf("Expected Polygon, got %s", result.Type)
@@ -189,6 +193,7 @@ func TestUnionPolygons(t *testing.T) {
 		result := UnionPolygons([]*Geometry{geom})
 		if result == nil {
 			t.Fatal("Expected non-nil result for single polygon")
+			return
 		}
 		if result.Type != GeometryPolygon {
 			t.Errorf("Expected Polygon, got %s", result.Type)
@@ -370,6 +375,7 @@ func TestSimplifyLineString(t *testing.T) {
 		result := SimplifyLineString(geom, 1.0)
 		if result == nil {
 			t.Fatal("Expected non-nil result")
+			return
 		}
 		if result.Type != GeometryLineString {
 			t.Errorf("Expected LineString, got %s", result.Type)
@@ -407,6 +413,7 @@ func TestSimplifyLineString(t *testing.T) {
 		result := SimplifyLineString(geom, 1.0)
 		if result == nil {
 			t.Fatal("Expected non-nil result")
+			return
 		}
 
 		var coords [][2]float64
@@ -448,6 +455,7 @@ func TestSimplifyLineString(t *testing.T) {
 		result := SimplifyLineString(geom, 0.001)
 		if result == nil {
 			t.Fatal("Expected non-nil result")
+			return
 		}
 
 		var coords [][2]float64
@@ -473,6 +481,7 @@ func TestSimplifyLineString(t *testing.T) {
 		result := SimplifyLineString(geom, 100.0)
 		if result == nil {
 			t.Fatal("Expected non-nil result")
+			return
 		}
 
 		var coords [][2]float64
