@@ -174,7 +174,9 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 		wallStyle := canvas.DefaultStyle
 		wallStyle.Fill = canvas.Paint{Color: canvas.Transparent}
 		wallStyle.Stroke = canvas.Paint{Color: nrgbaToRGBA(vc.Wall)}
-		wallStyle.StrokeWidth = 20.0 // 20mm thick walls
+		wallStyle.StrokeWidth = 3.0 // 3mm thick walls
+		wallStyle.StrokeCapper = canvas.RoundCapper{}
+		wallStyle.StrokeJoiner = canvas.RoundJoiner{}
 
 		for _, layer := range m.Layers {
 			if layer.Type == "wall" {
@@ -250,7 +252,9 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 			chargerStyle := canvas.DefaultStyle
 			chargerStyle.Fill = canvas.Paint{Color: nrgbaToRGBA(vc.Wall)}
 			chargerStyle.Stroke = canvas.Paint{Color: canvas.Black}
-			chargerStyle.StrokeWidth = 5.0
+			chargerStyle.StrokeWidth = 2.0
+			chargerStyle.StrokeCapper = canvas.RoundCapper{}
+			chargerStyle.StrokeJoiner = canvas.RoundJoiner{}
 
 			chargerPath := canvas.Circle(100.0)
 			chargerPath = chargerPath.Translate(cx, cy)
@@ -461,7 +465,9 @@ func (r *VectorRenderer) renderLiveToCanvas(
 	wallStyle := canvas.DefaultStyle
 	wallStyle.Fill = canvas.Paint{Color: canvas.Transparent}
 	wallStyle.Stroke = canvas.Paint{Color: greyWall}
-	wallStyle.StrokeWidth = 20.0
+	wallStyle.StrokeWidth = 3.0
+	wallStyle.StrokeCapper = canvas.RoundCapper{}
+	wallStyle.StrokeJoiner = canvas.RoundJoiner{}
 
 	for _, layer := range baseMap.Layers {
 		if layer.Type == "wall" {
