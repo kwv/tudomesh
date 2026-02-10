@@ -344,7 +344,6 @@ func TestEndpoints_NoMaps_503(t *testing.T) {
 
 	endpoints := []string{
 		"/composite-map.png",
-		"/floorplan.png",
 		"/live.png",
 		"/composite-map.svg",
 		"/floorplan.svg",
@@ -383,24 +382,6 @@ func TestCompositeMapPNG_WithMaps(t *testing.T) {
 	}
 	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
 		t.Errorf("Cache-Control = %q, want %q", cc, "no-cache")
-	}
-	if w.Body.Len() == 0 {
-		t.Error("response body is empty; expected PNG data")
-	}
-}
-
-func TestFloorplanPNG_WithMaps(t *testing.T) {
-	handler := newHTTPServer(populatedTracker(), nil, nil, "vac1", 0)
-	req := httptest.NewRequest(http.MethodGet, "/floorplan.png", nil)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("/floorplan.png status = %d, want %d, body=%q", w.Code, http.StatusOK, w.Body.String())
-	}
-	if ct := w.Header().Get("Content-Type"); ct != "image/png" {
-		t.Errorf("Content-Type = %q, want %q", ct, "image/png")
 	}
 	if w.Body.Len() == 0 {
 		t.Error("response body is empty; expected PNG data")
@@ -576,7 +557,6 @@ func TestEndpoints_EmptyRefID_AutoSelects(t *testing.T) {
 
 	endpoints := []string{
 		"/composite-map.png",
-		"/floorplan.png",
 		"/live.png",
 		"/composite-map.svg",
 		"/floorplan.svg",
@@ -610,7 +590,6 @@ func TestEndpoints_WithCache(t *testing.T) {
 
 	endpoints := []string{
 		"/composite-map.png",
-		"/floorplan.png",
 		"/live.png",
 		"/composite-map.svg",
 		"/floorplan.svg",
@@ -706,27 +685,6 @@ func TestCompositeMapPNG_NoDrawableContent_503(t *testing.T) {
 	}
 }
 
-func TestFloorplanPNG_NoDrawableContent_503(t *testing.T) {
-	st := mesh.NewStateTracker()
-	st.UpdateMap("vac1", &mesh.ValetudoMap{
-		MetaData: mesh.MapMetaData{TotalLayerArea: 50},
-		Size:     mesh.Size{X: 100, Y: 100},
-		Layers: []mesh.MapLayer{
-			{Type: "unknown_type", Pixels: []int{5, 5, 1}},
-		},
-	})
-
-	handler := newHTTPServer(st, nil, nil, "vac1", 0)
-	req := httptest.NewRequest(http.MethodGet, "/floorplan.png", nil)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("/floorplan.png no-drawable status = %d, want %d", w.Code, http.StatusServiceUnavailable)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // newHTTPServer -- GlobalRotation is wired through
 // ---------------------------------------------------------------------------
@@ -734,7 +692,7 @@ func TestFloorplanPNG_NoDrawableContent_503(t *testing.T) {
 func TestEndpoints_WithGlobalRotation(t *testing.T) {
 	handler := newHTTPServer(populatedTracker(), nil, nil, "vac1", 90)
 
-	endpoints := []string{"/composite-map.png", "/floorplan.png", "/live.png", "/live.svg"}
+	endpoints := []string{"/composite-map.png", "/live.png", "/live.svg"}
 	for _, ep := range endpoints {
 		t.Run(ep, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, ep, nil)

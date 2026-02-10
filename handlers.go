@@ -75,43 +75,6 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		}
 	})
 
-	// Greyscale floorplan endpoint
-	mux.HandleFunc("/floorplan.png", func(w http.ResponseWriter, r *http.Request) {
-		maps := stateTracker.GetMaps()
-		if len(maps) == 0 {
-			http.Error(w, "No maps available", http.StatusServiceUnavailable)
-			return
-		}
-
-		// Build transforms from cache
-		transforms := buildTransforms(maps, cache)
-
-		// Determine effective reference
-		effectiveRef := refID
-		if effectiveRef == "" {
-			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
-		}
-
-		// Create renderer
-		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
-		renderer.GlobalRotation = rotateAll
-
-		// If no drawable content exists, return service unavailable
-		if !renderer.HasDrawableContent() {
-			log.Printf("Warning: maps present but no drawable content; endpoint=/floorplan.png")
-			http.Error(w, "No drawable_map content", http.StatusServiceUnavailable)
-			return
-		}
-
-		// Render greyscale and send
-		img := renderer.RenderGreyscale()
-		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("Cache-Control", "no-cache")
-		if err := png.Encode(w, img); err != nil {
-			log.Printf("Error encoding floorplan PNG: %v", err)
-		}
-	})
-
 	// Live positions endpoint
 	mux.HandleFunc("/live.png", func(w http.ResponseWriter, r *http.Request) {
 		maps := stateTracker.GetMaps()
