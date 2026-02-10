@@ -13,6 +13,15 @@ import (
 	"github.com/tdewolff/canvas/renderers/svg"
 )
 
+// snapCoord rounds a coordinate to the nearest multiple of the given increment.
+// An increment of 0 disables snapping and returns the coordinate unchanged.
+func snapCoord(coord, increment float64) float64 {
+	if increment <= 0 {
+		return coord
+	}
+	return math.Round(coord/increment) * increment
+}
+
 // nrgbaToRGBA converts color.NRGBA to color.RGBA by premultiplying alpha
 // This is needed for the canvas library which expects premultiplied RGBA
 func nrgbaToRGBA(c color.NRGBA) color.RGBA {
@@ -43,6 +52,7 @@ type VectorRenderer struct {
 	GlobalRotation float64
 	Resolution     canvas.Resolution // Resolution for PNG output (default: 300 DPI)
 	GridSpacing    float64           // Grid line spacing in millimeters
+	SnapIncrement  float64           // Snap world coordinates to this increment (mm); 0 disables
 }
 
 // NewVectorRenderer creates a vector renderer with default settings
@@ -70,6 +80,7 @@ func NewVectorRenderer(maps map[string]*ValetudoMap, transforms map[string]Affin
 		GlobalRotation: 0,
 		Resolution:     canvas.DPI(300), // 300 DPI default for PNG output
 		GridSpacing:    1000.0,          // 1000mm grid spacing
+		SnapIncrement:  50.0,            // 50mm snap for grid alignment
 	}
 }
 
@@ -150,13 +161,8 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
-						// Apply transform to pixel coordinates first
 						transformedPt := TransformPoint(pt, transform)
-						// Then scale to world coordinates
-						worldPt := Point{
-							X: transformedPt.X * float64(m.PixelSize),
-							Y: transformedPt.Y * float64(m.PixelSize),
-						}
+						worldPt := r.toWorldPoint(transformedPt, m.PixelSize)
 						cx, cy := toCanvas(worldPt)
 						if i == 0 {
 							cp.MoveTo(cx, cy)
@@ -182,13 +188,8 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
-						// Apply transform to pixel coordinates first
 						transformedPt := TransformPoint(pt, transform)
-						// Then scale to world coordinates
-						worldPt := Point{
-							X: transformedPt.X * float64(m.PixelSize),
-							Y: transformedPt.Y * float64(m.PixelSize),
-						}
+						worldPt := r.toWorldPoint(transformedPt, m.PixelSize)
 						cx, cy := toCanvas(worldPt)
 						if i == 0 {
 							cp.MoveTo(cx, cy)
@@ -237,13 +238,8 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 		vc := r.Colors[id]
 
 		if chargerPt, ok := ExtractChargerPosition(m); ok {
-			// Apply transform to pixel coordinates first
 			transformedPt := TransformPoint(chargerPt, transform)
-			// Then scale to world coordinates
-			worldPt := Point{
-				X: transformedPt.X * float64(m.PixelSize),
-				Y: transformedPt.Y * float64(m.PixelSize),
-			}
+			worldPt := r.toWorldPoint(transformedPt, m.PixelSize)
 			cx, cy := toCanvas(worldPt)
 
 			// Render as circle with vacuum's wall color
@@ -273,6 +269,14 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 	}
 }
 
+// toWorldPoint converts a transformed pixel coordinate to a snapped world coordinate.
+func (r *VectorRenderer) toWorldPoint(tp Point, pixelSize int) Point {
+	return Point{
+		X: snapCoord(tp.X*float64(pixelSize), r.SnapIncrement),
+		Y: snapCoord(tp.Y*float64(pixelSize), r.SnapIncrement),
+	}
+}
+
 func (r *VectorRenderer) calculateWorldBounds() (minX, minY, maxX, maxY, centerX, centerY float64) {
 	minX, minY = math.MaxFloat64, math.MaxFloat64
 	maxX, maxY = -math.MaxFloat64, -math.MaxFloat64
@@ -286,10 +290,7 @@ func (r *VectorRenderer) calculateWorldBounds() (minX, minY, maxX, maxY, centerX
 					// Apply transform to pixel coordinates first (ICP operates at pixel scale)
 					tp := TransformPoint(p, transform)
 					// Then scale to world coordinates
-					worldP := Point{
-						X: tp.X * float64(m.PixelSize),
-						Y: tp.Y * float64(m.PixelSize),
-					}
+					worldP := r.toWorldPoint(tp, m.PixelSize)
 					if worldP.X < minX {
 						minX = worldP.X
 					}
@@ -352,10 +353,7 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 			points := PixelsToPoints(layer.Pixels)
 			for _, p := range points {
 				tp := TransformPoint(p, baseTransform)
-				worldP := Point{
-					X: tp.X * float64(baseMap.PixelSize),
-					Y: tp.Y * float64(baseMap.PixelSize),
-				}
+				worldP := r.toWorldPoint(tp, baseMap.PixelSize)
 				if worldP.X < minX {
 					minX = worldP.X
 				}
@@ -440,10 +438,7 @@ func (r *VectorRenderer) renderLiveToCanvas(
 				cp := &canvas.Path{}
 				for i, pt := range p {
 					transformedPt := TransformPoint(pt, baseTransform)
-					worldPt := Point{
-						X: transformedPt.X * float64(baseMap.PixelSize),
-						Y: transformedPt.Y * float64(baseMap.PixelSize),
-					}
+					worldPt := r.toWorldPoint(transformedPt, baseMap.PixelSize)
 					cx, cy := toCanvas(worldPt)
 					if i == 0 {
 						cp.MoveTo(cx, cy)
@@ -470,10 +465,7 @@ func (r *VectorRenderer) renderLiveToCanvas(
 				cp := &canvas.Path{}
 				for i, pt := range p {
 					transformedPt := TransformPoint(pt, baseTransform)
-					worldPt := Point{
-						X: transformedPt.X * float64(baseMap.PixelSize),
-						Y: transformedPt.Y * float64(baseMap.PixelSize),
-					}
+					worldPt := r.toWorldPoint(transformedPt, baseMap.PixelSize)
 					cx, cy := toCanvas(worldPt)
 					if i == 0 {
 						cp.MoveTo(cx, cy)

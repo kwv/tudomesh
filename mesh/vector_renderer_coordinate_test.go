@@ -52,16 +52,16 @@ func TestVectorRendererCoordinateScale(t *testing.T) {
 	// Calculate world bounds - this should apply transform at pixel scale first
 	minX, minY, maxX, maxY, _, _ := renderer.calculateWorldBounds()
 
-	// After transform:
-	// map1 pixels (10,20) -> (10,20) -> world (50,100)
-	// map1 pixels (11,21) -> (11,21) -> world (55,105)
-	// map2 pixels (15,25) -> transform -> (20,30) -> world (100,150)
-	// map2 pixels (16,26) -> transform -> (21,31) -> world (105,155)
+	// After transform (with 50mm snap increment):
+	// map1 pixels (10,20) -> (10,20) -> world (50,100) -> snap(50)=50, snap(100)=100
+	// map1 pixels (11,21) -> (11,21) -> world (55,105) -> snap(55)=50, snap(105)=100
+	// map2 pixels (15,25) -> transform -> (20,30) -> world (100,150) -> snap=100, snap=150
+	// map2 pixels (16,26) -> transform -> (21,31) -> world (105,155) -> snap=100, snap=150
 
-	expectedMinX := 50.0  // map1 at (10*5, 20*5)
-	expectedMinY := 100.0 // map1 at (10*5, 20*5)
-	expectedMaxX := 105.0 // map2 at (21*5, 31*5)
-	expectedMaxY := 155.0 // map2 at (21*5, 31*5)
+	expectedMinX := 50.0  // map1 at snap(10*5)=50
+	expectedMinY := 100.0 // map1 at snap(20*5)=100
+	expectedMaxX := 100.0 // map2 at snap(21*5)=snap(105)=100
+	expectedMaxY := 150.0 // map2 at snap(31*5)=snap(155)=150
 
 	tolerance := 0.01
 
@@ -121,5 +121,53 @@ func TestVectorizerReturnsPixelCoordinates(t *testing.T) {
 				t.Errorf("Point (%.2f, %.2f) appears to be in world coordinates, not pixel coordinates", pt.X, pt.Y)
 			}
 		}
+	}
+}
+
+// TestSnapCoord verifies the snapCoord helper rounds to nearest increment.
+func TestSnapCoord(t *testing.T) {
+	tests := []struct {
+		name      string
+		coord     float64
+		increment float64
+		want      float64
+	}{
+		{"exact multiple", 100.0, 50.0, 100.0},
+		{"round down", 124.0, 50.0, 100.0},
+		{"round up", 126.0, 50.0, 150.0},
+		{"midpoint rounds away from zero", 125.0, 50.0, 150.0},
+		{"negative coord", -75.0, 50.0, -100.0},
+		{"zero increment disables", 123.456, 0.0, 123.456},
+		{"negative increment disables", 123.456, -1.0, 123.456},
+		{"zero coord", 0.0, 50.0, 0.0},
+		{"small increment round down", 7.3, 5.0, 5.0},
+		{"small increment round up", 7.6, 5.0, 10.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := snapCoord(tt.coord, tt.increment)
+			if math.Abs(got-tt.want) > 0.001 {
+				t.Errorf("snapCoord(%v, %v) = %v, want %v", tt.coord, tt.increment, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestToWorldPointSnapsCoordinates verifies that toWorldPoint applies grid snapping.
+func TestToWorldPointSnapsCoordinates(t *testing.T) {
+	r := &VectorRenderer{SnapIncrement: 50.0}
+
+	// Pixel (21, 31) with pixelSize=5 -> raw world (105, 155) -> snap to (100, 150)
+	got := r.toWorldPoint(Point{X: 21, Y: 31}, 5)
+	if got.X != 100.0 || got.Y != 150.0 {
+		t.Errorf("toWorldPoint(21,31, pixelSize=5) = (%v,%v), want (100,150)", got.X, got.Y)
+	}
+
+	// With snap disabled
+	r.SnapIncrement = 0
+	got = r.toWorldPoint(Point{X: 21, Y: 31}, 5)
+	if got.X != 105.0 || got.Y != 155.0 {
+		t.Errorf("toWorldPoint with snap=0 should return unsnapped: got (%v,%v), want (105,155)", got.X, got.Y)
 	}
 }
