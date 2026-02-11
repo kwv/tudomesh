@@ -377,18 +377,24 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 	}
 
 	// Expand bounds to include all vacuum positions.
+	// Positions are in grid coordinates (pixels) and must be scaled to world
+	// coordinates (millimeters) using the base map's PixelSize, matching the
+	// coordinate system used for the map geometry above.
+	pixelSize := float64(baseMap.PixelSize)
 	for _, pos := range positions {
-		if pos.X < minX {
-			minX = pos.X
+		wx := pos.X * pixelSize
+		wy := pos.Y * pixelSize
+		if wx < minX {
+			minX = wx
 		}
-		if pos.Y < minY {
-			minY = pos.Y
+		if wy < minY {
+			minY = wy
 		}
-		if pos.X > maxX {
-			maxX = pos.X
+		if wx > maxX {
+			maxX = wx
 		}
-		if pos.Y > maxY {
-			maxY = pos.Y
+		if wy > maxY {
+			maxY = wy
 		}
 	}
 
@@ -427,6 +433,9 @@ func (r *VectorRenderer) renderLiveToCanvas(
 		ty := (rp.Y - minY) + r.Padding
 		return tx, ty
 	}
+
+	// pixelSize converts grid coordinates (pixels) to world coordinates (mm).
+	pixelSize := float64(baseMap.PixelSize)
 
 	// Greyscale colours for the base map.
 	greyFloor := color.RGBA{R: 200, G: 200, B: 200, A: 255}
@@ -529,7 +538,7 @@ func (r *VectorRenderer) renderLiveToCanvas(
 
 	for _, id := range vacIDs {
 		pos := positions[id]
-		cx, cy := toCanvas(Point{X: pos.X, Y: pos.Y})
+		cx, cy := toCanvas(Point{X: pos.X * pixelSize, Y: pos.Y * pixelSize})
 		vacColor := parseHexColor(pos.Color)
 
 		// Outer circle (border).
