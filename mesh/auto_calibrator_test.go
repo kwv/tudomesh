@@ -15,7 +15,7 @@ func TestNewAutoCalibrator_NilCache(t *testing.T) {
 	cfg := &Config{Vacuums: []VacuumConfig{{ID: "vac-a"}}}
 	st := NewStateTracker()
 
-	ac := NewAutoCalibrator(cfg, nil, "/tmp/test-cal.json", st)
+	ac := NewAutoCalibrator(cfg, nil, "/tmp/test-cal.json", "", st)
 	if ac == nil {
 		t.Fatal("expected non-nil AutoCalibrator")
 		return
@@ -38,7 +38,7 @@ func TestNewAutoCalibrator_WithCache(t *testing.T) {
 		},
 	}
 
-	ac := NewAutoCalibrator(cfg, cache, "/tmp/test-cal.json", st)
+	ac := NewAutoCalibrator(cfg, cache, "/tmp/test-cal.json", "", st)
 	if ac.cache != cache {
 		t.Fatal("expected cache to be the same pointer passed in")
 	}
@@ -65,7 +65,7 @@ func TestOnDockingEvent_DebounceSkips(t *testing.T) {
 		},
 	}
 
-	ac := NewAutoCalibrator(cfg, cache, filepath.Join(t.TempDir(), "cal.json"), st)
+	ac := NewAutoCalibrator(cfg, cache, filepath.Join(t.TempDir(), "cal.json"), "", st)
 	// Simulate a recent calibration
 	ac.lastCalibrated["vac-a"] = time.Now()
 
@@ -85,7 +85,7 @@ func TestOnDockingEvent_UnknownVacuum(t *testing.T) {
 	cfg := &Config{Vacuums: []VacuumConfig{{ID: "vac-a"}}}
 	st := NewStateTracker()
 
-	ac := NewAutoCalibrator(cfg, nil, filepath.Join(t.TempDir(), "cal.json"), st)
+	ac := NewAutoCalibrator(cfg, nil, filepath.Join(t.TempDir(), "cal.json"), "", st)
 
 	// Should log warning and return without panic
 	ac.OnDockingEvent("unknown-vacuum")
@@ -99,7 +99,7 @@ func TestOnDockingEvent_NoApiURL(t *testing.T) {
 	cfg := &Config{Vacuums: []VacuumConfig{{ID: "vac-a"}}}
 	st := NewStateTracker()
 
-	ac := NewAutoCalibrator(cfg, nil, filepath.Join(t.TempDir(), "cal.json"), st)
+	ac := NewAutoCalibrator(cfg, nil, filepath.Join(t.TempDir(), "cal.json"), "", st)
 
 	// Should log warning about missing apiUrl and return
 	ac.OnDockingEvent("vac-a")
@@ -116,7 +116,7 @@ func TestResolveReference_FromConfig(t *testing.T) {
 	}
 	st := NewStateTracker()
 
-	ac := NewAutoCalibrator(cfg, nil, "/tmp/test.json", st)
+	ac := NewAutoCalibrator(cfg, nil, "/tmp/test.json", "", st)
 	ref := ac.resolveReference()
 	if ref != "vac-a" {
 		t.Fatalf("expected vac-a, got %s", ref)
@@ -128,7 +128,7 @@ func TestResolveReference_FromCache(t *testing.T) {
 	cache := &CalibrationData{ReferenceVacuum: "vac-b", Vacuums: make(map[string]VacuumCalibration)}
 	st := NewStateTracker()
 
-	ac := NewAutoCalibrator(cfg, cache, "/tmp/test.json", st)
+	ac := NewAutoCalibrator(cfg, cache, "/tmp/test.json", "", st)
 	ref := ac.resolveReference()
 	if ref != "vac-b" {
 		t.Fatalf("expected vac-b, got %s", ref)
@@ -143,7 +143,7 @@ func TestResolveReference_AutoSelect(t *testing.T) {
 	st.UpdateMap("vac-a", &ValetudoMap{MetaData: MapMetaData{TotalLayerArea: 1000}})
 	st.UpdateMap("vac-b", &ValetudoMap{MetaData: MapMetaData{TotalLayerArea: 5000}})
 
-	ac := NewAutoCalibrator(cfg, nil, "/tmp/test.json", st)
+	ac := NewAutoCalibrator(cfg, nil, "/tmp/test.json", "", st)
 	ref := ac.resolveReference()
 	if ref != "vac-b" {
 		t.Fatalf("expected vac-b (larger area), got %s", ref)
@@ -154,7 +154,7 @@ func TestResolveReference_NoMaps(t *testing.T) {
 	cfg := &Config{Vacuums: []VacuumConfig{{ID: "vac-a"}}}
 	st := NewStateTracker()
 
-	ac := NewAutoCalibrator(cfg, nil, "/tmp/test.json", st)
+	ac := NewAutoCalibrator(cfg, nil, "/tmp/test.json", "", st)
 	ref := ac.resolveReference()
 	if ref != "" {
 		t.Fatalf("expected empty string, got %s", ref)
@@ -170,7 +170,7 @@ func TestGetCache(t *testing.T) {
 		ReferenceVacuum: "vac-a",
 		Vacuums:         map[string]VacuumCalibration{"vac-a": {Transform: Identity()}},
 	}
-	ac := NewAutoCalibrator(&Config{}, cache, "/tmp/test.json", NewStateTracker())
+	ac := NewAutoCalibrator(&Config{}, cache, "/tmp/test.json", "", NewStateTracker())
 
 	got := ac.GetCache()
 	if got != cache {
@@ -192,7 +192,7 @@ func TestPersistAndRecord_SavesFile(t *testing.T) {
 		},
 	}
 
-	ac := NewAutoCalibrator(&Config{}, cache, cachePath, NewStateTracker())
+	ac := NewAutoCalibrator(&Config{}, cache, cachePath, "", NewStateTracker())
 	ac.persistAndRecord("vac-a")
 
 	// Verify file was written
@@ -217,7 +217,7 @@ func TestAutoCalibrator_String(t *testing.T) {
 			"vac-a": {Transform: Identity()},
 		},
 	}
-	ac := NewAutoCalibrator(&Config{}, cache, "/tmp/test.json", NewStateTracker())
+	ac := NewAutoCalibrator(&Config{}, cache, "/tmp/test.json", "", NewStateTracker())
 
 	s := ac.String()
 	if s == "" {
