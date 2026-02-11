@@ -959,7 +959,7 @@ func (a *App) RunService() {
 		fmt.Println("MQTT position publisher initialized")
 
 		// Initialize auto-calibrator and register docking handler
-		a.AutoCalibrator = mesh.NewAutoCalibrator(config, cache, resolvedCache, a.StateTracker)
+		a.AutoCalibrator = mesh.NewAutoCalibrator(config, cache, resolvedCache, a.DataDir, a.StateTracker)
 		mqttClient.SetDockingHandler(a.AutoCalibrator.OnDockingEvent)
 		fmt.Println("Auto-calibrator initialized (triggers on docking events)")
 	}

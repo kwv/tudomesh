@@ -1,8 +1,11 @@
 package mesh
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -20,6 +23,7 @@ type AutoCalibrator struct {
 	config       *Config
 	cache        *CalibrationData
 	cachePath    string
+	dataDir      string
 	stateTracker *StateTracker
 
 	mu             sync.Mutex
@@ -27,7 +31,7 @@ type AutoCalibrator struct {
 }
 
 // NewAutoCalibrator creates an AutoCalibrator ready to handle docking events.
-func NewAutoCalibrator(config *Config, cache *CalibrationData, cachePath string, st *StateTracker) *AutoCalibrator {
+func NewAutoCalibrator(config *Config, cache *CalibrationData, cachePath string, dataDir string, st *StateTracker) *AutoCalibrator {
 	if cache == nil {
 		cache = &CalibrationData{
 			Vacuums: make(map[string]VacuumCalibration),
@@ -37,6 +41,7 @@ func NewAutoCalibrator(config *Config, cache *CalibrationData, cachePath string,
 		config:         config,
 		cache:          cache,
 		cachePath:      cachePath,
+		dataDir:        dataDir,
 		stateTracker:   st,
 		lastCalibrated: make(map[string]time.Time),
 	}
@@ -84,6 +89,19 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 	if err != nil {
 		log.Printf("[AUTO-CAL] %s: failed to fetch map: %v (preserving existing calibration)", vacuumID, err)
 		return
+	}
+
+	// Save fetched map to data-dir for persistence (same convention as MQTT handler).
+	if ac.dataDir != "" {
+		savePath := filepath.Join(ac.dataDir, fmt.Sprintf("ValetudoMapExport-%s.json", vacuumID))
+		jsonBytes, err := json.MarshalIndent(freshMap, "", "  ")
+		if err != nil {
+			log.Printf("[AUTO-CAL] %s: failed to marshal map for saving: %v", vacuumID, err)
+		} else if err := os.WriteFile(savePath, jsonBytes, 0644); err != nil {
+			log.Printf("[AUTO-CAL] %s: failed to save map to %s: %v", vacuumID, savePath, err)
+		} else {
+			log.Printf("[AUTO-CAL] %s: saved HTTP-fetched map to %s", vacuumID, savePath)
+		}
 	}
 
 	// --- Step 4: Validate map completeness ---
