@@ -536,6 +536,23 @@ func (r *VectorRenderer) renderLiveToCanvas(
 	}
 	sort.Strings(vacIDs)
 
+	// Derive indicator sizes from the map extent so they scale with the floor plan.
+	// Use the shorter axis to keep proportions consistent across aspect ratios.
+	mapSpan := maxX - minX
+	if h := maxY - minY; h < mapSpan {
+		mapSpan = h
+	}
+	if mapSpan < 1 {
+		mapSpan = 1 // guard against degenerate maps
+	}
+	// The circle radius is ~0.4% of the shorter map dimension.
+	// For a 5 000 mm floor plan this gives a 20 mm radius -- visible but unobtrusive.
+	vacRadius := mapSpan * 0.004
+	vacDirLen := vacRadius * 1.75
+	vacStroke := vacRadius * 0.075
+	vacTagW := vacRadius * 1.25
+	vacTagH := vacRadius * 0.5
+
 	for _, id := range vacIDs {
 		pos := positions[id]
 		cx, cy := toCanvas(Point{X: pos.X * pixelSize, Y: pos.Y * pixelSize})
@@ -545,22 +562,21 @@ func (r *VectorRenderer) renderLiveToCanvas(
 		outerStyle := canvas.DefaultStyle
 		outerStyle.Fill = canvas.Paint{Color: vacColor}
 		outerStyle.Stroke = canvas.Paint{Color: canvas.Black}
-		outerStyle.StrokeWidth = 8.0
+		outerStyle.StrokeWidth = vacStroke
 
-		outerPath := canvas.Circle(120.0)
+		outerPath := canvas.Circle(vacRadius)
 		outerPath = outerPath.Translate(cx, cy)
 		renderer.RenderPath(outerPath, outerStyle, canvas.Identity)
 
 		// Direction indicator: a small line from center in the heading direction.
 		rad := pos.Angle * math.Pi / 180
-		dirLen := 200.0
-		dx := dirLen * math.Cos(rad)
-		dy := dirLen * math.Sin(rad)
+		dx := vacDirLen * math.Cos(rad)
+		dy := vacDirLen * math.Sin(rad)
 
 		dirStyle := canvas.DefaultStyle
 		dirStyle.Fill = canvas.Paint{Color: canvas.Transparent}
 		dirStyle.Stroke = canvas.Paint{Color: vacColor}
-		dirStyle.StrokeWidth = 12.0
+		dirStyle.StrokeWidth = vacStroke * 1.5
 
 		dirPath := &canvas.Path{}
 		dirPath.MoveTo(cx, cy)
@@ -573,12 +589,10 @@ func (r *VectorRenderer) renderLiveToCanvas(
 		tagStyle := canvas.DefaultStyle
 		tagStyle.Fill = canvas.Paint{Color: vacColor}
 		tagStyle.Stroke = canvas.Paint{Color: canvas.Black}
-		tagStyle.StrokeWidth = 2.0
+		tagStyle.StrokeWidth = vacStroke * 0.5
 
-		tagWidth := 160.0
-		tagHeight := 60.0
-		tagPath := canvas.Rectangle(tagWidth, tagHeight)
-		tagPath = tagPath.Translate(cx-tagWidth/2, cy-180.0)
+		tagPath := canvas.Rectangle(vacTagW, vacTagH)
+		tagPath = tagPath.Translate(cx-vacTagW/2, cy-vacRadius*1.5)
 		renderer.RenderPath(tagPath, tagStyle, canvas.Identity)
 	}
 }
