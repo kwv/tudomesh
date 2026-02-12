@@ -57,6 +57,34 @@ func TestHasDrawableContent(t *testing.T) {
 	if !r.HasDrawableContent() {
 		t.Fatalf("expected drawable content when a layer contains pixels")
 	}
+
+	// Case 5: map with no pixels but layer area > 0
+	m4 := &ValetudoMap{Layers: []MapLayer{{Type: "floor", Pixels: []int{}, MetaData: LayerMetaData{Area: 169918}}}}
+	r = &CompositeRenderer{Maps: map[string]*ValetudoMap{"vac4": m4}}
+	if !r.HasDrawableContent() {
+		t.Fatalf("expected drawable content when a layer has area > 0")
+	}
+
+	// Case 6: map with no pixels but sufficient path entities
+	m5 := &ValetudoMap{
+		Layers:   []MapLayer{{Type: "floor", Pixels: []int{}}},
+		Entities: []MapEntity{{Type: "path", Points: make([]int, 200)}},
+	}
+	r = &CompositeRenderer{Maps: map[string]*ValetudoMap{"vac5": m5}}
+	if !r.HasDrawableContent() {
+		t.Fatalf("expected drawable content when path entities have sufficient points")
+	}
+
+	// Case 7: one map empty, another has entity data
+	m6 := &ValetudoMap{Layers: []MapLayer{{Type: "floor", Pixels: []int{}}}}
+	m7 := &ValetudoMap{
+		Layers:   []MapLayer{{Type: "segment", Pixels: []int{}, MetaData: LayerMetaData{Area: 50000}}},
+		Entities: []MapEntity{{Type: "path", Points: make([]int, 300)}},
+	}
+	r = &CompositeRenderer{Maps: map[string]*ValetudoMap{"vac6": m6, "vac7": m7}}
+	if !r.HasDrawableContent() {
+		t.Fatalf("expected drawable content when at least one map has entity data")
+	}
 }
 
 func TestCompositeRenderer_Initialization(t *testing.T) {

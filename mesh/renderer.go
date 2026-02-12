@@ -86,15 +86,12 @@ func NewCompositeRenderer(maps map[string]*ValetudoMap, transforms map[string]Af
 	}
 }
 
-// HasDrawableContent returns true if any map contains drawable pixels in floor/segment/wall layers.
+// HasDrawableContent returns true if any map contains drawable spatial data.
+// It delegates to the package-level HasDrawablePixels function for each map.
 func (r *CompositeRenderer) HasDrawableContent() bool {
 	for _, m := range r.Maps {
-		for _, layer := range m.Layers {
-			if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
-				if len(layer.Pixels) > 0 {
-					return true
-				}
-			}
+		if HasDrawablePixels(m) {
+			return true
 		}
 	}
 	return false

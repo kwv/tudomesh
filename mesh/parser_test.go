@@ -267,6 +267,200 @@ func TestNormalizeToMM(t *testing.T) {
 	})
 }
 
+// helper to generate a slice of n path points (coordinate values)
+func makePathPoints(n int) []int {
+	pts := make([]int, n)
+	for i := range pts {
+		pts[i] = i * 10
+	}
+	return pts
+}
+
+// validMapEntityOnly builds a valid map with no layer pixels but rich entity data.
+// This simulates the new Valetudo API format where pixels are empty.
+func validMapEntityOnly(area int, pathPoints int) *ValetudoMap {
+	entities := []MapEntity{
+		{Type: "robot_position", Points: []int{100, 200}},
+		{Type: "charger_location", Points: []int{300, 400}},
+	}
+	if pathPoints > 0 {
+		entities = append(entities, MapEntity{Type: "path", Points: makePathPoints(pathPoints)})
+	}
+	layers := []MapLayer{
+		{Type: "floor", MetaData: LayerMetaData{Area: area}},
+	}
+	return &ValetudoMap{
+		MetaData: MapMetaData{TotalLayerArea: area},
+		Layers:   layers,
+		Entities: entities,
+	}
+}
+
+func TestHasDrawablePixels(t *testing.T) {
+	tests := []struct {
+		name string
+		m    *ValetudoMap
+		want bool
+	}{
+		{
+			name: "nil map",
+			m:    nil,
+			want: false,
+		},
+		{
+			name: "empty map",
+			m:    &ValetudoMap{},
+			want: false,
+		},
+		{
+			name: "layers with pixels",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "floor", Pixels: []int{1, 2}}},
+			},
+			want: true,
+		},
+		{
+			name: "empty pixels no area no entities",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "floor", Pixels: []int{}}},
+			},
+			want: false,
+		},
+		{
+			name: "empty pixels but layer area > 0",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "floor", Pixels: []int{}, MetaData: LayerMetaData{Area: 169918}}},
+			},
+			want: true,
+		},
+		{
+			name: "empty pixels but segment area > 0",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "segment", Pixels: []int{}, MetaData: LayerMetaData{Area: 50000}}},
+			},
+			want: true,
+		},
+		{
+			name: "empty pixels but sufficient path entities",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "floor", Pixels: []int{}}},
+				Entities: []MapEntity{
+					{Type: "path", Points: makePathPoints(150)},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "empty pixels and insufficient path entities",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "floor", Pixels: []int{}}},
+				Entities: []MapEntity{
+					{Type: "path", Points: makePathPoints(50)},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "empty pixels path at exact threshold",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "floor", Pixels: []int{}}},
+				Entities: []MapEntity{
+					{Type: "path", Points: makePathPoints(MinEntityPoints)},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "multiple path entities aggregated",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "floor", Pixels: []int{}}},
+				Entities: []MapEntity{
+					{Type: "path", Points: makePathPoints(40)},
+					{Type: "path", Points: makePathPoints(40)},
+					{Type: "path", Points: makePathPoints(40)},
+				},
+			},
+			want: true, // 40+40+40 = 120 >= MinEntityPoints
+		},
+		{
+			name: "non-path entities do not count",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "floor", Pixels: []int{}}},
+				Entities: []MapEntity{
+					{Type: "robot_position", Points: makePathPoints(200)},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "wall layer with area",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "wall", Pixels: []int{}, MetaData: LayerMetaData{Area: 10000}}},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := HasDrawablePixels(tt.m)
+			if got != tt.want {
+				t.Errorf("HasDrawablePixels() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateMapForCalibration_EntityOnly(t *testing.T) {
+	tests := []struct {
+		name    string
+		m       *ValetudoMap
+		wantErr error
+	}{
+		{
+			name:    "entity-only map with area and path points",
+			m:       validMapEntityOnly(169918, 6970),
+			wantErr: nil,
+		},
+		{
+			name:    "entity-only map with area but no path points",
+			m:       validMapEntityOnly(169918, 0),
+			wantErr: nil, // area > 0 is sufficient
+		},
+		{
+			name:    "entity-only map with path points but no area",
+			m:       validMapEntityOnly(0, 6970),
+			wantErr: nil, // path points > MinEntityPoints is sufficient
+		},
+		{
+			name: "entity-only map with nothing drawable",
+			m: &ValetudoMap{
+				Layers: []MapLayer{{Type: "floor", Pixels: []int{}}},
+				Entities: []MapEntity{
+					{Type: "robot_position", Points: []int{100, 200}},
+					{Type: "charger_location", Points: []int{300, 400}},
+				},
+			},
+			wantErr: ErrNoDrawablePixels,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateMapForCalibration(tt.m)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("ValidateMapForCalibration() unexpected error: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("ValidateMapForCalibration() = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestIsMapComplete(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -328,6 +522,24 @@ func TestIsMapComplete(t *testing.T) {
 				Layers: []MapLayer{{Type: "floor", Pixels: []int{1, 2}}},
 			},
 			lastKnownGood: validMap(1000),
+			want:          false,
+		},
+		{
+			name:          "entity-only map no baseline",
+			newMap:        validMapEntityOnly(169918, 6970),
+			lastKnownGood: nil,
+			want:          true,
+		},
+		{
+			name:          "entity-only map with baseline area check passes",
+			newMap:        validMapEntityOnly(900, 6970),
+			lastKnownGood: validMapEntityOnly(1000, 6970),
+			want:          true,
+		},
+		{
+			name:          "entity-only map area below threshold",
+			newMap:        validMapEntityOnly(799, 6970),
+			lastKnownGood: validMapEntityOnly(1000, 6970),
 			want:          false,
 		},
 	}
