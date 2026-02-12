@@ -7,23 +7,27 @@ import (
 	"time"
 )
 
-// ICPConfig holds configuration for the ICP algorithm
+// ICPConfig holds configuration for the ICP algorithm.
+// All distance thresholds are in the same units as the input point clouds.
+// After the mm-normalization refactor (bead .5/.6), inputs are in local-mm,
+// so thresholds are in millimeters.
 type ICPConfig struct {
 	MaxIterations     int        // Maximum number of iterations
-	ConvergenceThresh float64    // Stop when error improvement is below this
-	MaxCorrespondDist float64    // Maximum distance for point correspondence
+	ConvergenceThresh float64    // Stop when error improvement is below this (mm)
+	MaxCorrespondDist float64    // Maximum distance for point correspondence (mm)
 	SamplePoints      int        // Number of feature points to use
 	OutlierPercentile float64    // Reject correspondences above this percentile (0-1)
 	TryRotations      bool       // Try multiple initial rotations (0°, 90°, 180°, 270°)
 	RNG               *rand.Rand // Random number generator for deterministic behavior
 }
 
-// DefaultICPConfig returns sensible defaults for ICP
+// DefaultICPConfig returns sensible defaults for ICP.
+// Distance values are in mm (matching local-mm feature coordinates).
 func DefaultICPConfig() ICPConfig {
 	return ICPConfig{
 		MaxIterations:     50,
-		ConvergenceThresh: 1.0,    // 1 pixel improvement threshold
-		MaxCorrespondDist: 1000.0, // Max 1000 pixels for correspondence
+		ConvergenceThresh: 1.0,    // 1mm improvement threshold
+		MaxCorrespondDist: 1000.0, // Max 1000mm (1m) for correspondence
 		SamplePoints:      300,    // Use up to 300 feature points
 		OutlierPercentile: 0.8,    // Keep 80% closest correspondences
 		TryRotations:      true,   // Try all 4 rotations

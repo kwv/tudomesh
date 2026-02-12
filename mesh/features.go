@@ -6,32 +6,44 @@ import (
 	"sort"
 )
 
-// FeatureSet contains extracted alignment features from a map
+// FeatureSet contains extracted alignment features from a map.
+// All coordinates are in local-mm (millimeters in the per-vacuum coordinate
+// space). After NormalizeToMM (bead .5), layer pixels and entity points are
+// both in mm, so every field here is consistently mm-valued.
 type FeatureSet struct {
-	// Boundary points from all segments/floor layers
+	// Boundary points from all segments/floor layers (local-mm)
 	BoundaryPoints []Point
 
-	// Corner points (significant angle changes in boundary)
+	// Corner points (significant angle changes in boundary, local-mm)
 	Corners []Point
 
-	// Wall points (strong structural features)
+	// Wall points (strong structural features, local-mm)
 	WallPoints []Point
 
-	// Grid-sampled floor points (for rotation matching)
+	// Grid-sampled floor points for rotation matching (local-mm)
 	GridPoints []Point
 
-	// Charger position (strong anchor point)
+	// Charger position (strong anchor point, local-mm)
 	ChargerPosition Point
 	HasCharger      bool
 
-	// Centroid of all floor area
+	// Centroid of all floor area (local-mm)
 	Centroid Point
 
-	// Bounding box
+	// Bounding box (local-mm)
 	MinX, MinY, MaxX, MaxY float64
 }
 
-// ExtractFeatures extracts alignment features from a Valetudo map
+// ExtractFeatures extracts alignment features from a Valetudo map.
+// All input data is expected to be in local-mm after NormalizeToMM.
+// Entity points (charger, path) are natively in mm.
+// Layer pixel coordinates have been converted from grid indices to mm by
+// NormalizeToMM (pixel * pixelSize).
+//
+// When pixel layers are empty (some Valetudo API states), entity path points
+// are used as the primary point cloud source. Path points are already in mm
+// and represent the vacuum's cleaning trajectory -- a dense spatial sample of
+// the reachable floor area.
 func ExtractFeatures(m *ValetudoMap) FeatureSet {
 	fs := FeatureSet{
 		MinX: math.MaxFloat64,
@@ -40,36 +52,43 @@ func ExtractFeatures(m *ValetudoMap) FeatureSet {
 		MaxY: -math.MaxFloat64,
 	}
 
-	// Collect all floor/segment pixels
-	var allPixels []Point
+	// Collect all floor/segment points (already local-mm after normalization).
+	var allFloorPts []Point
 	for _, layer := range m.Layers {
 		if layer.Type == "floor" || layer.Type == "segment" {
 			points := PixelsToPoints(layer.Pixels)
-			allPixels = append(allPixels, points...)
-
-			// Update bounding box
-			for _, p := range points {
-				if p.X < fs.MinX {
-					fs.MinX = p.X
-				}
-				if p.Y < fs.MinY {
-					fs.MinY = p.Y
-				}
-				if p.X > fs.MaxX {
-					fs.MaxX = p.X
-				}
-				if p.Y > fs.MaxY {
-					fs.MaxY = p.Y
-				}
-			}
+			allFloorPts = append(allFloorPts, points...)
 		}
 	}
 
-	// Extract wall points (strong structural features)
+	// Fallback: when pixel layers are empty, extract points from entity paths.
+	// The Valetudo API sometimes returns empty pixel layers while path entities
+	// contain thousands of trajectory points (already in local-mm).
+	if len(allFloorPts) == 0 {
+		allFloorPts = extractEntityPathPoints(m)
+	}
+
+	// Update bounding box from the collected points.
+	for _, p := range allFloorPts {
+		if p.X < fs.MinX {
+			fs.MinX = p.X
+		}
+		if p.Y < fs.MinY {
+			fs.MinY = p.Y
+		}
+		if p.X > fs.MaxX {
+			fs.MaxX = p.X
+		}
+		if p.Y > fs.MaxY {
+			fs.MaxY = p.Y
+		}
+	}
+
+	// Extract wall points (strong structural features, local-mm).
 	for _, layer := range m.Layers {
 		if layer.Type == "wall" {
 			wallPts := PixelsToPoints(layer.Pixels)
-			// Sample walls at regular intervals
+			// Sample walls at regular intervals to cap point count.
 			step := 1
 			if len(wallPts) > 500 {
 				step = len(wallPts) / 500
@@ -80,21 +99,23 @@ func ExtractFeatures(m *ValetudoMap) FeatureSet {
 		}
 	}
 
-	// Calculate centroid
-	if len(allPixels) > 0 {
-		fs.Centroid = Centroid(allPixels)
+	// Calculate centroid (local-mm).
+	if len(allFloorPts) > 0 {
+		fs.Centroid = Centroid(allFloorPts)
 	}
 
-	// Extract boundary points (edge detection)
-	fs.BoundaryPoints = extractBoundary(allPixels, m.PixelSize)
+	// Extract boundary points via edge detection.
+	// pixelSize is used as the grid cell spacing (mm) for neighbor adjacency.
+	fs.BoundaryPoints = extractBoundary(allFloorPts, m.PixelSize)
 
-	// Extract corners from boundary
+	// Extract corners from boundary.
 	fs.Corners = extractCorners(fs.BoundaryPoints, 60.0) // 60 degree threshold
 
-	// Extract grid-sampled floor points for robust rotation matching
-	fs.GridPoints = extractGridPoints(allPixels, m.PixelSize, 50) // 50 pixel grid
+	// Extract grid-sampled floor points for robust rotation matching.
+	// gridSpacing is in mm: 250mm provides ~1 sample per 25cm cell.
+	fs.GridPoints = extractGridPoints(allFloorPts, 250)
 
-	// Get charger position as strong anchor
+	// Get charger position as strong anchor (already local-mm).
 	if pos, ok := ExtractChargerPosition(m); ok {
 		fs.ChargerPosition = pos
 		fs.HasCharger = true
@@ -103,24 +124,40 @@ func ExtractFeatures(m *ValetudoMap) FeatureSet {
 	return fs
 }
 
-// extractGridPoints samples floor points on a regular grid
-// This provides consistent features for rotation matching
-func extractGridPoints(pixels []Point, pixelSize int, gridSpacing int) []Point {
-	if len(pixels) == 0 {
+// extractEntityPathPoints collects all path entity points from a map.
+// Path points are natively in local-mm (millimeters). Each path entity
+// stores a flat [x1,y1,x2,y2,...] array, identical to PixelsToPoints format.
+func extractEntityPathPoints(m *ValetudoMap) []Point {
+	var pts []Point
+	for _, entity := range m.Entities {
+		if entity.Type == "path" && len(entity.Points) >= 2 {
+			pts = append(pts, PixelsToPoints(entity.Points)...)
+		}
+	}
+	return pts
+}
+
+// extractGridPoints samples floor points on a regular grid.
+// gridSpacingMM is the cell size in millimeters (e.g. 250 means one sample
+// per 250mm x 250mm cell). Input points must be in local-mm.
+// This provides consistent, evenly-spaced features for rotation matching.
+func extractGridPoints(points []Point, gridSpacingMM int) []Point {
+	if len(points) == 0 || gridSpacingMM <= 0 {
 		return nil
 	}
 
-	// Build occupancy grid
+	gs := float64(gridSpacingMM)
+
+	// Build occupancy grid: snap each mm-coordinate to its grid cell index.
 	occupied := make(map[Point]bool)
-	for _, p := range pixels {
-		gx := math.Round(p.X / float64(gridSpacing))
-		gy := math.Round(p.Y / float64(gridSpacing))
+	for _, p := range points {
+		gx := math.Round(p.X / gs)
+		gy := math.Round(p.Y / gs)
 		occupied[Point{X: gx, Y: gy}] = true
 	}
 
-	// Return grid centers that are occupied
-	var gridPts []Point
-	gs := float64(gridSpacing)
+	// Return grid cell centers in mm.
+	gridPts := make([]Point, 0, len(occupied))
 	for key := range occupied {
 		gridPts = append(gridPts, Point{X: key.X * gs, Y: key.Y * gs})
 	}
@@ -128,29 +165,34 @@ func extractGridPoints(pixels []Point, pixelSize int, gridSpacing int) []Point {
 	return gridPts
 }
 
-// extractBoundary finds boundary points from a set of floor pixels
-// Uses a simple edge detection: points with fewer neighbors are on the boundary
-func extractBoundary(pixels []Point, pixelSize int) []Point {
-	if len(pixels) == 0 {
+// extractBoundary finds boundary points from a set of floor points.
+// Input points are in local-mm. pixelSize (mm per original grid cell) is used
+// as the cell spacing for neighbor adjacency: two points are considered
+// neighbors if they fall in adjacent cells of a grid with cellSize = pixelSize.
+//
+// The algorithm snaps each mm-coordinate to a grid cell index (mm / pixelSize),
+// checks 4-connected neighbors, and returns boundary cell centers in mm.
+func extractBoundary(points []Point, pixelSize int) []Point {
+	if len(points) == 0 || pixelSize <= 0 {
 		return nil
 	}
 
-	// Build a set of occupied pixels for fast lookup
+	ps := float64(pixelSize)
+
+	// Snap mm-coordinates to grid cell indices for adjacency testing.
 	occupied := make(map[Point]bool)
-	for _, p := range pixels {
-		// Normalize to grid coordinates
-		gx := math.Round(p.X / float64(pixelSize))
-		gy := math.Round(p.Y / float64(pixelSize))
+	for _, p := range points {
+		gx := math.Round(p.X / ps)
+		gy := math.Round(p.Y / ps)
 		occupied[Point{X: gx, Y: gy}] = true
 	}
 
-	// Find boundary points (those missing at least one neighbor)
+	// Find boundary cells (those missing at least one 4-connected neighbor).
 	var boundary []Point
-	ps := float64(pixelSize)
 	neighbors := []Point{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}
 
 	seen := make(map[Point]bool)
-	for _, p := range pixels {
+	for _, p := range points {
 		gx := math.Round(p.X / ps)
 		gy := math.Round(p.Y / ps)
 		key := Point{X: gx, Y: gy}
@@ -160,7 +202,6 @@ func extractBoundary(pixels []Point, pixelSize int) []Point {
 		}
 		seen[key] = true
 
-		// Check if this is an edge pixel
 		isBoundary := false
 		for _, n := range neighbors {
 			neighbor := Point{X: gx + n.X, Y: gy + n.Y}
@@ -171,6 +212,7 @@ func extractBoundary(pixels []Point, pixelSize int) []Point {
 		}
 
 		if isBoundary {
+			// Convert grid cell index back to mm.
 			boundary = append(boundary, Point{X: gx * ps, Y: gy * ps})
 		}
 	}
@@ -331,12 +373,15 @@ type WallAngleHistogram struct {
 	TotalEdges int          // Total number of edges analyzed
 }
 
-// ExtractWallAngles builds a histogram of wall segment angles from a map
-// Uses 180° symmetry since walls have no inherent direction
+// ExtractWallAngles builds a histogram of wall segment angles from a map.
+// Wall points are in local-mm (after NormalizeToMM). pixelSize is used as
+// the grid cell spacing (mm) for snapping points and detecting 8-connected
+// neighbors. The histogram uses 180-degree symmetry since walls have no
+// inherent direction.
 func ExtractWallAngles(m *ValetudoMap) WallAngleHistogram {
 	var hist WallAngleHistogram
 
-	// Collect wall points
+	// Collect wall points (local-mm).
 	var wallPoints []Point
 	for _, layer := range m.Layers {
 		if layer.Type == "wall" {
@@ -348,41 +393,45 @@ func ExtractWallAngles(m *ValetudoMap) WallAngleHistogram {
 		return hist
 	}
 
-	// Build a grid of wall pixels for edge detection
-	pixelSize := float64(m.PixelSize)
-	if pixelSize == 0 {
-		pixelSize = 5
+	// Cell spacing in mm for grid snapping. After normalization, adjacent
+	// wall pixels are exactly pixelSize mm apart.
+	cellSize := float64(m.PixelSize)
+	if cellSize == 0 {
+		cellSize = 5
 	}
 
-	// Map points to grid cells
+	// Snap mm-coordinates to grid cell indices.
 	grid := make(map[Point]bool)
 	for _, p := range wallPoints {
-		gx := math.Round(p.X / pixelSize)
-		gy := math.Round(p.Y / pixelSize)
+		gx := math.Round(p.X / cellSize)
+		gy := math.Round(p.Y / cellSize)
 		grid[Point{X: gx, Y: gy}] = true
 	}
 
-	// For each wall pixel, find neighbors and compute edge angles
-	// This detects local wall orientations
+	// For each wall cell, find 8-connected neighbors and compute edge angles.
+	// Angles are derived from grid cell offsets, so they are independent of
+	// the mm scale -- only the topology matters.
 	neighbors := []Point{
 		{1, 0}, {1, 1}, {0, 1}, {-1, 1},
 		{-1, 0}, {-1, -1}, {0, -1}, {1, -1},
 	}
 
+	seen := make(map[Point]bool)
 	for _, p := range wallPoints {
-		gx := math.Round(p.X / pixelSize)
-		gy := math.Round(p.Y / pixelSize)
+		gx := math.Round(p.X / cellSize)
+		gy := math.Round(p.Y / cellSize)
+		key := Point{X: gx, Y: gy}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 
-		// Find connected neighbors
 		for _, n := range neighbors {
 			nx, ny := gx+n.X, gy+n.Y
 			if grid[Point{X: nx, Y: ny}] {
-				// Calculate angle of this edge
-				dx := n.X
-				dy := n.Y
-				angle := math.Atan2(dy, dx) * 180 / math.Pi
+				angle := math.Atan2(n.Y, n.X) * 180 / math.Pi
 
-				// Normalize to 0-179 (symmetric - a wall at 0° is same as 180°)
+				// Normalize to 0-179 (symmetric).
 				for angle < 0 {
 					angle += 180
 				}
@@ -397,7 +446,7 @@ func ExtractWallAngles(m *ValetudoMap) WallAngleHistogram {
 		}
 	}
 
-	// Normalize histogram
+	// Normalize histogram.
 	if hist.TotalEdges > 0 {
 		for i := 0; i < 180; i++ {
 			hist.Bins[i] = float64(hist.RawCounts[i]) / float64(hist.TotalEdges)
@@ -543,31 +592,34 @@ func DetectRotationWithFeatures(source, target *ValetudoMap) RotationAnalysis {
 	sourcePoints := SampleFeatures(sourceFeatures, 300)
 	targetPoints := SampleFeatures(targetFeatures, 300)
 
-	// Score each rotation using multiple methods
+	// Score each rotation using multiple methods.
+	// Distance scaling constants are in mm (matching local-mm coordinates).
 	for _, rot := range []float64{0, 90, 180, 270} {
 		score := 0.0
 
-		// 1. Feature point matching (most important)
+		// 1. Feature point matching (most important).
 		if len(sourcePoints) >= 10 && len(targetPoints) >= 10 {
 			transform := buildRotationTransform(sourceFeatures.Centroid, targetFeatures.Centroid, rot)
 			transformed := TransformPoints(sourcePoints, transform)
 			dist := FeatureDistance(transformed, targetPoints)
-			// Lower distance is better - use inverse scaled appropriately
-			featureScore := 1.0 / (1.0 + dist/500.0)
+			// Lower distance is better - use inverse scaled appropriately.
+			// 2500mm (~2.5m) normalizes typical room-scale distances.
+			featureScore := 1.0 / (1.0 + dist/2500.0)
 			score += featureScore * 0.7 // 70% weight
 		}
 
-		// 2. Charger offset matching (strong asymmetric feature)
+		// 2. Charger offset matching (strong asymmetric feature).
 		if sourceFeatures.HasCharger && targetFeatures.HasCharger {
-			// Rotate source charger offset
+			// Rotate source charger offset.
 			rad := rot * math.Pi / 180
 			rotatedOffset := Point{
 				X: sourceChargerOffset.X*math.Cos(rad) - sourceChargerOffset.Y*math.Sin(rad),
 				Y: sourceChargerOffset.X*math.Sin(rad) + sourceChargerOffset.Y*math.Cos(rad),
 			}
-			// Compare with target charger offset
+			// Compare with target charger offset.
+			// 1000mm (~1m) normalizes typical charger offset distances.
 			chargerDist := Distance(rotatedOffset, targetChargerOffset)
-			chargerScore := 1.0 / (1.0 + chargerDist/200.0)
+			chargerScore := 1.0 / (1.0 + chargerDist/1000.0)
 			score += chargerScore * 0.3 // 30% weight
 		}
 
@@ -644,7 +696,7 @@ func DetectRotationWithFeaturesDebug(source, target *ValetudoMap) RotationAnalys
 	sourcePoints := SampleFeatures(sourceFeatures, 300)
 	targetPoints := SampleFeatures(targetFeatures, 300)
 
-	fmt.Printf("  Feature point distances per rotation:\n")
+	fmt.Printf("  Feature point distances per rotation (mm):\n")
 	for _, rot := range []float64{0, 90, 180, 270} {
 		score := 0.0
 		featureDist := 0.0
@@ -654,7 +706,7 @@ func DetectRotationWithFeaturesDebug(source, target *ValetudoMap) RotationAnalys
 			transform := buildRotationTransform(sourceFeatures.Centroid, targetFeatures.Centroid, rot)
 			transformed := TransformPoints(sourcePoints, transform)
 			featureDist = FeatureDistance(transformed, targetPoints)
-			featureScore := 1.0 / (1.0 + featureDist/500.0)
+			featureScore := 1.0 / (1.0 + featureDist/2500.0)
 			score += featureScore * 0.7
 		}
 
@@ -665,11 +717,11 @@ func DetectRotationWithFeaturesDebug(source, target *ValetudoMap) RotationAnalys
 				Y: sourceChargerOffset.X*math.Sin(rad) + sourceChargerOffset.Y*math.Cos(rad),
 			}
 			chargerDist = Distance(rotatedOffset, targetChargerOffset)
-			chargerScore := 1.0 / (1.0 + chargerDist/200.0)
+			chargerScore := 1.0 / (1.0 + chargerDist/1000.0)
 			score += chargerScore * 0.3
 		}
 
-		fmt.Printf("    %3.0f°: feat_dist=%.0f, charger_dist=%.0f\n", rot, featureDist, chargerDist)
+		fmt.Printf("    %3.0f°: feat_dist=%.0fmm, charger_dist=%.0fmm\n", rot, featureDist, chargerDist)
 		result.Scores[rot] = score
 	}
 
