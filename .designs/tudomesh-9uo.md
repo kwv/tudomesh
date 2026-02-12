@@ -207,6 +207,22 @@ flowchart LR
 
 4. **Positions stay in mm**: No grid conversion. `local-mm → ICP transform → world-mm` is the only path.
 
+## Pipeline Relationship: ICP vs GeoJSON
+
+ICP and GeoJSON are **independent pipelines** that both consume pixel data separately.
+GeoJSON is NOT used to drive ICP alignment — they serve different purposes:
+
+- **ICP/features** (`features.go`): Point cloud alignment — finds the transform.
+  `layer.Pixels → PixelsToPoints() → ExtractFeatures() → AlignMaps() → AffineMatrix`
+
+- **GeoJSON/vectorizer** (`vectorizer.go`, `geojson.go`): Geometry conversion —
+  applies the transform to produce polygons/linestrings for unified map rendering.
+  `layer.Pixels → VectorizeLayer() → LayerToFeature(transform) → FeatureCollection`
+
+Both independently process `layer.Pixels`, which means both break when pixels are
+empty. After the mm refactor, entity path points (already vector data in mm) may
+reduce the vectorizer's role for maps that lack pixel data.
+
 ## File Reference
 
 | File | Role | Current Coords | Target Coords |
