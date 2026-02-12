@@ -178,25 +178,19 @@ func TransformPaths(paths []Path, matrix AffineMatrix) []Path {
 // - "floor" or "segment" -> Polygon (for closed boundaries)
 // - "wall" -> MultiLineString (for wall segments)
 // Properties include layer metadata (segment name, vacuum ID, area, etc.)
+//
+// Paths are in local-mm (after NormalizeToMM). The transform maps local-mm
+// to world-mm directly (ICP now operates in mm). The pixelSize parameter is
+// retained for API compatibility but is no longer used for coordinate scaling.
 func LayerToFeature(layer *MapLayer, paths []Path, vacuumID string, transform AffineMatrix, pixelSize int) *Feature {
 	if layer == nil || len(paths) == 0 {
 		return nil
 	}
 
-	// Transform paths from pixel coordinates to world coordinates
-	// First apply the transform (ICP operates at pixel scale)
-	transformedPaths := TransformPaths(paths, transform)
-	// Then scale to world coordinates
-	worldPaths := make([]Path, len(transformedPaths))
-	for i, path := range transformedPaths {
-		worldPaths[i] = make(Path, len(path))
-		for j, pt := range path {
-			worldPaths[i][j] = Point{
-				X: pt.X * float64(pixelSize),
-				Y: pt.Y * float64(pixelSize),
-			}
-		}
-	}
+	// Transform paths from local-mm to world-mm.
+	// After NormalizeToMM, paths are already in mm; the ICP transform
+	// produces mm-to-mm mappings, so no additional pixelSize scaling is needed.
+	worldPaths := TransformPaths(paths, transform)
 
 	// Create geometry based on layer type
 	var geom *Geometry

@@ -146,17 +146,13 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 
 		for _, layer := range m.Layers {
 			if layer.Type == "floor" || layer.Type == "segment" {
+				// VectorizeLayer returns paths in local-mm (pixels already normalized).
+				// Transform maps local-mm to world-mm directly.
 				paths := VectorizeLayer(&layer, m.PixelSize, 5.0)
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
-						// Apply transform to pixel coordinates first
-						transformedPt := TransformPoint(pt, transform)
-						// Then scale to world coordinates
-						worldPt := Point{
-							X: transformedPt.X * float64(m.PixelSize),
-							Y: transformedPt.Y * float64(m.PixelSize),
-						}
+						worldPt := TransformPoint(pt, transform)
 						cx, cy := toCanvas(worldPt)
 						if i == 0 {
 							cp.MoveTo(cx, cy)
@@ -184,13 +180,7 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
-						// Apply transform to pixel coordinates first
-						transformedPt := TransformPoint(pt, transform)
-						// Then scale to world coordinates
-						worldPt := Point{
-							X: transformedPt.X * float64(m.PixelSize),
-							Y: transformedPt.Y * float64(m.PixelSize),
-						}
+						worldPt := TransformPoint(pt, transform)
 						cx, cy := toCanvas(worldPt)
 						if i == 0 {
 							cp.MoveTo(cx, cy)
@@ -239,13 +229,9 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 		vc := r.Colors[id]
 
 		if chargerPt, ok := ExtractChargerPosition(m); ok {
-			// Apply transform to pixel coordinates first
-			transformedPt := TransformPoint(chargerPt, transform)
-			// Then scale to world coordinates
-			worldPt := Point{
-				X: transformedPt.X * float64(m.PixelSize),
-				Y: transformedPt.Y * float64(m.PixelSize),
-			}
+			// Charger position is already in local-mm (entity points are natively mm).
+			// Transform maps local-mm to world-mm directly.
+			worldPt := TransformPoint(chargerPt, transform)
 			cx, cy := toCanvas(worldPt)
 
 			// Render as circle with vacuum's wall color
@@ -285,26 +271,22 @@ func (r *VectorRenderer) calculateWorldBounds() (minX, minY, maxX, maxY, centerX
 		transform := r.Transforms[id]
 		for _, layer := range m.Layers {
 			if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
+				// Layer pixels are already in local-mm after NormalizeToMM.
+				// The ICP transform maps local-mm to world-mm directly.
 				points := PixelsToPoints(layer.Pixels)
 				for _, p := range points {
-					// Apply transform to pixel coordinates first (ICP operates at pixel scale)
-					tp := TransformPoint(p, transform)
-					// Then scale to world coordinates
-					worldP := Point{
-						X: tp.X * float64(m.PixelSize),
-						Y: tp.Y * float64(m.PixelSize),
+					wp := TransformPoint(p, transform)
+					if wp.X < minX {
+						minX = wp.X
 					}
-					if worldP.X < minX {
-						minX = worldP.X
+					if wp.Y < minY {
+						minY = wp.Y
 					}
-					if worldP.Y < minY {
-						minY = worldP.Y
+					if wp.X > maxX {
+						maxX = wp.X
 					}
-					if worldP.X > maxX {
-						maxX = worldP.X
-					}
-					if worldP.Y > maxY {
-						maxY = worldP.Y
+					if wp.Y > maxY {
+						maxY = wp.Y
 					}
 				}
 			}
@@ -348,6 +330,8 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 	baseTransform := r.Transforms[baseID]
 
 	// Calculate world-space bounds from the base map only.
+	// Layer pixels are already in local-mm after NormalizeToMM.
+	// The ICP transform maps local-mm to world-mm directly.
 	minX, minY := math.MaxFloat64, math.MaxFloat64
 	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
 
@@ -355,46 +339,37 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 		if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
 			points := PixelsToPoints(layer.Pixels)
 			for _, p := range points {
-				tp := TransformPoint(p, baseTransform)
-				worldP := Point{
-					X: tp.X * float64(baseMap.PixelSize),
-					Y: tp.Y * float64(baseMap.PixelSize),
+				wp := TransformPoint(p, baseTransform)
+				if wp.X < minX {
+					minX = wp.X
 				}
-				if worldP.X < minX {
-					minX = worldP.X
+				if wp.Y < minY {
+					minY = wp.Y
 				}
-				if worldP.Y < minY {
-					minY = worldP.Y
+				if wp.X > maxX {
+					maxX = wp.X
 				}
-				if worldP.X > maxX {
-					maxX = worldP.X
-				}
-				if worldP.Y > maxY {
-					maxY = worldP.Y
+				if wp.Y > maxY {
+					maxY = wp.Y
 				}
 			}
 		}
 	}
 
 	// Expand bounds to include all vacuum positions.
-	// Positions are in grid coordinates (pixels) and must be scaled to world
-	// coordinates (millimeters) using the base map's PixelSize, matching the
-	// coordinate system used for the map geometry above.
-	pixelSize := float64(baseMap.PixelSize)
+	// Positions are already in world-mm (transformed by caller before storage).
 	for _, pos := range positions {
-		wx := pos.X * pixelSize
-		wy := pos.Y * pixelSize
-		if wx < minX {
-			minX = wx
+		if pos.X < minX {
+			minX = pos.X
 		}
-		if wy < minY {
-			minY = wy
+		if pos.Y < minY {
+			minY = pos.Y
 		}
-		if wx > maxX {
-			maxX = wx
+		if pos.X > maxX {
+			maxX = pos.X
 		}
-		if wy > maxY {
-			maxY = wy
+		if pos.Y > maxY {
+			maxY = pos.Y
 		}
 	}
 
@@ -434,14 +409,13 @@ func (r *VectorRenderer) renderLiveToCanvas(
 		return tx, ty
 	}
 
-	// pixelSize converts grid coordinates (pixels) to world coordinates (mm).
-	pixelSize := float64(baseMap.PixelSize)
-
 	// Greyscale colours for the base map.
 	greyFloor := color.RGBA{R: 200, G: 200, B: 200, A: 255}
 	greyWall := color.RGBA{R: 80, G: 80, B: 80, A: 255}
 
 	// Render floor/segment layers (filled, greyscale).
+	// VectorizeLayer returns paths in local-mm (pixels already normalized).
+	// Transform maps local-mm to world-mm directly.
 	floorStyle := canvas.DefaultStyle
 	floorStyle.Fill = canvas.Paint{Color: greyFloor}
 	floorStyle.Stroke = canvas.Paint{Color: canvas.Transparent}
@@ -452,11 +426,7 @@ func (r *VectorRenderer) renderLiveToCanvas(
 			for _, p := range paths {
 				cp := &canvas.Path{}
 				for i, pt := range p {
-					transformedPt := TransformPoint(pt, baseTransform)
-					worldPt := Point{
-						X: transformedPt.X * float64(baseMap.PixelSize),
-						Y: transformedPt.Y * float64(baseMap.PixelSize),
-					}
+					worldPt := TransformPoint(pt, baseTransform)
 					cx, cy := toCanvas(worldPt)
 					if i == 0 {
 						cp.MoveTo(cx, cy)
@@ -484,11 +454,7 @@ func (r *VectorRenderer) renderLiveToCanvas(
 			for _, p := range paths {
 				cp := &canvas.Path{}
 				for i, pt := range p {
-					transformedPt := TransformPoint(pt, baseTransform)
-					worldPt := Point{
-						X: transformedPt.X * float64(baseMap.PixelSize),
-						Y: transformedPt.Y * float64(baseMap.PixelSize),
-					}
+					worldPt := TransformPoint(pt, baseTransform)
 					cx, cy := toCanvas(worldPt)
 					if i == 0 {
 						cp.MoveTo(cx, cy)
@@ -555,7 +521,8 @@ func (r *VectorRenderer) renderLiveToCanvas(
 
 	for _, id := range vacIDs {
 		pos := positions[id]
-		cx, cy := toCanvas(Point{X: pos.X * pixelSize, Y: pos.Y * pixelSize})
+		// Positions are already in world-mm (transformed by caller).
+		cx, cy := toCanvas(Point{X: pos.X, Y: pos.Y})
 		vacColor := parseHexColor(pos.Color)
 
 		// Outer circle (border).

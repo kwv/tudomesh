@@ -311,17 +311,19 @@ func TestVectorRenderer_GridAndCharger(t *testing.T) {
 	t.Logf("Generated SVG with grid and charger: %d bytes", len(svgContent))
 }
 
-// TestCalculateWorldBounds verifies that calculateWorldBounds scales pixel coordinates
-// to world coordinates (by pixelSize) before calculating bounds
+// TestCalculateWorldBounds verifies that calculateWorldBounds returns bounds
+// directly from the (already mm-normalized) pixel coordinates, without any
+// additional pixelSize scaling.
 func TestCalculateWorldBounds(t *testing.T) {
-	// Create a test map with pixelSize=50
-	// Pixels at [100,200] should become world coords [5000,10000]
+	// After NormalizeToMM, pixels are already in mm.
+	// Pixels at [5000, 10000] and [7500, 12500] should remain as-is.
 	m := &ValetudoMap{
-		PixelSize: 50,
+		PixelSize:  50,
+		Normalized: true,
 		Layers: []MapLayer{
 			{
 				Type:   "floor",
-				Pixels: []int{100, 200, 150, 250}, // Two points: (100,200) and (150,250)
+				Pixels: []int{5000, 10000, 7500, 12500},
 			},
 		},
 	}
@@ -338,12 +340,11 @@ func TestCalculateWorldBounds(t *testing.T) {
 
 	minX, minY, maxX, maxY, _, _ := renderer.calculateWorldBounds()
 
-	// Expected bounds: (100*50, 200*50) to (150*50, 250*50)
-	// = (5000, 10000) to (7500, 12500)
-	expectedMinX := 100.0 * 50.0
-	expectedMinY := 200.0 * 50.0
-	expectedMaxX := 150.0 * 50.0
-	expectedMaxY := 250.0 * 50.0
+	// Bounds should be the pixel values directly (already mm).
+	expectedMinX := 5000.0
+	expectedMinY := 10000.0
+	expectedMaxX := 7500.0
+	expectedMaxY := 12500.0
 
 	if minX != expectedMinX {
 		t.Errorf("minX: got %v, want %v", minX, expectedMinX)
@@ -359,17 +360,18 @@ func TestCalculateWorldBounds(t *testing.T) {
 	}
 }
 
-// TestBoundsMatchVectorizeLayer verifies that calculateWorldBounds and VectorizeLayer
-// produce consistent coordinates when properly scaled.
-// VectorizeLayer returns pixel coordinates, calculateWorldBounds returns world coordinates.
-// The renderer scales pixel coords by pixelSize to get world coords.
+// TestBoundsMatchVectorizeLayer verifies that calculateWorldBounds and
+// VectorizeLayer produce consistent coordinates when data is in mm.
+// Both operate in the same mm coordinate space; no additional scaling needed.
 func TestBoundsMatchVectorizeLayer(t *testing.T) {
+	// After NormalizeToMM with pixelSize=50, grid (10,20) -> mm (500,1000).
 	m := &ValetudoMap{
-		PixelSize: 50,
+		PixelSize:  50,
+		Normalized: true,
 		Layers: []MapLayer{
 			{
 				Type:   "floor",
-				Pixels: []int{10, 20, 30, 40},
+				Pixels: []int{500, 1000, 1500, 2000},
 			},
 		},
 	}
@@ -384,26 +386,21 @@ func TestBoundsMatchVectorizeLayer(t *testing.T) {
 		Padding: 0,
 	}
 
-	// Get bounds from calculateWorldBounds (returns world coordinates)
+	// Both calculateWorldBounds and VectorizeLayer now operate in mm space.
 	minX, minY, maxX, maxY, _, _ := renderer.calculateWorldBounds()
 
-	// Get paths from VectorizeLayer (returns pixel coordinates)
 	paths := VectorizeLayer(&m.Layers[0], m.PixelSize, 0.0)
 
 	if len(paths) == 0 {
 		t.Skip("VectorizeLayer returned no paths (expected for sparse test data)")
 	}
 
-	// Verify that all vectorized points, when scaled to world coords, fall within bounds
-	pixelSize := float64(m.PixelSize)
+	// Vectorized points should fall within the same mm bounds (no scaling needed).
 	for _, path := range paths {
 		for _, pt := range path {
-			// Scale pixel coords to world coords
-			worldX := pt.X * pixelSize
-			worldY := pt.Y * pixelSize
-			if worldX < minX || worldX > maxX || worldY < minY || worldY > maxY {
-				t.Errorf("VectorizeLayer point (%v,%v) -> world (%v,%v) outside bounds [%v,%v] to [%v,%v]",
-					pt.X, pt.Y, worldX, worldY, minX, minY, maxX, maxY)
+			if pt.X < minX || pt.X > maxX || pt.Y < minY || pt.Y > maxY {
+				t.Errorf("VectorizeLayer point (%v,%v) outside bounds [%v,%v] to [%v,%v]",
+					pt.X, pt.Y, minX, minY, maxX, maxY)
 			}
 		}
 	}
