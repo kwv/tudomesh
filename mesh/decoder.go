@@ -42,7 +42,12 @@ func DecodeMapData(data []byte) (*ValetudoMap, error) {
 		return nil, fmt.Errorf("decoded JSON payload is empty")
 	}
 
-	return ParseMapJSON(jsonBytes)
+	m, err := ParseMapJSON(jsonBytes)
+	if err != nil {
+		return nil, err
+	}
+	NormalizeToMM(m)
+	return m, nil
 }
 
 // IsPNG checks if data starts with PNG magic bytes

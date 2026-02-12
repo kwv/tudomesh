@@ -10,6 +10,11 @@ type ValetudoMap struct {
 	PixelSize int         `json:"pixelSize"`
 	Layers    []MapLayer  `json:"layers"`
 	Entities  []MapEntity `json:"entities"`
+
+	// Normalized is true after NormalizeToMM has converted all layer pixel
+	// coordinates from grid indices to millimeters. It is not serialized and
+	// exists solely to guard against double-normalization.
+	Normalized bool `json:"-"`
 }
 
 // MapMetaData contains map metadata
@@ -28,10 +33,11 @@ type Size struct {
 
 // MapLayer represents a floor/segment/wall layer
 type MapLayer struct {
-	Class    string        `json:"__class"`
-	MetaData LayerMetaData `json:"metaData"`
-	Type     string        `json:"type"` // "floor", "segment", "wall"
-	Pixels   []int         `json:"pixels"`
+	Class            string        `json:"__class"`
+	MetaData         LayerMetaData `json:"metaData"`
+	Type             string        `json:"type"` // "floor", "segment", "wall"
+	Pixels           []int         `json:"pixels"`
+	CompressedPixels []int         `json:"compressedPixels,omitempty"` // Future-proofing: compressed pixel representation from Valetudo
 }
 
 // LayerMetaData contains layer metadata

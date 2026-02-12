@@ -7,13 +7,19 @@ import (
 	"os"
 )
 
-// ParseMapFile reads and parses a Valetudo map JSON file
+// ParseMapFile reads and parses a Valetudo map JSON file, then normalizes
+// all layer pixel coordinates from grid indices to millimeters.
 func ParseMapFile(path string) (*ValetudoMap, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
 	}
-	return ParseMapJSON(data)
+	m, err := ParseMapJSON(data)
+	if err != nil {
+		return nil, err
+	}
+	NormalizeToMM(m)
+	return m, nil
 }
 
 // ParseMapJSON parses Valetudo map JSON data
@@ -207,4 +213,49 @@ func HasDrawablePixels(m *ValetudoMap) bool {
 		}
 	}
 	return false
+}
+
+// NormalizeToMM converts all layer pixel coordinates from grid indices to
+// millimeters using the map's PixelSize. Entity points (robot_position,
+// charger_location, path) are already in mm and pass through unchanged.
+// Layer metaData.area is already in mm-squared and is not modified.
+//
+// After normalization, layer.Pixels contains coordinate pairs in mm:
+//
+//	mm = gridIndex * pixelSize
+//
+// If CompressedPixels is present and Pixels is empty, CompressedPixels is
+// decoded into Pixels first (future-proofing for Valetudo API changes).
+//
+// This function is idempotent: it sets m.Normalized and skips subsequent calls.
+// It is safe to call on a nil map or a map with pixelSize 0 (no-op).
+func NormalizeToMM(m *ValetudoMap) {
+	if m == nil || m.Normalized {
+		return
+	}
+	m.Normalized = true
+
+	ps := m.PixelSize
+	if ps <= 0 {
+		return
+	}
+
+	for i := range m.Layers {
+		layer := &m.Layers[i]
+
+		// Future-proofing: if Pixels is empty but CompressedPixels is
+		// present, copy CompressedPixels into Pixels so downstream code
+		// has a single field to consume.
+		if len(layer.Pixels) == 0 && len(layer.CompressedPixels) > 0 {
+			layer.Pixels = make([]int, len(layer.CompressedPixels))
+			copy(layer.Pixels, layer.CompressedPixels)
+		}
+
+		// Convert grid indices to mm.
+		for j := range layer.Pixels {
+			layer.Pixels[j] *= ps
+		}
+	}
+
+	// Entity points are already in mm — no conversion needed.
 }

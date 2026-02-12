@@ -115,6 +115,7 @@ func FetchMapFromAPIWithContext(ctx context.Context, apiURL string, opts ...Fetc
 			// Parse errors are not transient; do not retry.
 			return nil, fmt.Errorf("fetch map: %w", err)
 		}
+		NormalizeToMM(m)
 		return m, nil
 	}
 
