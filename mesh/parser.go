@@ -158,7 +158,7 @@ const MinAreaRatio = 0.8
 // Sentinel errors for map validation failures.
 var (
 	ErrNilMap            = errors.New("map is nil")
-	ErrNoDrawablePixels  = errors.New("map has no drawable pixels")
+	ErrNoDrawablePixels  = errors.New("map has no drawable content (no pixels, layer area, or sufficient path entities)")
 	ErrNoRobotPosition   = errors.New("map is missing robot_position entity")
 	ErrNoChargerLocation = errors.New("map is missing charger_location entity")
 	ErrAreaTooSmall      = errors.New("map area is too small compared to last known good map")
@@ -200,11 +200,23 @@ func IsMapComplete(newMap, lastKnownGood *ValetudoMap) bool {
 	return true
 }
 
-// HasDrawablePixels returns true if the map contains any pixels in floor, wall or segment layers
+// MinEntityPoints is the minimum total number of entity path points required
+// to consider a map drawable when layer pixels are empty.
+const MinEntityPoints = 100
+
+// HasDrawablePixels returns true if the map contains drawable spatial data.
+// A map is drawable if any of the following hold:
+//   - Any floor/segment/wall layer has pixel data (len(Pixels) > 0).
+//   - Any floor/segment/wall layer has metaData.area > 0 (API reports area
+//     even when pixels are empty).
+//   - Path entities contain at least MinEntityPoints total coordinate values,
+//     indicating the vacuum has traversed enough of the space to define it.
 func HasDrawablePixels(m *ValetudoMap) bool {
 	if m == nil {
 		return false
 	}
+
+	// Check layer pixels.
 	for _, layer := range m.Layers {
 		if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
 			if len(layer.Pixels) > 0 {
@@ -212,7 +224,24 @@ func HasDrawablePixels(m *ValetudoMap) bool {
 			}
 		}
 	}
-	return false
+
+	// Check layer metaData.area — the API may report area without pixels.
+	for _, layer := range m.Layers {
+		if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
+			if layer.MetaData.Area > 0 {
+				return true
+			}
+		}
+	}
+
+	// Check entity path point coverage.
+	totalPoints := 0
+	for _, entity := range m.Entities {
+		if entity.Type == "path" {
+			totalPoints += len(entity.Points)
+		}
+	}
+	return totalPoints >= MinEntityPoints
 }
 
 // NormalizeToMM converts all layer pixel coordinates from grid indices to
