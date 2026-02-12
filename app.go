@@ -807,31 +807,25 @@ func (a *App) RunService() {
 	initialMaps := a.loadInitialMaps(a.DataDir)
 	for id, m := range initialMaps {
 		a.StateTracker.UpdateMap(id, m)
-		// Also extract initial position
+		// Also extract initial position.
+		// Robot position is in local-mm (entity points are natively mm).
+		// The ICP transform maps local-mm to world-mm directly.
 		if robotPos, robotAngle, ok := mesh.ExtractRobotPosition(m); ok {
-			var gridX, gridY, worldAngle float64
-			// Convert robot position from mm to grid coordinates
-			// (Valetudo entity.Points are in mm, layer.Pixels are in grid units)
-			pixelSize := float64(m.PixelSize)
-			if pixelSize == 0 {
-				pixelSize = 5 // default
-			}
-			gridPos := mesh.Point{X: robotPos.X / pixelSize, Y: robotPos.Y / pixelSize}
+			var worldX, worldY, worldAngle float64
 
 			if cache != nil {
 				transform := cache.GetTransform(id)
-				// Transform works in grid coordinates
-				transformedPos := mesh.TransformPoint(gridPos, transform)
-				gridX = transformedPos.X
-				gridY = transformedPos.Y
+				worldPos := mesh.TransformPoint(robotPos, transform)
+				worldX = worldPos.X
+				worldY = worldPos.Y
 				worldAngle = mesh.TransformAngle(robotAngle, transform)
 			} else {
-				// No calibration - use grid coords directly
-				gridX = gridPos.X
-				gridY = gridPos.Y
+				// No calibration - use local-mm coords directly
+				worldX = robotPos.X
+				worldY = robotPos.Y
 				worldAngle = robotAngle
 			}
-			a.StateTracker.UpdatePosition(id, gridX, gridY, worldAngle)
+			a.StateTracker.UpdatePosition(id, worldX, worldY, worldAngle)
 		}
 	}
 	if len(initialMaps) > 0 {
@@ -879,13 +873,8 @@ func (a *App) RunService() {
 				return
 			}
 
-			// Convert robot position from mm to grid coordinates
-			// (Valetudo entity.Points are in mm, layer.Pixels are in grid units)
-			pixelSize := float64(mapData.PixelSize)
-			if pixelSize == 0 {
-				pixelSize = 5 // default
-			}
-			gridPos := mesh.Point{X: robotPos.X / pixelSize, Y: robotPos.Y / pixelSize}
+			// Robot position is in local-mm (entity points are natively mm).
+			// The ICP transform maps local-mm to world-mm directly.
 
 			// Auto-cache map to disk if it contains drawable data
 			if mesh.HasDrawablePixels(mapData) {
@@ -902,15 +891,14 @@ func (a *App) RunService() {
 				}(cachePath, mapData)
 			}
 
-			// Transform position if calibration available
-			var gridX, gridY, worldAngle float64
+			// Transform position from local-mm to world-mm
+			var worldX, worldY, worldAngle float64
 
 			if a.Calibration != nil {
 				transform := a.Calibration.GetTransform(vacuumID)
-				// Transform works in grid coordinates
-				transformedPos := mesh.TransformPoint(gridPos, transform)
-				gridX = transformedPos.X
-				gridY = transformedPos.Y
+				worldPos := mesh.TransformPoint(robotPos, transform)
+				worldX = worldPos.X
+				worldY = worldPos.Y
 
 				// Calculate rotation from transform matrix and apply to angle
 				worldAngle = mesh.TransformAngle(robotAngle, transform)
@@ -920,24 +908,23 @@ func (a *App) RunService() {
 					math.Atan2(transform.C, transform.A)*180/math.Pi,
 					robotAngle, worldAngle)
 			} else {
-				// No calibration - use grid coordinates directly
-				gridX = gridPos.X
-				gridY = gridPos.Y
+				// No calibration - use local-mm coords directly
+				worldX = robotPos.X
+				worldY = robotPos.Y
 				worldAngle = robotAngle
 				log.Printf("[CALIBRATION] %s: no calibration loaded, using raw angle=%.0f°", vacuumID, robotAngle)
 			}
 
-			// Update state tracker with position (in grid coords)
-			a.StateTracker.UpdatePosition(vacuumID, gridX, gridY, worldAngle)
+			// Update state tracker with position (in world-mm)
+			a.StateTracker.UpdatePosition(vacuumID, worldX, worldY, worldAngle)
 
 			// Always log the position update for debugging
-			log.Printf("%s: pos(%.0f,%.0f) / pixelSize=%d -> grid(%.1f,%.1f) -> world(%.1f,%.1f,%.0f°)",
-				vacuumID, robotPos.X, robotPos.Y, mapData.PixelSize,
-				gridPos.X, gridPos.Y, gridX, gridY, worldAngle)
+			log.Printf("%s: localPos(%.0f,%.0f) -> world(%.1f,%.1f,%.0f°)",
+				vacuumID, robotPos.X, robotPos.Y, worldX, worldY, worldAngle)
 
 			// Publish transformed position
 			if a.Publisher != nil {
-				if err := a.Publisher.PublishPosition(vacuumID, gridX, gridY, worldAngle); err != nil {
+				if err := a.Publisher.PublishPosition(vacuumID, worldX, worldY, worldAngle); err != nil {
 					log.Printf("Error publishing position for %s: %v", vacuumID, err)
 				}
 			}

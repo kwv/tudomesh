@@ -5,37 +5,44 @@ import (
 	"testing"
 )
 
-// TestVectorRendererCoordinateScale verifies that ICP transforms are applied
-// at the correct scale (pixel scale before world scale conversion)
+// TestVectorRendererCoordinateScale verifies that calculateWorldBounds
+// produces correct world-mm bounds when layer pixels are already in mm
+// (after NormalizeToMM) and the ICP transform is mm-to-mm.
 func TestVectorRendererCoordinateScale(t *testing.T) {
-	// Create two simple maps with a known transformation
-	// Map1: single pixel at (10, 20) with pixelSize=5mm
-	// Map2: single pixel at (15, 25) with pixelSize=5mm
-	// Expected transform: translation by (5, 5) pixels = (25, 25) mm in world coords
+	// After NormalizeToMM, pixel coordinates are already in mm.
+	// Map1: pixels at (50,100), (55,100), (50,105), (55,105) in mm
+	// Map2: pixels at (75,125), (80,125), (75,130), (80,130) in mm
+	// Transform: translation by (25, 25) mm (ICP operates in mm)
+	//
+	// map1 pixels (50,100) -> identity -> (50,100)
+	// map1 pixels (55,105) -> identity -> (55,105)
+	// map2 pixels (75,125) -> +25,+25 -> (100,150)
+	// map2 pixels (80,130) -> +25,+25 -> (105,155)
 
 	map1 := &ValetudoMap{
-		PixelSize: 5,
+		PixelSize:  5,
+		Normalized: true,
 		Layers: []MapLayer{
 			{
 				Type:   "floor",
-				Pixels: []int{10, 20, 11, 20, 10, 21, 11, 21}, // 2x2 block
+				Pixels: []int{50, 100, 55, 100, 50, 105, 55, 105}, // already mm
 			},
 		},
 	}
 
 	map2 := &ValetudoMap{
-		PixelSize: 5,
+		PixelSize:  5,
+		Normalized: true,
 		Layers: []MapLayer{
 			{
 				Type:   "floor",
-				Pixels: []int{15, 25, 16, 25, 15, 26, 16, 26}, // 2x2 block
+				Pixels: []int{75, 125, 80, 125, 75, 130, 80, 130}, // already mm
 			},
 		},
 	}
 
-	// Create a transform that translates by (5, 5) pixels
-	// This simulates an ICP result at pixel scale
-	transform := Translation(5, 5)
+	// Translation of (25, 25) mm — ICP now operates in mm space
+	transform := Translation(25, 25)
 
 	maps := map[string]*ValetudoMap{
 		"map1": map1,
@@ -49,19 +56,12 @@ func TestVectorRendererCoordinateScale(t *testing.T) {
 
 	renderer := NewVectorRenderer(maps, transforms, "map1")
 
-	// Calculate world bounds - this should apply transform at pixel scale first
 	minX, minY, maxX, maxY, _, _ := renderer.calculateWorldBounds()
 
-	// After transform:
-	// map1 pixels (10,20) -> (10,20) -> world (50,100)
-	// map1 pixels (11,21) -> (11,21) -> world (55,105)
-	// map2 pixels (15,25) -> transform -> (20,30) -> world (100,150)
-	// map2 pixels (16,26) -> transform -> (21,31) -> world (105,155)
-
-	expectedMinX := 50.0  // map1 at (10*5, 20*5)
-	expectedMinY := 100.0 // map1 at (10*5, 20*5)
-	expectedMaxX := 105.0 // map2 at (21*5, 31*5)
-	expectedMaxY := 155.0 // map2 at (21*5, 31*5)
+	expectedMinX := 50.0  // map1 at (50, 100)
+	expectedMinY := 100.0 // map1 at (50, 100)
+	expectedMaxX := 105.0 // map2 at (80+25, 130+25)
+	expectedMaxY := 155.0
 
 	tolerance := 0.01
 
@@ -79,13 +79,15 @@ func TestVectorRendererCoordinateScale(t *testing.T) {
 	}
 }
 
-// TestVectorizerReturnsPixelCoordinates verifies that VectorizeLayer
-// returns pixel coordinates (not world coordinates)
-func TestVectorizerReturnsPixelCoordinates(t *testing.T) {
-	// Create a simple 3x3 block at pixel position (10, 20)
+// TestVectorizerReturnsLocalMMCoordinates verifies that VectorizeLayer
+// returns coordinates in the same space as the input pixels (local-mm
+// after NormalizeToMM).
+func TestVectorizerReturnsLocalMMCoordinates(t *testing.T) {
+	// After NormalizeToMM with pixelSize=5, grid index 10 becomes 50mm.
+	// Create a 3x3 block at mm positions (50,100) to (60,110).
 	pixels := []int{}
-	for y := 20; y < 23; y++ {
-		for x := 10; x < 13; x++ {
+	for y := 100; y <= 110; y += 5 {
+		for x := 50; x <= 60; x += 5 {
 			pixels = append(pixels, x, y)
 		}
 	}
@@ -95,7 +97,7 @@ func TestVectorizerReturnsPixelCoordinates(t *testing.T) {
 		Pixels: pixels,
 	}
 
-	pixelSize := 5 // 5mm per pixel
+	pixelSize := 5
 	tolerance := 0.0
 
 	paths := VectorizeLayer(layer, pixelSize, tolerance)
@@ -104,21 +106,15 @@ func TestVectorizerReturnsPixelCoordinates(t *testing.T) {
 		t.Fatal("Expected at least one path")
 	}
 
-	// VectorizeLayer should return pixel coordinates (around 10-13, 20-23)
-	// NOT world coordinates (around 50-65, 100-115)
+	// VectorizeLayer should return coordinates in the same mm space as the input.
+	// Points should be near 50-60 (X) and 100-110 (Y).
 	for _, path := range paths {
 		for _, pt := range path {
-			// Check that coordinates are in pixel range, not world range
-			if pt.X < 8 || pt.X > 15 {
-				t.Errorf("Point X coordinate %.2f is not in pixel range [8,15]", pt.X)
+			if pt.X < 45 || pt.X > 65 {
+				t.Errorf("Point X coordinate %.2f is not in expected mm range [45,65]", pt.X)
 			}
-			if pt.Y < 18 || pt.Y > 25 {
-				t.Errorf("Point Y coordinate %.2f is not in pixel range [18,25]", pt.Y)
-			}
-
-			// Make sure it's NOT in world coordinate range
-			if pt.X > 40 || pt.Y > 90 {
-				t.Errorf("Point (%.2f, %.2f) appears to be in world coordinates, not pixel coordinates", pt.X, pt.Y)
+			if pt.Y < 95 || pt.Y > 115 {
+				t.Errorf("Point Y coordinate %.2f is not in expected mm range [95,115]", pt.Y)
 			}
 		}
 	}
