@@ -36,8 +36,9 @@
    # If design_path exists: Read and follow specifications exactly
    ```
 
-6. **Invoke discipline skill:**
+6. **Invoke core skills:**
    ```
+   Skill(skill: "beads")
    Skill(skill: "subagents-discipline")
    ```
 </on-task-start>
@@ -55,7 +56,7 @@ If the orchestrator's approach would break something, explain what you found and
 <during-implementation>
 1. Work ONLY in your worktree: `.worktrees/bd-{BEAD_ID}/`
 2. Commit frequently with descriptive messages
-3. Log progress: `bd comment add {BEAD_ID} "Completed X, working on Y"`
+3. Log progress: `bd comments add {BEAD_ID} "Completed X, working on Y"`
 </during-implementation>
 
 <on-completion>
