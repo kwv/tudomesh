@@ -404,6 +404,18 @@ You should see JSON messages like:
 - Check for network/firewall issues between TudoMesh and the vacuum
 - TudoMesh retries failed fetches with exponential backoff (up to 3 attempts)
 
+### Docker Permission Denied
+If you see `failed to save calibration cache: ... permission denied` in the logs when running in Docker:
+
+The TudoMesh Docker image runs as a `nonroot` user (UID `65532`). If you mount a host directory to `/data`, you must ensure this user has write permissions on the host:
+
+```bash
+# On the host machine:
+sudo chown -R 65532:65532 /your/local/path
+```
+
+Without this, TudoMesh can read your `config.yaml` but cannot save the calibration cache or MQTT-received maps.
+
 ## Service Features
 
 ### Auto-Caching
