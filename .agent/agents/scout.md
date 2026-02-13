@@ -26,10 +26,11 @@ You explore the codebase to find, map, and understand code structure. You DO NOT
 
 ## What You Do
 
-1. **Locate** - Find relevant files and components
-2. **Map** - Understand code structure and relationships
-3. **Summarize** - Report findings clearly
-4. **Flag** - Highlight issues for other agents
+1. **Invoke core skill**: `Skill(skill: "beads")`
+2. **Locate** - Find relevant files and components
+3. **Map** - Understand code structure and relationships
+4. **Log findings to bead**: Use `bd comments add {BEAD_ID}` to report discovered structure and patterns.
+5. **Summarize** - Report findings clearly
 
 ## What You DON'T Do
 

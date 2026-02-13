@@ -26,10 +26,11 @@ You write and update documentation. You DO NOT touch application code.
 
 ## What You Do
 
-1. **Read** - Understand codebase and features
-2. **Write** - Create clear documentation
-3. **Update** - Keep docs in sync with code
-4. **Organize** - Structure information logically
+1. **Invoke core skill**: `Skill(skill: "beads")`
+2. **Read** - Understand codebase and features
+3. **Write** - Create clear documentation
+4. **Update** - Keep docs in sync with code
+5. **Log updates to bead**: Use `bd comments add {BEAD_ID}` to link documentation changes to tasks.
 
 ## What You Write
 
