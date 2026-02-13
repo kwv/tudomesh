@@ -770,6 +770,12 @@ func (a *App) RunService() {
 	a.Config = config
 	log.Printf("Loaded config from %s", resolvedConfig)
 
+	// Check if data directory is writable (for cache and map persistence)
+	if err := a.checkWritability(a.DataDir); err != nil {
+		log.Printf("WARNING: Data directory %s is not writable: %v", a.DataDir, err)
+		log.Printf("Auto-calibration and map caching will fail. Use 'chown 65532' if running in Docker.")
+	}
+
 	// 3. Load calibration cache (optional but recommended)
 	var cache *mesh.CalibrationData
 	cache, err = mesh.LoadCalibration(resolvedCache)
@@ -1046,4 +1052,13 @@ func (a *App) loadInitialMaps(dataDir string) map[string]*mesh.ValetudoMap {
 	}
 
 	return maps
+}
+
+// checkWritability verifies that a directory is writable by creating and deleting a temporary file
+func (a *App) checkWritability(dir string) error {
+	tmpFile := filepath.Join(dir, ".tudomesh-write-test")
+	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+		return err
+	}
+	return os.Remove(tmpFile)
 }

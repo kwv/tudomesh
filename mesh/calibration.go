@@ -47,6 +47,9 @@ func SaveCalibration(path string, cal *CalibrationData) error {
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
+		if os.IsPermission(err) {
+			return fmt.Errorf("writing calibration file to %s: %w (check directory permissions and Docker user UID)", path, err)
+		}
 		return fmt.Errorf("writing calibration file: %w", err)
 	}
 
