@@ -389,7 +389,7 @@ func TestBoundsMatchVectorizeLayer(t *testing.T) {
 	// Both calculateWorldBounds and VectorizeLayer now operate in mm space.
 	minX, minY, maxX, maxY, _, _ := renderer.calculateWorldBounds()
 
-	paths := VectorizeLayer(&m.Layers[0], m.PixelSize, 0.0)
+	paths := VectorizeLayer(m, &m.Layers[0], 0.0)
 
 	if len(paths) == 0 {
 		t.Skip("VectorizeLayer returned no paths (expected for sparse test data)")
