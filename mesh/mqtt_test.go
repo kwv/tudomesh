@@ -5,6 +5,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestInitMQTT_Disabled(t *testing.T) {
@@ -18,12 +21,8 @@ func TestInitMQTT_Disabled(t *testing.T) {
 	handler := func(string, []byte, *ValetudoMap, error) {}
 
 	client, err := InitMQTT(config, handler)
-	if err != nil {
-		t.Errorf("InitMQTT() should not error when MQTT disabled: %v", err)
-	}
-	if client != nil {
-		t.Error("InitMQTT() should return nil when MQTT disabled")
-	}
+	assert.NoError(t, err)
+	assert.Nil(t, client)
 }
 
 func TestInitMQTT_NoVacuums(t *testing.T) {
@@ -38,29 +37,21 @@ func TestInitMQTT_NoVacuums(t *testing.T) {
 	handler := func(string, []byte, *ValetudoMap, error) {}
 
 	_, err := InitMQTT(config, handler)
-	if err == nil {
-		t.Error("InitMQTT() should error when no vacuums configured")
-	}
+	assert.Error(t, err)
 }
 
 func TestMQTTClient_IsConnected(t *testing.T) {
 	// Test initial state
 	client := &MQTTClient{}
-	if client.IsConnected() {
-		t.Error("New client should not be connected")
-	}
+	assert.False(t, client.IsConnected(), "New client should not be connected")
 
 	// Test after setting connected
 	client.setConnected(true)
-	if !client.IsConnected() {
-		t.Error("Client should be connected after setConnected(true)")
-	}
+	assert.True(t, client.IsConnected(), "Client should be connected after setConnected(true)")
 
 	// Test after disconnecting
 	client.setConnected(false)
-	if client.IsConnected() {
-		t.Error("Client should not be connected after setConnected(false)")
-	}
+	assert.False(t, client.IsConnected(), "Client should not be connected after setConnected(false)")
 }
 
 func TestMQTTClient_GetVacuumByTopic(t *testing.T) {
@@ -102,10 +93,8 @@ func TestMQTTClient_GetVacuumByTopic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotID, gotOK := client.GetVacuumByTopic(tt.topic)
-			if gotID != tt.wantID || gotOK != tt.wantOK {
-				t.Errorf("GetVacuumByTopic(%q) = (%q, %v), want (%q, %v)",
-					tt.topic, gotID, gotOK, tt.wantID, tt.wantOK)
-			}
+			assert.Equal(t, tt.wantID, gotID)
+			assert.Equal(t, tt.wantOK, gotOK)
 		})
 	}
 }
@@ -134,7 +123,6 @@ func TestMessageHandler_Integration(t *testing.T) {
 		},
 		Size:      Size{X: 100, Y: 100},
 		PixelSize: 5,
-		Layers:    []MapLayer{},
 		Entities: []MapEntity{
 			{
 				Class:  "PointMapEntity",
@@ -163,21 +151,11 @@ func TestMessageHandler_Integration(t *testing.T) {
 	// Simulate handler call
 	handler("test-vacuum", nil, mapData, nil)
 
-	if !handlerCalled {
-		t.Error("Handler was not called")
-	}
-	if receivedID != "test-vacuum" {
-		t.Errorf("Received vacuum ID = %s, want test-vacuum", receivedID)
-	}
-	if receivedMap == nil {
-		t.Error("Received map is nil")
-	}
-	if receivedErr != nil {
-		t.Errorf("Received error = %v, want nil", receivedErr)
-	}
-	if receivedMap != nil && receivedMap.Class != "ValetudoMap" {
-		t.Errorf("Map class = %s, want ValetudoMap", receivedMap.Class)
-	}
+	assert.True(t, handlerCalled)
+	assert.Equal(t, "test-vacuum", receivedID)
+	assert.NotNil(t, receivedMap)
+	assert.NoError(t, receivedErr)
+	assert.Equal(t, "ValetudoMap", receivedMap.Class)
 }
 
 // TestMQTTClient_ConcurrentAccess tests thread-safe access to client state
@@ -448,18 +426,19 @@ func TestCreateStateMessageHandler_DockedState(t *testing.T) {
 	handler := client.createStateMessageHandler("rocky7")
 
 	// Simulate a docked state message
-	mock := NewMockClient()
-	mock.SetConnected(true)
-	mock.Subscribe("valetudo/rocky7/StatusStateAttribute/status", 0, handler)
-	mock.SimulateMessage("valetudo/rocky7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
+	mockClient := NewMockClient()
+	// Expectations are set in NewMockClient by default, but we can be explicit
+	mockClient.On("Subscribe", "valetudo/rocky7/StatusStateAttribute/status", mock.Anything, mock.Anything).Return(NewMockToken(nil))
+
+	mockClient.Subscribe("valetudo/rocky7/StatusStateAttribute/status", 0, handler)
+	mockClient.SimulateMessage("valetudo/rocky7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
 
 	mu.Lock()
 	got := receivedVacuumID
 	mu.Unlock()
 
-	if got != "rocky7" {
-		t.Errorf("DockingHandler received vacuumID = %q, want %q", got, "rocky7")
-	}
+	assert.Equal(t, "rocky7", got)
+	mockClient.AssertExpectations(t)
 }
 
 func TestCreateStateMessageHandler_PayloadFormats(t *testing.T) {
@@ -666,8 +645,7 @@ func TestCreateStateMessageHandler_MissingValueField(t *testing.T) {
 }
 
 func TestOnConnect_SubscribesStateTopics(t *testing.T) {
-	mock := NewMockClient()
-	mock.SetConnected(true)
+	mockClient := NewMockClient()
 
 	config := &Config{
 		Vacuums: []VacuumConfig{
@@ -676,22 +654,20 @@ func TestOnConnect_SubscribesStateTopics(t *testing.T) {
 		},
 	}
 
-	client := newMQTTClientWithMock(mock, config, func(string, []byte, *ValetudoMap, error) {})
+	client := newMQTTClientWithMock(mockClient, config, func(string, []byte, *ValetudoMap, error) {})
 
-	client.onConnect(mock)
+	client.onConnect(mockClient)
 
 	// Should have 4 subscriptions: 2 map data + 2 state topics
-	mock.mu.RLock()
-	handlers := len(mock.messageHandlers)
-	topics := make([]string, 0, len(mock.messageHandlers))
-	for topic := range mock.messageHandlers {
+	mockClient.mu.RLock()
+	handlers := len(mockClient.messageHandlers)
+	topics := make([]string, 0, len(mockClient.messageHandlers))
+	for topic := range mockClient.messageHandlers {
 		topics = append(topics, topic)
 	}
-	mock.mu.RUnlock()
+	mockClient.mu.RUnlock()
 
-	if handlers != 4 {
-		t.Errorf("Number of subscriptions = %d, want 4 (got topics: %v)", handlers, topics)
-	}
+	assert.Equal(t, 4, handlers, "Topics: %v", topics)
 
 	// Verify specific state topics are subscribed
 	expectedStateTopics := []string{
@@ -699,13 +675,12 @@ func TestOnConnect_SubscribesStateTopics(t *testing.T) {
 		"valetudo/vacuum2/StatusStateAttribute/status",
 	}
 
-	mock.mu.RLock()
+	mockClient.mu.RLock()
 	for _, topic := range expectedStateTopics {
-		if _, ok := mock.messageHandlers[topic]; !ok {
-			t.Errorf("Expected subscription to %s, but not found", topic)
-		}
+		_, ok := mockClient.messageHandlers[topic]
+		assert.True(t, ok, "Expected subscription to %s", topic)
 	}
-	mock.mu.RUnlock()
+	mockClient.mu.RUnlock()
 }
 
 func TestOnConnect_ShortTopicSkipsStateSubscription(t *testing.T) {
@@ -733,8 +708,7 @@ func TestOnConnect_ShortTopicSkipsStateSubscription(t *testing.T) {
 }
 
 func TestDockingHandler_EndToEnd(t *testing.T) {
-	mock := NewMockClient()
-	mock.SetConnected(true)
+	mockClient := NewMockClient()
 
 	config := &Config{
 		Vacuums: []VacuumConfig{
@@ -742,7 +716,7 @@ func TestDockingHandler_EndToEnd(t *testing.T) {
 		},
 	}
 
-	client := newMQTTClientWithMock(mock, config, func(string, []byte, *ValetudoMap, error) {})
+	client := newMQTTClientWithMock(mockClient, config, func(string, []byte, *ValetudoMap, error) {})
 
 	var dockedVacuum string
 	client.SetDockingHandler(func(vacuumID string) {
@@ -750,14 +724,12 @@ func TestDockingHandler_EndToEnd(t *testing.T) {
 	})
 
 	// Trigger onConnect to subscribe to all topics
-	client.onConnect(mock)
+	client.onConnect(mockClient)
 
 	// Simulate state message arriving on the state topic
-	mock.SimulateMessage("valetudo/rocky7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
+	mockClient.SimulateMessage("valetudo/rocky7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
 
-	if dockedVacuum != "rocky7" {
-		t.Errorf("End-to-end docking: got vacuumID = %q, want %q", dockedVacuum, "rocky7")
-	}
+	assert.Equal(t, "rocky7", dockedVacuum)
 }
 
 func BenchmarkDeriveStateTopic(b *testing.B) {

@@ -15,9 +15,19 @@ import (
 // DockingHandler is called when a vacuum enters the 'docked' state
 type DockingHandler func(vacuumID string)
 
+// MQTTClientInterface defines the minimal set of MQTT operations we use.
+// This matches a subset of paho.mqtt.Client for easier mocking.
+type MQTTClientInterface interface {
+	Connect() mqtt.Token
+	Disconnect(quiesce uint)
+	IsConnected() bool
+	Publish(topic string, qos byte, retained bool, payload interface{}) mqtt.Token
+	Subscribe(topic string, qos byte, callback mqtt.MessageHandler) mqtt.Token
+}
+
 // MQTTClient manages MQTT connection and subscriptions for vacuum map data
 type MQTTClient struct {
-	client         mqtt.Client
+	client         MQTTClientInterface
 	config         *Config
 	messageHandler MessageHandler
 	dockingHandler DockingHandler
@@ -100,9 +110,15 @@ func InitMQTT(config *Config, handler MessageHandler) (*MQTTClient, error) {
 	opts.SetOrderMatters(false)           // Allow concurrent processing
 
 	// Callbacks
-	opts.SetOnConnectHandler(client.onConnect)
-	opts.SetConnectionLostHandler(client.onConnectionLost)
-	opts.SetReconnectingHandler(client.onReconnecting)
+	opts.SetOnConnectHandler(func(c mqtt.Client) {
+		client.onConnect(c)
+	})
+	opts.SetConnectionLostHandler(func(c mqtt.Client, err error) {
+		client.onConnectionLost(c, err)
+	})
+	opts.SetReconnectingHandler(func(c mqtt.Client, opts *mqtt.ClientOptions) {
+		client.onReconnecting(c, opts)
+	})
 
 	client.client = mqtt.NewClient(opts)
 
@@ -151,7 +167,7 @@ func (c *MQTTClient) connectWithRetry() {
 }
 
 // onConnect is called when the MQTT connection is established
-func (c *MQTTClient) onConnect(client mqtt.Client) {
+func (c *MQTTClient) onConnect(client MQTTClientInterface) {
 	log.Println("MQTT connected, subscribing to vacuum topics...")
 	c.setConnected(true)
 
@@ -187,13 +203,13 @@ func (c *MQTTClient) onConnect(client mqtt.Client) {
 
 // onConnectionLost is called when the MQTT connection is lost
 // Auto-reconnect is enabled, so this is typically a transient event
-func (c *MQTTClient) onConnectionLost(client mqtt.Client, err error) {
+func (c *MQTTClient) onConnectionLost(client MQTTClientInterface, err error) {
 	log.Printf("MQTT connection interrupted (%v), auto-reconnect will retry", err)
 	c.setConnected(false)
 }
 
 // onReconnecting is called when the client attempts to reconnect
-func (c *MQTTClient) onReconnecting(client mqtt.Client, opts *mqtt.ClientOptions) {
+func (c *MQTTClient) onReconnecting(client MQTTClientInterface, opts *mqtt.ClientOptions) {
 	log.Println("MQTT reconnecting...")
 }
 
@@ -331,14 +347,14 @@ func (c *MQTTClient) GetVacuumByTopic(topic string) (string, bool) {
 	return "", false
 }
 
-// GetClient returns the underlying MQTT client for publishing
-func (c *MQTTClient) GetClient() mqtt.Client {
+// GetClient returns the underlying MQTT client interface
+func (c *MQTTClient) GetClient() MQTTClientInterface {
 	return c.client
 }
 
-// newMQTTClientWithMock creates an MQTTClient with a provided mqtt.Client
+// newMQTTClientWithMock creates an MQTTClient with a provided MQTTClientInterface
 // This is used for testing with mock clients
-func newMQTTClientWithMock(client mqtt.Client, config *Config, handler MessageHandler) *MQTTClient {
+func newMQTTClientWithMock(client MQTTClientInterface, config *Config, handler MessageHandler) *MQTTClient {
 	return &MQTTClient{
 		client:         client,
 		config:         config,
