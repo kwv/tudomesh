@@ -7,13 +7,11 @@ import (
 	"os"
 	"sync"
 	"time"
-
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 // Publisher manages publishing transformed vacuum positions to MQTT
 type Publisher struct {
-	client        mqtt.Client
+	client        MQTTClientInterface
 	publishPrefix string
 	qos           byte
 	retain        bool
@@ -23,7 +21,7 @@ type Publisher struct {
 
 // NewPublisher creates a new position publisher
 // If client is nil, publishing is disabled (for testing)
-func NewPublisher(client mqtt.Client) *Publisher {
+func NewPublisher(client MQTTClientInterface) *Publisher {
 	prefix := os.Getenv("MQTT_PUBLISH_PREFIX")
 	if prefix == "" {
 		prefix = "tudomesh"

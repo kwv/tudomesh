@@ -1,10 +1,12 @@
 package mesh
 
 import (
+	"log"
 	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/stretchr/testify/mock"
 )
 
 // MockToken implements mqtt.Token for testing
@@ -43,17 +45,130 @@ func (t *MockToken) Error() error {
 	return t.err
 }
 
-// MockClient implements mqtt.Client for testing
+// MockClient implements MQTTClientInterface using testify/mock
 type MockClient struct {
-	connected         bool
-	connectError      error
-	publishError      error
-	subscribeError    error
-	messageHandlers   map[string]mqtt.MessageHandler
-	publishedMessages []MockMessage
-	mu                sync.RWMutex
-	connectDelay      time.Duration
-	onConnect         mqtt.OnConnectHandler
+	mock.Mock
+	mu              sync.RWMutex
+	connected       bool
+	messageHandlers map[string]mqtt.MessageHandler
+}
+
+// NewMockClient creates a new mock MQTT client
+func NewMockClient() *MockClient {
+	m := &MockClient{
+		messageHandlers: make(map[string]mqtt.MessageHandler),
+		connected:       true, // Default to connected for typical tests
+	}
+
+	// Set default permissive stubs
+	m.On("IsConnected").Return(true).Maybe()
+	m.On("Connect").Return(NewMockToken(nil)).Maybe()
+	m.On("Subscribe", mock.Anything, mock.Anything, mock.Anything).Return(NewMockToken(nil)).Run(func(args mock.Arguments) {
+		topic := args.String(0)
+		handler := args.Get(2).(mqtt.MessageHandler)
+		m.mu.Lock()
+		m.messageHandlers[topic] = handler
+		m.mu.Unlock()
+	}).Maybe()
+	m.On("Publish", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(NewMockToken(nil)).Maybe()
+	m.On("Disconnect", mock.Anything).Return().Maybe()
+
+	return m
+}
+
+func (m *MockClient) Connect() mqtt.Token {
+	args := m.Called()
+	m.mu.Lock()
+	m.connected = true
+	m.mu.Unlock()
+	if t, ok := args.Get(0).(mqtt.Token); ok {
+		return t
+	}
+	return NewMockToken(nil)
+}
+
+func (m *MockClient) Disconnect(quiesce uint) {
+	m.Called(quiesce)
+	m.mu.Lock()
+	m.connected = false
+	m.mu.Unlock()
+}
+
+func (m *MockClient) IsConnected() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
+func (m *MockClient) Publish(topic string, qos byte, retained bool, payload interface{}) mqtt.Token {
+	args := m.Called(topic, qos, retained, payload)
+	if t, ok := args.Get(0).(mqtt.Token); ok {
+		return t
+	}
+	return NewMockToken(nil)
+}
+
+func (m *MockClient) Subscribe(topic string, qos byte, callback mqtt.MessageHandler) mqtt.Token {
+	args := m.Called(topic, qos, callback)
+	if t, ok := args.Get(0).(mqtt.Token); ok {
+		return t
+	}
+	return NewMockToken(nil)
+}
+
+// --- Helper methods for tests ---
+
+// SetConnected sets the connection state directly (for simple test setup)
+func (m *MockClient) SetConnected(connected bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.connected = connected
+}
+
+// SimulateMessage simulates receiving a message on a topic
+func (m *MockClient) SimulateMessage(topic string, payload []byte) {
+	m.mu.RLock()
+	handler, ok := m.messageHandlers[topic]
+	m.mu.RUnlock()
+
+	if ok && handler != nil {
+		msg := &mockMessage{
+			topic:   topic,
+			payload: payload,
+		}
+		handler(nil, msg) // Passing nil for the client as it's often not used in handlers
+	} else {
+		log.Printf("MockClient: No handler for topic %s", topic)
+	}
+}
+
+// GetPublishedMessages is a helper to extract messages from mock calls.
+// This is used to maintain compatibility with existing tests.
+func (m *MockClient) GetPublishedMessages() []MockMessage {
+	var messages []MockMessage
+	for _, call := range m.Calls {
+		if call.Method == "Publish" {
+			topic := call.Arguments.String(0)
+			qos := call.Arguments.Get(1).(byte)
+			retained := call.Arguments.Bool(2)
+			payload := call.Arguments.Get(3)
+
+			var payloadBytes []byte
+			switch v := payload.(type) {
+			case []byte:
+				payloadBytes = v
+			case string:
+				payloadBytes = []byte(v)
+			}
+
+			messages = append(messages, MockMessage{
+				Topic:   topic,
+				Payload: payloadBytes,
+				QoS:     qos,
+				Retain:  retained,
+			})
+		}
+	}
+	return messages
 }
 
 type MockMessage struct {
@@ -61,212 +176,6 @@ type MockMessage struct {
 	Payload []byte
 	QoS     byte
 	Retain  bool
-}
-
-// NewMockClient creates a new mock MQTT client
-func NewMockClient() *MockClient {
-	return &MockClient{
-		messageHandlers:   make(map[string]mqtt.MessageHandler),
-		publishedMessages: []MockMessage{},
-		connected:         false,
-	}
-}
-
-// SetConnected sets the connection state
-func (c *MockClient) SetConnected(connected bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.connected = connected
-}
-
-// SetConnectError sets the error returned on Connect
-func (c *MockClient) SetConnectError(err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.connectError = err
-}
-
-// SetPublishError sets the error returned on Publish
-func (c *MockClient) SetPublishError(err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.publishError = err
-}
-
-// SetSubscribeError sets the error returned on Subscribe
-func (c *MockClient) SetSubscribeError(err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.subscribeError = err
-}
-
-// SetConnectDelay sets a delay for Connect operations (simulates network latency)
-func (c *MockClient) SetConnectDelay(delay time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.connectDelay = delay
-}
-
-// GetPublishedMessages returns all published messages
-func (c *MockClient) GetPublishedMessages() []MockMessage {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	result := make([]MockMessage, len(c.publishedMessages))
-	copy(result, c.publishedMessages)
-	return result
-}
-
-// SimulateMessage simulates receiving a message on a topic
-func (c *MockClient) SimulateMessage(topic string, payload []byte) {
-	c.mu.RLock()
-	handler, ok := c.messageHandlers[topic]
-	c.mu.RUnlock()
-
-	if ok && handler != nil {
-		msg := &mockMessage{
-			topic:   topic,
-			payload: payload,
-		}
-		handler(c, msg)
-	}
-}
-
-// IsConnected returns the connection status
-func (c *MockClient) IsConnected() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.connected
-}
-
-// IsConnectionOpen returns whether the connection is open
-func (c *MockClient) IsConnectionOpen() bool {
-	return c.IsConnected()
-}
-
-// Connect simulates connecting to the broker
-func (c *MockClient) Connect() mqtt.Token {
-	c.mu.Lock()
-	delay := c.connectDelay
-	err := c.connectError
-	c.mu.Unlock()
-
-	if delay > 0 {
-		time.Sleep(delay)
-	}
-
-	if err == nil {
-		c.mu.Lock()
-		c.connected = true
-		onConnect := c.onConnect
-		c.mu.Unlock()
-
-		// Call onConnect handler if set
-		if onConnect != nil {
-			go onConnect(c)
-		}
-	}
-
-	return NewMockToken(err)
-}
-
-// Disconnect simulates disconnecting from the broker
-func (c *MockClient) Disconnect(quiesce uint) {
-	c.mu.Lock()
-	c.connected = false
-	c.mu.Unlock()
-}
-
-// Publish simulates publishing a message
-func (c *MockClient) Publish(topic string, qos byte, retained bool, payload interface{}) mqtt.Token {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !c.connected {
-		return NewMockToken(mqtt.ErrNotConnected)
-	}
-
-	if c.publishError != nil {
-		return NewMockToken(c.publishError)
-	}
-
-	// Convert payload to []byte
-	var payloadBytes []byte
-	switch v := payload.(type) {
-	case []byte:
-		payloadBytes = v
-	case string:
-		payloadBytes = []byte(v)
-	}
-
-	c.publishedMessages = append(c.publishedMessages, MockMessage{
-		Topic:   topic,
-		Payload: payloadBytes,
-		QoS:     qos,
-		Retain:  retained,
-	})
-
-	return NewMockToken(nil)
-}
-
-// Subscribe simulates subscribing to a topic
-func (c *MockClient) Subscribe(topic string, qos byte, callback mqtt.MessageHandler) mqtt.Token {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !c.connected {
-		return NewMockToken(mqtt.ErrNotConnected)
-	}
-
-	if c.subscribeError != nil {
-		return NewMockToken(c.subscribeError)
-	}
-
-	c.messageHandlers[topic] = callback
-	return NewMockToken(nil)
-}
-
-// SubscribeMultiple simulates subscribing to multiple topics
-func (c *MockClient) SubscribeMultiple(filters map[string]byte, callback mqtt.MessageHandler) mqtt.Token {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !c.connected {
-		return NewMockToken(mqtt.ErrNotConnected)
-	}
-
-	if c.subscribeError != nil {
-		return NewMockToken(c.subscribeError)
-	}
-
-	for topic := range filters {
-		c.messageHandlers[topic] = callback
-	}
-
-	return NewMockToken(nil)
-}
-
-// Unsubscribe simulates unsubscribing from a topic
-func (c *MockClient) Unsubscribe(topics ...string) mqtt.Token {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for _, topic := range topics {
-		delete(c.messageHandlers, topic)
-	}
-
-	return NewMockToken(nil)
-}
-
-// AddRoute adds a message handler for a topic
-func (c *MockClient) AddRoute(topic string, callback mqtt.MessageHandler) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.messageHandlers[topic] = callback
-}
-
-// OptionsReader returns the client options (not implemented for mock)
-func (c *MockClient) OptionsReader() mqtt.ClientOptionsReader {
-	return mqtt.ClientOptionsReader{}
 }
 
 // mockMessage implements mqtt.Message for testing
