@@ -254,7 +254,7 @@ func MapToFeatureCollection(valetudoMap *ValetudoMap, vacuumID string, transform
 		layer := &valetudoMap.Layers[i]
 
 		// Vectorize the layer
-		paths := VectorizeLayer(layer, valetudoMap.PixelSize, tolerance)
+		paths := VectorizeLayer(valetudoMap, layer, tolerance)
 		if len(paths) == 0 {
 			continue
 		}

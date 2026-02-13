@@ -100,7 +100,12 @@ func TestVectorizerReturnsLocalMMCoordinates(t *testing.T) {
 	pixelSize := 5
 	tolerance := 0.0
 
-	paths := VectorizeLayer(layer, pixelSize, tolerance)
+	m := &ValetudoMap{
+		PixelSize:  pixelSize,
+		Normalized: true,
+		Layers:     []MapLayer{*layer},
+	}
+	paths := VectorizeLayer(m, layer, tolerance)
 
 	if len(paths) == 0 {
 		t.Fatal("Expected at least one path")

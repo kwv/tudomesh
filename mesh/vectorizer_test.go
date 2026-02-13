@@ -38,13 +38,19 @@ func TestVectorizeLayer(t *testing.T) {
 		pixels = append(pixels, 9, y)
 	}
 
-	layer := &MapLayer{
-		Type:   "wall",
-		Pixels: pixels,
+	m := &ValetudoMap{
+		PixelSize: 1,
+		Layers: []MapLayer{
+			{
+				Type:   "wall",
+				Pixels: pixels,
+			},
+		},
 	}
+	layer := &m.Layers[0]
 
 	// PixelSize = 1, Tolerance = 0 (lossless)
-	paths := VectorizeLayer(layer, 1, 0.0)
+	paths := VectorizeLayer(m, layer, 0.0)
 
 	if len(paths) == 0 {
 		t.Fatalf("No paths found")
@@ -63,7 +69,7 @@ func TestVectorizeLayer(t *testing.T) {
 
 	// RDP with higher tolerance should reduce points or keep them the same
 	// (for very simple shapes like squares, simplification may not reduce further)
-	pathsSimplified := VectorizeLayer(layer, 1, 2.0)
+	pathsSimplified := VectorizeLayer(m, layer, 2.0)
 	pointsSimplified := 0
 	for _, p := range pathsSimplified {
 		pointsSimplified += len(p)
@@ -74,6 +80,47 @@ func TestVectorizeLayer(t *testing.T) {
 	// For simple shapes like rectangles, RDP may not reduce further since corners are essential
 	if pointsSimplified > foundPoints {
 		t.Errorf("Simplification increased points: %d vs %d", pointsSimplified, foundPoints)
+	}
+}
+
+func TestVectorizeLayer_EntityFallback(t *testing.T) {
+	// MQTT format: no pixel data, but path entities are present.
+	m := &ValetudoMap{
+		PixelSize: 5,
+		Layers: []MapLayer{
+			{
+				Type:   "floor",
+				Pixels: nil, // empty -- MQTT style
+			},
+			{
+				Type:   "wall",
+				Pixels: nil,
+			},
+		},
+		Entities: []MapEntity{
+			{
+				Type:   "path",
+				Points: []int{100, 200, 150, 250, 200, 300, 250, 350},
+			},
+		},
+	}
+
+	// Floor layer should fall back to entity paths.
+	floorPaths := VectorizeLayer(m, &m.Layers[0], 0.0)
+	if len(floorPaths) == 0 {
+		t.Fatal("Expected entity-based paths for floor layer with no pixels")
+	}
+	// Verify points are in mm (entity points are already mm).
+	for _, pt := range floorPaths[0] {
+		if pt.X < 100 || pt.X > 250 || pt.Y < 200 || pt.Y > 350 {
+			t.Errorf("Point (%v,%v) outside expected entity range", pt.X, pt.Y)
+		}
+	}
+
+	// Wall layer should return nil (no wall data in MQTT format).
+	wallPaths := VectorizeLayer(m, &m.Layers[1], 0.0)
+	if wallPaths != nil {
+		t.Errorf("Expected nil for wall layer with no pixels, got %d paths", len(wallPaths))
 	}
 }
 

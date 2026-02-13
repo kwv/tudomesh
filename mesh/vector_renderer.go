@@ -148,7 +148,7 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 			if layer.Type == "floor" || layer.Type == "segment" {
 				// VectorizeLayer returns paths in local-mm (pixels already normalized).
 				// Transform maps local-mm to world-mm directly.
-				paths := VectorizeLayer(&layer, m.PixelSize, 5.0)
+				paths := VectorizeLayer(m, &layer, 5.0)
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
@@ -176,7 +176,7 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 
 		for _, layer := range m.Layers {
 			if layer.Type == "wall" {
-				paths := VectorizeLayer(&layer, m.PixelSize, 2.0)
+				paths := VectorizeLayer(m, &layer, 2.0)
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
@@ -422,7 +422,7 @@ func (r *VectorRenderer) renderLiveToCanvas(
 
 	for _, layer := range baseMap.Layers {
 		if layer.Type == "floor" || layer.Type == "segment" {
-			paths := VectorizeLayer(&layer, baseMap.PixelSize, 5.0)
+			paths := VectorizeLayer(baseMap, &layer, 5.0)
 			for _, p := range paths {
 				cp := &canvas.Path{}
 				for i, pt := range p {
@@ -450,7 +450,7 @@ func (r *VectorRenderer) renderLiveToCanvas(
 
 	for _, layer := range baseMap.Layers {
 		if layer.Type == "wall" {
-			paths := VectorizeLayer(&layer, baseMap.PixelSize, 2.0)
+			paths := VectorizeLayer(baseMap, &layer, 2.0)
 			for _, p := range paths {
 				cp := &canvas.Path{}
 				for i, pt := range p {

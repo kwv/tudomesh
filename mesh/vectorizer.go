@@ -13,42 +13,106 @@ type VisitKey struct {
 	Dir int
 }
 
-// VectorizeLayer converts a map layer into a set of simplified vector paths
-// It uses contour tracing and RDP to simplify them
-func VectorizeLayer(layer *MapLayer, pixelSize int, tolerance float64) []Path {
-	if layer == nil || len(layer.Pixels) == 0 {
+// VectorizeLayer converts a map layer into a set of simplified vector paths.
+// It supports two Valetudo map formats:
+//
+//   - HTTP format (pixel data populated): After NormalizeToMM, layer.Pixels
+//     contain mm values. The function converts them back to grid indices for
+//     contour tracing, then scales the traced paths back to mm.
+//
+//   - MQTT format (pixels empty, entities populated): For floor/segment layers,
+//     path entity points (already in mm) are extracted and simplified. Wall
+//     layers with no pixels return nil since MQTT maps lack wall pixel data.
+//
+// All returned paths are in local-mm coordinates.
+func VectorizeLayer(m *ValetudoMap, layer *MapLayer, tolerance float64) []Path {
+	if m == nil || layer == nil {
 		return nil
 	}
 
-	// 1. Reconstruct dense grid from sparse pixels
-	grid, minX, minY, width, height := pixelsToGrid(layer.Pixels, pixelSize)
+	if len(layer.Pixels) > 0 {
+		return vectorizeFromPixels(layer, m.PixelSize, tolerance)
+	}
+
+	// MQTT format: no pixel data. Use entity paths for floor/segment layers.
+	// Wall layers have no entity data in MQTT format.
+	if layer.Type == "floor" || layer.Type == "segment" {
+		return vectorizeFromEntities(m, tolerance)
+	}
+
+	return nil
+}
+
+// vectorizeFromPixels handles the HTTP format where layer.Pixels are populated.
+// After NormalizeToMM, pixels are in mm. We convert back to grid indices for
+// contour tracing, then scale the output paths back to mm.
+func vectorizeFromPixels(layer *MapLayer, pixelSize int, tolerance float64) []Path {
+	if pixelSize <= 0 {
+		return nil
+	}
+
+	// Convert mm values back to grid indices for contour tracing.
+	gridPixels := make([]int, len(layer.Pixels))
+	for i, v := range layer.Pixels {
+		gridPixels[i] = v / pixelSize
+	}
+
+	// 1. Reconstruct dense grid from sparse grid-index pixels
+	grid, minX, minY, width, height := pixelsToGrid(gridPixels, pixelSize)
 
 	// 2. Trace contours
 	contours := traceContours(grid, width, height)
 
-	// 3. Transform back to pixel coordinates and simplify
+	// 3. Transform back to mm coordinates and simplify
+	ps := float64(pixelSize)
 	var result []Path
 	for _, contour := range contours {
-		// Convert grid coordinates to pixel coordinates (not world coordinates)
-		// ICP transforms operate at pixel scale, so we must not scale here
-		pixelContour := make(Path, len(contour))
+		mmContour := make(Path, len(contour))
 		for i, p := range contour {
-			pixelContour[i] = Point{
-				X: p.X + float64(minX),
-				Y: p.Y + float64(minY),
+			mmContour[i] = Point{
+				X: (p.X + float64(minX)) * ps,
+				Y: (p.Y + float64(minY)) * ps,
 			}
 		}
 
-		// Simplify using Ramer-Douglas-Peucker
-		// Note: tolerance is in world units, so scale it to pixel units for simplification
-		pixelTolerance := tolerance / float64(pixelSize)
-		simplified := SimplifyRDP(pixelContour, pixelTolerance)
+		// Tolerance is in mm, contour is now in mm -- use directly.
+		simplified := SimplifyRDP(mmContour, tolerance)
 		if len(simplified) >= 2 {
 			result = append(result, simplified)
 		}
 	}
 
 	return result
+}
+
+// vectorizeFromEntities builds paths from entity path points (MQTT format).
+// Entity points are already in local-mm. The function collects all "path"
+// entities, groups them into a single path, and applies RDP simplification.
+func vectorizeFromEntities(m *ValetudoMap, tolerance float64) []Path {
+	var allPts Path
+	for _, entity := range m.Entities {
+		if entity.Type == "path" && len(entity.Points) >= 2 {
+			for i := 0; i+1 < len(entity.Points); i += 2 {
+				allPts = append(allPts, Point{
+					X: float64(entity.Points[i]),
+					Y: float64(entity.Points[i+1]),
+				})
+			}
+		}
+	}
+
+	if len(allPts) < 2 {
+		return nil
+	}
+
+	if tolerance > 0 {
+		allPts = SimplifyRDP(allPts, tolerance)
+	}
+
+	if len(allPts) >= 2 {
+		return []Path{allPts}
+	}
+	return nil
 }
 
 // pixelsToGrid converts flat pixel array to a 2D boolean grid
