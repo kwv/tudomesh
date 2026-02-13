@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // ---------------------------------------------------------------------------
@@ -136,19 +138,11 @@ func TestDockingAutoCalibrateFlow(t *testing.T) {
 	gotUpdated := calibrationUpdated
 	mu.Unlock()
 
-	if gotID != "vacuum2" {
-		t.Errorf("calibratedVacuumID = %q, want %q", gotID, "vacuum2")
-	}
-	if !gotUpdated {
-		t.Fatal("expected calibration to be updated")
-	}
+	assert.Equal(t, "vacuum2", gotID, "calibratedVacuumID should be vacuum2")
+	assert.True(t, gotUpdated, "calibration should have been updated")
 
 	// -- assert: calibration data was updated in memory --
 	vc := calData.GetVacuumCalibration("vacuum2")
-	if vc == nil {
-		t.Fatal("expected vacuum2 to have calibration data")
-		return
-	}
 	if vc.LastUpdated == 0 {
 		t.Error("vacuum2 LastUpdated should be non-zero")
 	}

@@ -5,6 +5,7 @@ go 1.25
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/paulmach/orb v0.12.0
+	github.com/stretchr/testify v1.11.1
 	github.com/tdewolff/canvas v0.0.0-20260129132952-fb83307db4c6
 	golang.org/x/image v0.35.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -20,13 +21,16 @@ require (
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/benoitkugler/textlayout v0.3.1 // indirect
 	github.com/benoitkugler/textprocessing v0.0.3 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/go-fonts/latin-modern v0.3.3 // indirect
 	github.com/go-text/typesetting v0.3.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tdewolff/font v0.0.0-20260129132752-ab952538a56d // indirect
 	github.com/tdewolff/minify/v2 v2.24.4 // indirect
 	github.com/tdewolff/parse/v2 v2.8.5 // indirect

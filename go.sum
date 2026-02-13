@@ -32,6 +32,8 @@ github.com/benoitkugler/textprocessing v0.0.3/go.mod h1:/4bLyCf1QYywunMK3Gf89Nhb
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
+github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/eclipse/paho.mqtt.golang v1.5.1 h1:/VSOv3oDLlpqR2Epjn1Q7b2bSTplJIeV2ISgCl2W7nE=
 github.com/eclipse/paho.mqtt.golang v1.5.1/go.mod h1:1/yJCneuyOoCOzKSsOTUc0AJfpsItBGWvYpBLimhArU=
 github.com/go-fonts/latin-modern v0.3.3 h1:g2xNgI8yzdNzIVm+qvbMryB6yGPe0pSMss8QT3QwlJ0=
@@ -78,7 +80,11 @@ github.com/srwiley/scanFT v0.0.0-20220128184157-0d1ee492111f/go.mod h1:LZwgIPG9X
 github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 h1:ZdkidVdpLW13BQ9a+/3uerT2ezy9J7KQWH18JCfhDmI=
 github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388/go.mod h1:C/WY5lmWfMtPFYYBTd3Lzdn4FTLr+RxlIeiBNye+/os=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
+github.com/stretchr/objx v0.5.2 h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=
+github.com/stretchr/objx v0.5.2/go.mod h1:FRsXN1f5AsAjCGJKqEizvkpNtU+EGNCLh3NxZ/8L+MA=
 github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
+github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
+github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/tdewolff/canvas v0.0.0-20260129132952-fb83307db4c6 h1:cDkuSE2xwQsfN13bEFy0fL4jEma45Cxs84UtKz4tQvg=
 github.com/tdewolff/canvas v0.0.0-20260129132952-fb83307db4c6/go.mod h1:29cDQZmq3W0hqLD7LIFc7lKQPr3tLVy8IL2TrW6Z2iI=
 github.com/tdewolff/font v0.0.0-20260129132752-ab952538a56d h1:NVWmHAClooLekQTb14zYrzodI7L6eDMMMnFADndq7U8=
