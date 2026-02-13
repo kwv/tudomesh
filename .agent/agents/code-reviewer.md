@@ -44,9 +44,10 @@ The implementer may have:
 **This is your most important job.** Find and verify DEMO blocks.
 
 ```bash
-# 1. Get context
+# 1. Get context & Invoke skill
 bd show {BEAD_ID}
 bd comments {BEAD_ID}
+Skill(skill: "beads")
 
 # 2. Look for DEMO blocks in comments and verification logs
 ```

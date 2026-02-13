@@ -52,14 +52,13 @@ Never guess. Ambiguity is a sin.
 
 ## Investigation Process
 
-```
-1. Reproduce the bug (if possible)
-2. Gather stack traces, logs, error messages
-3. Identify the code path
-4. Find the root cause
-5. Document findings
-6. Recommend fix
-```
+1. **Invoke core skill**: `Skill(skill: "beads")`
+2. Reproduce the bug (if possible)
+3. Gather stack traces, logs, error messages
+4. Identify the code path
+5. Find the root cause
+6. **Log findings to bead**: Use `bd comments add {BEAD_ID}` to document investigation details and evidence.
+7. Recommend fix
 
 ## Tools Available
 

@@ -50,14 +50,12 @@ Never guess. Ambiguity is a sin.
 
 ## Design Process
 
-```
-1. Gather requirements
-2. Research existing patterns (mcp__context7__)
-3. Identify constraints and trade-offs
+1. **Invoke core skill**: `Skill(skill: "beads")`
+2. Gather requirements
+3. Research existing patterns
 4. Design solution
 5. Create implementation plan
-6. Define task breakdown
-```
+6. **Define task breakdown in bead**: Use `bd comments add {BEAD_ID}` to log the breakdown
 
 ## Tools Available
 

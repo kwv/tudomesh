@@ -30,7 +30,7 @@ You analyze projects to detect their tech stack and **CREATE** supervisors by:
 1. Detecting what technologies the project uses
 2. Fetching specialist agents from the external directory
 3. Injecting the beads workflow at the beginning
-4. Writing the complete agent to `.claude/agents/`
+4. Writing the complete agent to `.agent/agents/`
 
 **Critical:** You source ALL supervisors from the external directory. There are no local supervisor templates.
 
@@ -214,8 +214,8 @@ tools: *
 ---
 
 [FOR FRONTEND SUPERVISORS ONLY]
-[INSERT CONTENTS OF .claude/ui-constraints.md HERE]
-[INSERT CONTENTS OF .claude/frontend-reviews-requirement.md HERE]
+[INSERT CONTENTS OF .agent/ui-constraints.md HERE]
+[INSERT CONTENTS OF .agent/frontend-reviews-requirement.md HERE]
 
 ---
 
@@ -230,9 +230,9 @@ Summary: [1 sentence max]
 ```
 ```
 
-**CRITICAL:** You MUST read the actual `.claude/beads-workflow-injection.md` file and insert its contents. Do NOT use any hardcoded workflow - the file contains the current streamlined workflow.
+**CRITICAL:** You MUST read the actual `.agent/beads-workflow-injection.md` file and insert its contents. Do NOT use any hardcoded workflow - the file contains the current streamlined workflow.
 
-**FOR FRONTEND SUPERVISORS:** Also read `.claude/ui-constraints.md` AND `.claude/frontend-reviews-requirement.md` and insert both after the beads workflow. Frontend supervisors include: react-supervisor, vue-supervisor, svelte-supervisor, angular-supervisor, nextjs-supervisor.
+**FOR FRONTEND SUPERVISORS:** Also read `.agent/ui-constraints.md` AND `.agent/frontend-reviews-requirement.md` and insert both after the beads workflow. Frontend supervisors include: react-supervisor, vue-supervisor, svelte-supervisor, angular-supervisor, nextjs-supervisor.
 
 **FOR REACT/NEXT.JS SUPERVISORS ONLY:** After RAMS requirement, add this mandatory skill requirement:
 
@@ -307,12 +307,12 @@ The filename and `name:` in YAML frontmatter MUST match and end in `-supervisor`
 
    ```
    Read(file_path="[beads-orchestration-path]/templates/skills/react-best-practices/SKILL.md")
-   Write(file_path=".claude/skills/react-best-practices/SKILL.md", content=<skill-content>)
+   Write(file_path=".agent/skills/react-best-practices/SKILL.md", content=<skill-content>)
    ```
 
 3. **Verify skill is accessible:**
    ```
-   Glob(pattern=".claude/skills/react-best-practices/SKILL.md")
+   Glob(pattern=".agent/skills/react-best-practices/SKILL.md")
    ```
 
 ### Why This Skill is Required
@@ -341,13 +341,13 @@ For each specialist:
 
 1. **Read required files:**
    ```
-   Read(file_path=".claude/beads-workflow-injection.md")
+   Read(file_path=".agent/beads-workflow-injection.md")
    ```
 
    **For frontend supervisors, also read:**
    ```
-   Read(file_path=".claude/ui-constraints.md")
-   Read(file_path=".claude/frontend-reviews-requirement.md")
+   Read(file_path=".agent/ui-constraints.md")
+   Read(file_path=".agent/frontend-reviews-requirement.md")
    ```
 
 2. **Construct complete agent:**
@@ -366,7 +366,7 @@ For each specialist:
 
 3. **Write to project:**
    ```
-   Write(file_path=".claude/agents/[role].md", content=<complete-agent>)
+   Write(file_path=".agent/agents/[role].md", content=<complete-agent>)
    ```
 
 4. **Report creation:**
@@ -378,7 +378,7 @@ For each specialist:
 
    **For each frontend supervisor created**, append its name to the frontend supervisors config:
    ```bash
-   echo "[supervisor-name]" >> .claude/frontend-supervisors.txt
+   echo "[supervisor-name]" >> .agent/frontend-supervisors.txt
    ```
 
    Example: If you create `react-supervisor` and `vue-supervisor`:
@@ -434,10 +434,11 @@ FILTERING_APPLIED:
   - All supervisors < 150 lines: [Yes/No - list any exceptions]
 
 BEADS_WORKFLOW_INJECTED: Yes (all implementation agents)
+BEADS_SKILL_REQUIRED: Yes
 DISCIPLINE_SKILL_REQUIRED: Yes (in beads workflow)
 
 FRONTEND_REVIEWS_ENFORCEMENT:
-  - Registered supervisors: [list of frontend supervisors in .claude/frontend-supervisors.txt]
+  - Registered supervisors: [list of frontend supervisors in .agent/frontend-supervisors.txt]
   - Required reviews: RAMS (accessibility) + Web Interface Guidelines (design)
 
 SKILLS_INSTALLED:
@@ -487,6 +488,6 @@ Before reporting:
 - [ ] Names assigned from suggested list
 - [ ] CLAUDE.md updated with supervisor list
 - [ ] Frontend reviews requirement (RAMS + Web Interface Guidelines) injected (if frontend detected)
-- [ ] Frontend supervisors registered in .claude/frontend-supervisors.txt
+- [ ] Frontend supervisors registered in .agent/frontend-supervisors.txt
 - [ ] React best practices skill installed (if React/Next.js detected)
 - [ ] React supervisor has mandatory skill requirement (if React/Next.js detected)
