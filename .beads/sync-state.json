@@ -1,0 +1,7 @@
+{
+  "last_failure": "2026-02-12T21:30:42.893078819-06:00",
+  "failure_count": 1,
+  "backoff_until": "2026-02-12T21:31:12.893079026-06:00",
+  "needs_manual_sync": false,
+  "failure_reason": "git pull failed in worktree: exit status 128\nFrom github.com:kwv/tudomesh\n * branch            beads-sync -\u003e FETCH_HEAD\nwarning: fetch updated the current branch head.\nfast-forwarding your working tree from\ncommit f7d7552fb0e5a7129267cef783a25ec99d645f63.\nerror: Your local changes to the following files would be overwritten by merge:\n\t.beads/issues.jsonl\n\t.beads/sync_base.jsonl\nPlease commit your changes or stash them before you merge.\nAborting\nfatal: Cannot fast-forward your working tree.\nAfter making sure that you saved anything precious from\n$ git diff f7d7552fb0e5a7129267cef783a25ec99d645f63\noutput, run\n$ git reset --hard\nto recover.\n"
+}
