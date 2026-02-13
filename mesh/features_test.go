@@ -6,34 +6,28 @@ import (
 )
 
 // createTestMap builds a small L-shaped map with floor, wall, and charger
-// entities. It calls NormalizeToMM so all layer pixel coordinates are in
-// local-mm, matching the production ingest pipeline.
+// entities. Pixel data uses Valetudo RLE format [x, y, count, ...] where
+// each triplet represents a horizontal run of count pixels starting at (x, y).
+// It calls NormalizeToMM so all layer pixel coordinates are in local-mm,
+// matching the production ingest pipeline.
 func createTestMap() *ValetudoMap {
-	// Create an asymmetric L-shaped room (in grid indices).
-	// Main room: (10,10) to (19,19) -- 10x10 = 100 pixels
-	// Corridor:  (20,10) to (25,12) --  6x3  =  18 pixels
+	// Create an asymmetric L-shaped room (in grid indices) using RLE triplets.
+	// Main room: rows y=10..19, each row x=10..19 (10 pixels) -> [10, y, 10]
+	// Corridor:  rows y=10..12, each row x=20..25 (6 pixels)  -> [20, y, 6]
 	pixels := []int{}
 	for y := 10; y < 20; y++ {
-		for x := 10; x < 20; x++ {
-			pixels = append(pixels, x, y)
-		}
+		pixels = append(pixels, 10, y, 10) // 10 pixels starting at x=10
 	}
 	for y := 10; y < 13; y++ {
-		for x := 20; x < 26; x++ {
-			pixels = append(pixels, x, y)
-		}
+		pixels = append(pixels, 20, y, 6) // 6 pixels starting at x=20
 	}
 
-	// Wall points (grid indices): simplified for testing.
+	// Wall points (grid indices) as RLE triplets.
 	wallPixels := []int{}
-	// Top wall of main room and corridor.
-	for x := 9; x <= 26; x++ {
-		wallPixels = append(wallPixels, x, 9)
-	}
-	// Bottom wall of main room.
-	for x := 9; x <= 19; x++ {
-		wallPixels = append(wallPixels, x, 20)
-	}
+	// Top wall of main room and corridor: x=9..26 at y=9 (18 pixels).
+	wallPixels = append(wallPixels, 9, 9, 18)
+	// Bottom wall of main room: x=9..19 at y=20 (11 pixels).
+	wallPixels = append(wallPixels, 9, 20, 11)
 
 	m := &ValetudoMap{
 		PixelSize: 5,

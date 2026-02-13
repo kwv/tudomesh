@@ -105,12 +105,16 @@ func TestValidateMapForCalibration(t *testing.T) {
 
 func TestNormalizeToMM(t *testing.T) {
 	t.Run("converts pixel grid indices to mm", func(t *testing.T) {
+		// Pixels are RLE-encoded as [x, y, count, ...] triplets.
+		// Floor: single pixel at (10,20) and single pixel at (30,40).
+		// Wall: single pixel at (5,15).
+		// Segment: single pixel at (100,200).
 		m := &ValetudoMap{
 			PixelSize: 5,
 			Layers: []MapLayer{
-				{Type: "floor", Pixels: []int{10, 20, 30, 40}},
-				{Type: "wall", Pixels: []int{5, 15}},
-				{Type: "segment", Pixels: []int{100, 200}},
+				{Type: "floor", Pixels: []int{10, 20, 1, 30, 40, 1}},
+				{Type: "wall", Pixels: []int{5, 15, 1}},
+				{Type: "segment", Pixels: []int{100, 200, 1}},
 			},
 			Entities: []MapEntity{
 				{Type: "robot_position", Points: []int{500, 600}},
@@ -120,7 +124,7 @@ func TestNormalizeToMM(t *testing.T) {
 
 		NormalizeToMM(m)
 
-		// Floor pixels: 10*5=50, 20*5=100, 30*5=150, 40*5=200
+		// RLE decode then scale: (10,20)*5 = (50,100), (30,40)*5 = (150,200)
 		wantFloor := []int{50, 100, 150, 200}
 		if len(m.Layers[0].Pixels) != len(wantFloor) {
 			t.Fatalf("floor pixels length = %d, want %d", len(m.Layers[0].Pixels), len(wantFloor))
@@ -131,16 +135,22 @@ func TestNormalizeToMM(t *testing.T) {
 			}
 		}
 
-		// Wall pixels: 5*5=25, 15*5=75
+		// Wall: (5,15)*5 = (25,75)
 		wantWall := []int{25, 75}
+		if len(m.Layers[1].Pixels) != len(wantWall) {
+			t.Fatalf("wall pixels length = %d, want %d", len(m.Layers[1].Pixels), len(wantWall))
+		}
 		for i, v := range m.Layers[1].Pixels {
 			if v != wantWall[i] {
 				t.Errorf("wall pixel[%d] = %d, want %d", i, v, wantWall[i])
 			}
 		}
 
-		// Segment pixels: 100*5=500, 200*5=1000
+		// Segment: (100,200)*5 = (500,1000)
 		wantSeg := []int{500, 1000}
+		if len(m.Layers[2].Pixels) != len(wantSeg) {
+			t.Fatalf("segment pixels length = %d, want %d", len(m.Layers[2].Pixels), len(wantSeg))
+		}
 		for i, v := range m.Layers[2].Pixels {
 			if v != wantSeg[i] {
 				t.Errorf("segment pixel[%d] = %d, want %d", i, v, wantSeg[i])
@@ -161,15 +171,16 @@ func TestNormalizeToMM(t *testing.T) {
 	})
 
 	t.Run("idempotent - second call is no-op", func(t *testing.T) {
+		// RLE: single pixel at (10, 20)
 		m := &ValetudoMap{
 			PixelSize: 5,
 			Layers: []MapLayer{
-				{Type: "floor", Pixels: []int{10, 20}},
+				{Type: "floor", Pixels: []int{10, 20, 1}},
 			},
 		}
 
 		NormalizeToMM(m)
-		// After first call: [50, 100]
+		// After first call: RLE decode [10,20,1] -> [10,20], then *5 -> [50, 100]
 		NormalizeToMM(m)
 		// Must still be [50, 100], not [250, 500]
 
@@ -209,15 +220,18 @@ func TestNormalizeToMM(t *testing.T) {
 	})
 
 	t.Run("compressedPixels decoded to Pixels when Pixels empty", func(t *testing.T) {
+		// CompressedPixels are also RLE: [x, y, count, ...]
+		// Two single-pixel runs: (10,20) and (30,40)
 		m := &ValetudoMap{
 			PixelSize: 5,
 			Layers: []MapLayer{
-				{Type: "floor", Pixels: nil, CompressedPixels: []int{10, 20, 30, 40}},
+				{Type: "floor", Pixels: nil, CompressedPixels: []int{10, 20, 1, 30, 40, 1}},
 			},
 		}
 		NormalizeToMM(m)
 
-		// CompressedPixels copied to Pixels, then scaled: 10*5=50, 20*5=100, etc.
+		// CompressedPixels copied to Pixels, RLE decoded, then scaled:
+		// [10,20,1, 30,40,1] -> copy -> [10,20,1, 30,40,1] -> RLE -> [10,20, 30,40] -> *5 -> [50,100, 150,200]
 		want := []int{50, 100, 150, 200}
 		if len(m.Layers[0].Pixels) != len(want) {
 			t.Fatalf("pixels length = %d, want %d", len(m.Layers[0].Pixels), len(want))
@@ -234,26 +248,28 @@ func TestNormalizeToMM(t *testing.T) {
 	})
 
 	t.Run("compressedPixels ignored when Pixels present", func(t *testing.T) {
+		// RLE: single pixel at (10, 20); compressedPixels ignored since Pixels present
 		m := &ValetudoMap{
 			PixelSize: 5,
 			Layers: []MapLayer{
-				{Type: "floor", Pixels: []int{10, 20}, CompressedPixels: []int{99, 99}},
+				{Type: "floor", Pixels: []int{10, 20, 1}, CompressedPixels: []int{99, 99, 1}},
 			},
 		}
 		NormalizeToMM(m)
 
-		// Pixels should be scaled, compressedPixels ignored
-		if m.Layers[0].Pixels[0] != 50 || m.Layers[0].Pixels[1] != 100 {
+		// [10,20,1] -> RLE -> [10,20] -> *5 -> [50,100]
+		if len(m.Layers[0].Pixels) != 2 || m.Layers[0].Pixels[0] != 50 || m.Layers[0].Pixels[1] != 100 {
 			t.Errorf("pixels = %v, want [50, 100]", m.Layers[0].Pixels)
 		}
 	})
 
 	t.Run("metaData area is not modified", func(t *testing.T) {
+		// RLE: single pixel at (10, 20)
 		m := &ValetudoMap{
 			PixelSize: 5,
 			MetaData:  MapMetaData{TotalLayerArea: 849175},
 			Layers: []MapLayer{
-				{Type: "floor", Pixels: []int{10, 20}, MetaData: LayerMetaData{Area: 12345}},
+				{Type: "floor", Pixels: []int{10, 20, 1}, MetaData: LayerMetaData{Area: 12345}},
 			},
 		}
 		NormalizeToMM(m)
@@ -265,6 +281,80 @@ func TestNormalizeToMM(t *testing.T) {
 			t.Errorf("layer area changed: got %d", m.Layers[0].MetaData.Area)
 		}
 	})
+}
+
+func TestDecodeRLEPixels(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []int
+		want  []int
+	}{
+		{
+			name:  "nil input",
+			input: nil,
+			want:  nil,
+		},
+		{
+			name:  "empty input",
+			input: []int{},
+			want:  nil,
+		},
+		{
+			name:  "fewer than 3 elements",
+			input: []int{1, 2},
+			want:  nil,
+		},
+		{
+			name:  "single pixel run",
+			input: []int{10, 20, 1},
+			want:  []int{10, 20},
+		},
+		{
+			name:  "multi-pixel horizontal run",
+			input: []int{5, 10, 3},
+			want:  []int{5, 10, 6, 10, 7, 10},
+		},
+		{
+			name:  "multiple triplets",
+			input: []int{10, 20, 2, 30, 40, 1},
+			want:  []int{10, 20, 11, 20, 30, 40},
+		},
+		{
+			name:  "count of zero produces no pixels",
+			input: []int{10, 20, 0},
+			want:  []int{},
+		},
+		{
+			name:  "trailing incomplete triplet is ignored",
+			input: []int{10, 20, 1, 30, 40},
+			want:  []int{10, 20},
+		},
+		{
+			name:  "realistic Valetudo data",
+			input: []int{2450, 2715, 3, 2505, 2715, 2},
+			want:  []int{2450, 2715, 2451, 2715, 2452, 2715, 2505, 2715, 2506, 2715},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DecodeRLEPixels(tt.input)
+			if tt.want == nil {
+				if got != nil {
+					t.Errorf("DecodeRLEPixels() = %v, want nil", got)
+				}
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("DecodeRLEPixels() length = %d, want %d; got %v", len(got), len(tt.want), got)
+			}
+			for i, v := range got {
+				if v != tt.want[i] {
+					t.Errorf("DecodeRLEPixels()[%d] = %d, want %d", i, v, tt.want[i])
+				}
+			}
+		})
+	}
 }
 
 // helper to generate a slice of n path points (coordinate values)
