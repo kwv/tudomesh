@@ -177,8 +177,9 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 
 		for _, layer := range m.Layers {
 			if layer.Type == "wall" {
-				// Use tighter tolerance for walls (0.4 * pixelSize)
-				paths := VectorizeLayer(m, &layer, float64(m.PixelSize)*0.4)
+				// Use centerline extraction for walls to produce solid strokes
+				// instead of parallel boundary outlines (hatched appearance).
+				paths := VectorizeWallCenterlines(m, &layer, float64(m.PixelSize)*0.4)
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
@@ -453,8 +454,8 @@ func (r *VectorRenderer) renderLiveToCanvas(
 
 	for _, layer := range baseMap.Layers {
 		if layer.Type == "wall" {
-			// Use tighter tolerance for walls
-			paths := VectorizeLayer(baseMap, &layer, float64(baseMap.PixelSize)*0.4)
+			// Use centerline extraction for walls to produce solid strokes.
+			paths := VectorizeWallCenterlines(baseMap, &layer, float64(baseMap.PixelSize)*0.4)
 			for _, p := range paths {
 				cp := &canvas.Path{}
 				for i, pt := range p {
