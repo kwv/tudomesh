@@ -92,7 +92,37 @@ func ExtractWallLayer(m *ValetudoMap) (*MapLayer, bool) {
 	return nil, false
 }
 
-// PixelsToPoints converts a flat pixel array [x1,y1,x2,y2,...] to Point slice
+// DecodeRLEPixels expands Valetudo RLE-encoded pixel data into coordinate pairs.
+// Valetudo encodes layer pixels as [x, y, count, ...] triplets where each
+// triplet represents a horizontal run of count pixels starting at (x, y).
+// The run increments the x coordinate for each pixel:
+//
+//	[2450, 2715, 3] -> [2450, 2715, 2451, 2715, 2452, 2715]
+//
+// If the input length is not divisible by 3, the trailing incomplete triplet
+// is ignored. An empty or nil input returns nil.
+func DecodeRLEPixels(pixels []int) []int {
+	if len(pixels) < 3 {
+		return nil
+	}
+
+	// Estimate capacity: each triplet produces count pairs (2 ints each).
+	// Use a conservative estimate to avoid over-allocation.
+	pairs := make([]int, 0, len(pixels)/3*2)
+	for i := 0; i+2 < len(pixels); i += 3 {
+		x := pixels[i]
+		y := pixels[i+1]
+		count := pixels[i+2]
+		for j := 0; j < count; j++ {
+			pairs = append(pairs, x+j, y)
+		}
+	}
+	return pairs
+}
+
+// PixelsToPoints converts a flat coordinate-pair array [x1,y1,x2,y2,...] to
+// a Point slice. The input must already be decoded from RLE format (see
+// DecodeRLEPixels). After NormalizeToMM, layer.Pixels are in this pair format.
 func PixelsToPoints(pixels []int) []Point {
 	points := make([]Point, 0, len(pixels)/2)
 	for i := 0; i+1 < len(pixels); i += 2 {
@@ -249,7 +279,9 @@ func HasDrawablePixels(m *ValetudoMap) bool {
 // charger_location, path) are already in mm and pass through unchanged.
 // Layer metaData.area is already in mm-squared and is not modified.
 //
-// After normalization, layer.Pixels contains coordinate pairs in mm:
+// Valetudo encodes layer pixels as RLE triplets [x, y, count, ...].
+// NormalizeToMM first decodes each layer's pixels from RLE into coordinate
+// pairs [x1, y1, x2, y2, ...], then scales every value to millimeters:
 //
 //	mm = gridIndex * pixelSize
 //
@@ -278,6 +310,12 @@ func NormalizeToMM(m *ValetudoMap) {
 		if len(layer.Pixels) == 0 && len(layer.CompressedPixels) > 0 {
 			layer.Pixels = make([]int, len(layer.CompressedPixels))
 			copy(layer.Pixels, layer.CompressedPixels)
+		}
+
+		// Decode RLE triplets [x, y, count, ...] into coordinate pairs
+		// [x1, y1, x2, y2, ...] before scaling.
+		if decoded := DecodeRLEPixels(layer.Pixels); decoded != nil {
+			layer.Pixels = decoded
 		}
 
 		// Convert grid indices to mm.
