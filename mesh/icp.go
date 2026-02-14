@@ -1,6 +1,8 @@
 package mesh
 
 import (
+	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"sort"
@@ -28,7 +30,7 @@ func DefaultICPConfig() ICPConfig {
 		MaxIterations:     50,
 		ConvergenceThresh: 1.0,    // 1mm improvement threshold
 		MaxCorrespondDist: 3500.0, // Max 3500mm (3.5m) for correspondence - empirically optimal
-		SamplePoints:      300,    // Use up to 300 feature points
+		SamplePoints:      600,    // Use up to 600 feature points (denser sampling for rotation discrimination)
 		OutlierPercentile: 0.8,    // Keep 80% closest correspondences
 		TryRotations:      true,   // Try all 4 rotations
 		RNG:               rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -118,7 +120,50 @@ func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, ro
 		}
 	}
 
+	// Apply semantic bonus (room name matching)
+	if bonus, msg := CalculateSemanticBonus(srcFeatures, tgtFeatures, result.Transform); bonus > 0 {
+		result.Score += bonus
+		log.Println(msg)
+	}
+
 	return result
+}
+
+// CalculateSemanticBonus computes a score bonus based on the alignment of named room centroids.
+func CalculateSemanticBonus(source, target FeatureSet, transform AffineMatrix) (float64, string) {
+	semanticMatches := 0
+	semanticDistSum := 0.0
+	semanticScoreSum := 0.0
+
+	for name, srcCentroid := range source.SegmentCentroids {
+		if tgtCentroid, ok := target.SegmentCentroids[name]; ok {
+			// Transform source centroid
+			rx := srcCentroid.X*transform.A + srcCentroid.Y*transform.B + transform.Tx
+			ry := srcCentroid.X*transform.C + srcCentroid.Y*transform.D + transform.Ty
+			transformedCentroid := Point{X: rx, Y: ry}
+
+			dist := Distance(transformedCentroid, tgtCentroid)
+			// Use loose tolerance (3000mm = 3m) because segment definitions vary
+			// but 180-degree flips will be far larger (>10m typically).
+			if dist < 3000.0 {
+				semanticMatches++
+				semanticDistSum += dist
+				// Non-linear scoring: rewards close matches much more than loose ones
+				// 0m -> 1.0; 1m -> 0.5; 3m -> 0.25
+				semanticScoreSum += 1000.0 / (1000.0 + dist)
+			}
+		}
+	}
+
+	if semanticMatches > 0 {
+		// Bonus is proportional to the quality of the matches
+		// Weight: 0.4 per match (so 4 perfect matches = +1.6)
+		bonus := semanticScoreSum * 0.4
+		avgDist := semanticDistSum / float64(semanticMatches)
+		msg := fmt.Sprintf("   Semantic bonus: +%.3f (%d rooms matched, avg dist %.0fmm)", bonus, semanticMatches, avgDist)
+		return bonus, msg
+	}
+	return 0.0, ""
 }
 
 // AlignMaps computes the affine transform to align source map to target map
@@ -136,12 +181,29 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 	sourceFeatures := ExtractFeatures(source)
 	targetFeatures := ExtractFeatures(target)
 
-	// Sample features to limit computation
+	// Sample mixed features for final scoring (charger + walls + grid + boundary)
 	sourcePoints := SampleFeatures(sourceFeatures, config.SamplePoints)
 	targetPoints := SampleFeatures(targetFeatures, config.SamplePoints)
 
 	if len(sourcePoints) < 3 || len(targetPoints) < 3 {
 		return bestResult
+	}
+
+	// Use wall-only points for the rotation selection loop.
+	// Walls are the stable structural signal; floor/segment coverage varies
+	// between vacuum sessions and corrupts rotation discrimination.
+	sourceWalls := samplePointSlice(sourceFeatures.WallPoints, config.SamplePoints)
+	targetWalls := samplePointSlice(targetFeatures.WallPoints, config.SamplePoints)
+	wallCentroidSrc := Centroid(sourceWalls)
+	wallCentroidTgt := Centroid(targetWalls)
+
+	// Fall back to mixed features if walls are too sparse
+	rotSrc, rotTgt := sourceWalls, targetWalls
+	rotCentroidSrc, rotCentroidTgt := wallCentroidSrc, wallCentroidTgt
+	if len(sourceWalls) < 20 || len(targetWalls) < 20 {
+		rotSrc, rotTgt = sourcePoints, targetPoints
+		rotCentroidSrc = sourceFeatures.Centroid
+		rotCentroidTgt = targetFeatures.Centroid
 	}
 
 	// Rotations to try (in degrees)
@@ -150,24 +212,61 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 		rotations = []float64{0, 90, 180, 270}
 	}
 
-	// Try each initial rotation
+	// Try each initial rotation — using wall-only data for discrimination
 	for _, rotDeg := range rotations {
 		// Use robust initialization to find best translation for this rotation
-		initialTransform := findBestInitialAlignment(sourcePoints, targetPoints, sourceFeatures.Centroid, targetFeatures.Centroid, rotDeg, config.RNG)
+		initialTransform := findBestInitialAlignment(rotSrc, rotTgt, rotCentroidSrc, rotCentroidTgt, rotDeg, config.RNG)
 
 		// Use multi-scale ICP for better coarse-to-fine convergence
-		result := runMultiScaleICP(sourcePoints, targetPoints, initialTransform, config)
+		result := runMultiScaleICP(rotSrc, rotTgt, initialTransform, config)
 		result.InitialRotation = rotDeg
 
-		// Calculate robust score
-		transformed := TransformPoints(sourcePoints, result.Transform)
-		// Use scale-aware score threshold: 50 pixels
-		scoreThreshold := 50.0 * float64(target.PixelSize)
-		score, frac, _ := CalculateInlierScore(transformed, targetPoints, scoreThreshold)
+		// Use tighter scale-aware score threshold: 15 pixels (~75mm)
+		// This strictness is needed to distinguish 0° vs 180° in symmetric hallways
+		transformed := TransformPoints(rotSrc, result.Transform)
+		scoreThreshold := 15.0 * float64(target.PixelSize)
+		score, frac, _ := CalculateInlierScore(transformed, rotTgt, scoreThreshold)
 		result.Score = score
 		result.InlierFraction = frac
 
-		RotationErrors[rotDeg] = result.Error // Keep logging raw error for backward compat/debug
+		// Material consistency bonus (e.g. carpet matching) to break geometric symmetry
+		matScoreSum := 0.0
+		matMatches := 0
+		for mat, srcMatPts := range sourceFeatures.MaterialPoints {
+			if tgtMatPts, ok := targetFeatures.MaterialPoints[mat]; ok && len(srcMatPts) > 0 && len(tgtMatPts) > 0 {
+				// Downsample for speed
+				srcSample := samplePointSlice(srcMatPts, 200)
+				tgtSample := samplePointSlice(tgtMatPts, 200)
+
+				transformedMat := TransformPoints(srcSample, result.Transform)
+				// Use looser threshold for carpet (300mm) as edges are fuzzy
+				matThreshold := 60.0 * float64(target.PixelSize)
+				_, matchFrac, _ := CalculateInlierScore(transformedMat, tgtSample, matThreshold)
+
+				matScoreSum += matchFrac
+				matMatches++
+			}
+		}
+
+		if matMatches > 0 {
+			avgMatScore := matScoreSum / float64(matMatches)
+			bonus := avgMatScore * 0.3 // 30% bonus for material alignment
+			result.Score += bonus
+			log.Printf("   Material bonus: +%.3f (avg match %.3f on %d materials)", bonus, avgMatScore, matMatches)
+		}
+
+		// Semantic consistency bonus (room name matching)
+		if bonus, msg := CalculateSemanticBonus(sourceFeatures, targetFeatures, result.Transform); bonus > 0 {
+			result.Score += bonus
+			log.Println(msg)
+		}
+
+		RotationErrors[rotDeg] = result.Error
+
+		log.Printf("AlignMaps: rot=%.0f° score=%.6f frac=%.3f error=%.1f tx=%.1f ty=%.1f (walls=%d/%d)",
+			rotDeg, result.Score, result.InlierFraction, result.Error,
+			result.Transform.Tx, result.Transform.Ty,
+			len(rotSrc), len(rotTgt))
 
 		// Pick best by Score (Inlier-based), not raw Error (Average distance)
 		if result.Score > bestResult.Score {
@@ -230,6 +329,12 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 			score, frac, _ := CalculateInlierScore(transformed, targetPoints, scoreThreshold)
 			bestResult.Score = score
 			bestResult.InlierFraction = frac
+
+			// Re-apply semantic bonus to final score
+			if bonus, msg := CalculateSemanticBonus(sourceFeatures, targetFeatures, bestResult.Transform); bonus > 0 {
+				bestResult.Score += bonus
+				log.Println("Refinement " + msg)
+			}
 		}
 	}
 

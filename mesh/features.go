@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 )
 
 // FeatureSet contains extracted alignment features from a map.
@@ -30,6 +31,12 @@ type FeatureSet struct {
 	// Centroid of all floor area (local-mm)
 	Centroid Point
 
+	// Material-specific points (e.g. "carpet", "wood") for breaking symmetry (local-mm)
+	MaterialPoints map[string][]Point
+
+	// Centroids of named segments (normalized lowercase) for semantic alignment (local-mm)
+	SegmentCentroids map[string]Point
+
 	// Bounding box (local-mm)
 	MinX, MinY, MaxX, MaxY float64
 }
@@ -46,10 +53,12 @@ type FeatureSet struct {
 // the reachable floor area.
 func ExtractFeatures(m *ValetudoMap) FeatureSet {
 	fs := FeatureSet{
-		MinX: math.MaxFloat64,
-		MinY: math.MaxFloat64,
-		MaxX: -math.MaxFloat64,
-		MaxY: -math.MaxFloat64,
+		MinX:             math.MaxFloat64,
+		MinY:             math.MaxFloat64,
+		MaxX:             -math.MaxFloat64,
+		MaxY:             -math.MaxFloat64,
+		MaterialPoints:   make(map[string][]Point),
+		SegmentCentroids: make(map[string]Point),
 	}
 
 	// Collect all floor/segment points (already local-mm after normalization).
@@ -58,6 +67,21 @@ func ExtractFeatures(m *ValetudoMap) FeatureSet {
 		if layer.Type == "floor" || layer.Type == "segment" {
 			points := PixelsToPoints(layer.Pixels)
 			allFloorPts = append(allFloorPts, points...)
+
+			// Collect material-specific points for asymmetry detection
+			if mat := layer.MetaData.Material; mat != "" && mat != "generic" {
+				fs.MaterialPoints[mat] = append(fs.MaterialPoints[mat], points...)
+			}
+
+			// Collect named segment centroids for semantic alignment
+			if layer.Type == "segment" && layer.MetaData.Name != "" {
+				// Use lower-case name for matching robustnes
+				name := strings.ToLower(layer.MetaData.Name)
+				// Only if we have points
+				if len(points) > 0 {
+					fs.SegmentCentroids[name] = Centroid(points)
+				}
+			}
 		}
 	}
 
@@ -286,7 +310,9 @@ func extractCorners(boundary []Point, angleThresholdDeg float64) []Point {
 }
 
 // SampleFeatures reduces the number of features for faster ICP matching
-// Prioritizes: charger, walls, grid points, corners, then boundary points
+// Prioritizes: charger, walls (70%), then grid/corners/boundary (30%)
+// Walls are the strongest structural signal — floor/segment coverage varies
+// between vacuum sessions and actively hurts rotation discrimination.
 func SampleFeatures(fs FeatureSet, maxPoints int) []Point {
 	var result []Point
 
@@ -295,26 +321,26 @@ func SampleFeatures(fs FeatureSet, maxPoints int) []Point {
 		result = append(result, fs.ChargerPosition)
 	}
 
-	// Include wall points (strong structural features)
-	wallAlloc := maxPoints / 3
+	// Include wall points (strong structural features) — 70% of budget
+	wallAlloc := maxPoints * 7 / 10
 	if len(fs.WallPoints) > 0 {
 		step := 1
 		if len(fs.WallPoints) > wallAlloc {
 			step = len(fs.WallPoints) / wallAlloc
 		}
-		for i := 0; i < len(fs.WallPoints) && len(result) < maxPoints/3; i += step {
+		for i := 0; i < len(fs.WallPoints) && len(result) < wallAlloc; i += step {
 			result = append(result, fs.WallPoints[i])
 		}
 	}
 
-	// Include grid points for rotation matching
-	gridAlloc := maxPoints / 3
+	// Include grid points for rotation matching — 15% of budget
+	gridAlloc := maxPoints * 15 / 100
 	if len(fs.GridPoints) > 0 {
 		step := 1
 		if len(fs.GridPoints) > gridAlloc {
 			step = len(fs.GridPoints) / gridAlloc
 		}
-		for i := 0; i < len(fs.GridPoints) && len(result) < 2*maxPoints/3; i += step {
+		for i := 0; i < len(fs.GridPoints) && len(result) < wallAlloc+gridAlloc; i += step {
 			result = append(result, fs.GridPoints[i])
 		}
 	}
@@ -322,7 +348,7 @@ func SampleFeatures(fs FeatureSet, maxPoints int) []Point {
 	// Include some corners (important geometric features)
 	if len(fs.Corners) > 0 {
 		remaining := maxPoints - len(result)
-		cornerAlloc := min(len(fs.Corners), min(50, remaining))
+		cornerAlloc := min(len(fs.Corners), min(30, remaining))
 		for i := 0; i < cornerAlloc; i++ {
 			result = append(result, fs.Corners[i])
 		}
