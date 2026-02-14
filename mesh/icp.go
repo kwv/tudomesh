@@ -112,6 +112,22 @@ func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, ro
 			result.Transform = FineTuneRotation(sourceWalls, targetWalls, result.Transform, tgtFeatures.Centroid, 1.0, 0.1, snapTolerance)
 			result.Transform = FineTuneTranslation(sourceWalls, targetWalls, result.Transform, 0.5, 0.1, snapTolerance)
 
+			// Ultra-fine polish pass with tight tolerance for sub-pixel precision
+			tightTolerance := 3.0 * float64(target.PixelSize)
+
+			// Medium-tight pass: bridge from coarse (15px) to tight (3px)
+			mediumTolerance := 7.0 * float64(target.PixelSize)
+			result.Transform = FineTuneRotation(sourceWalls, targetWalls, result.Transform, tgtFeatures.Centroid, 1.0, 0.1, mediumTolerance)
+			result.Transform = FineTuneTranslation(sourceWalls, targetWalls, result.Transform, 0.5, 0.1, mediumTolerance)
+
+			// Tight pass
+			result.Transform = FineTuneRotation(sourceWalls, targetWalls, result.Transform, tgtFeatures.Centroid, 0.5, 0.05, tightTolerance)
+			result.Transform = FineTuneTranslation(sourceWalls, targetWalls, result.Transform, 0.25, 0.05, tightTolerance)
+
+			// Final polish
+			result.Transform = FineTuneRotation(sourceWalls, targetWalls, result.Transform, tgtFeatures.Centroid, 0.2, 0.02, tightTolerance)
+			result.Transform = FineTuneTranslation(sourceWalls, targetWalls, result.Transform, 0.1, 0.02, tightTolerance)
+
 			// Recalculate final score
 			transformed := TransformPoints(sourcePoints, result.Transform)
 			score, frac, _ := CalculateInlierScore(transformed, targetPoints, scoreThreshold)
@@ -322,6 +338,25 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 			// Final ultra-fine translation nudge
 			bestResult.Transform = FineTuneTranslation(sourceWalls, targetWalls, bestResult.Transform, 0.5, 0.1, snapTolerance)
 
+			// Ultra-fine polish pass: tighter snap tolerance for sub-pixel discrimination
+			// At 15px tolerance, many near-alignments score identically.
+			// Narrowing to 3px (15mm at 5mm/px) reveals the true peak.
+			tightTolerance := 3.0 * float64(target.PixelSize)
+
+			// Medium-tight pass: bridge from coarse (15px) to tight (3px)
+			// Search wider angle range (1 degree) to catch residual rotation errors
+			mediumTolerance := 7.0 * float64(target.PixelSize)
+			bestResult.Transform = FineTuneRotation(sourceWalls, targetWalls, bestResult.Transform, targetFeatures.Centroid, 1.0, 0.1, mediumTolerance)
+			bestResult.Transform = FineTuneTranslation(sourceWalls, targetWalls, bestResult.Transform, 0.5, 0.1, mediumTolerance)
+
+			// Tight pass: fine rotation and translation
+			bestResult.Transform = FineTuneRotation(sourceWalls, targetWalls, bestResult.Transform, targetFeatures.Centroid, 0.5, 0.05, tightTolerance)
+			bestResult.Transform = FineTuneTranslation(sourceWalls, targetWalls, bestResult.Transform, 0.25, 0.05, tightTolerance)
+
+			// Final polish: ultra-tight rotation and translation
+			bestResult.Transform = FineTuneRotation(sourceWalls, targetWalls, bestResult.Transform, targetFeatures.Centroid, 0.2, 0.02, tightTolerance)
+			bestResult.Transform = FineTuneTranslation(sourceWalls, targetWalls, bestResult.Transform, 0.1, 0.02, tightTolerance)
+
 			// Recalculate robust score against standard points to ensure global consistency
 			// Use scale-aware score threshold: 50 pixels
 			scoreThreshold := 50.0 * float64(target.PixelSize)
@@ -350,7 +385,12 @@ func FineTuneTranslation(source, target []Point, initial AffineMatrix, initialSt
 	step := initialStep
 
 	// Max iterations to drive alignment
-	for i := 0; i < 30; i++ { // Increased from 20 for finer convergence
+	// Budget scales with step ratio to ensure fine steps get enough iterations
+	maxIter := 30
+	if minStep > 0 && initialStep/minStep > 10 {
+		maxIter = 50
+	}
+	for i := 0; i < maxIter; i++ {
 		improved := false
 		var bestCandidate AffineMatrix
 		bestCandidateScore := currentScore
@@ -741,6 +781,8 @@ func runMultiScaleICP(sourcePoints, targetPoints []Point, initialTransform Affin
 		{1000.0, 15, 0.5},                         // Structure lock (1m)
 		{500.0, 20, 0.25},                         // Fine (0.5m)
 		{250.0, 20, 0.1},                          // Super-fine (0.25m)
+		{100.0, 25, 0.05},                         // Ultra-fine (100mm) - sub-pixel precision
+		{50.0, 25, 0.02},                          // Pixel-level (50mm) - final polish
 	}
 
 	totalIterations := 0
