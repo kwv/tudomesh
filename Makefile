@@ -9,7 +9,7 @@ DEV_VERSION := $(shell git describe --tags --dirty --always 2>/dev/null | sed 's
 
 REMOTE_IMAGE := $(DOCKERHUB_USER)/$(IMAGE_NAME)
 
-.PHONY: build build-dev test lint run clean docker-build bump bump-minor bump-major check-version show-version verify-release coverage coverage-report coverage-html
+.PHONY: build build-dev test lint run clean docker-build bump bump-minor bump-major check-version show-version verify-release coverage coverage-report coverage-html render
 
 # Build binary
 build:
@@ -154,3 +154,9 @@ define bump_version
 	git push origin HEAD --follow-tags; \
 	gh pr create --fill --base main --title "chore: release $$NEW_TAG"
 endef
+
+# Render composite map (clears cache for fresh ICP)
+render: build
+	@echo "Rendering composite map..."
+	@cd ../../tudomesh-data && rm -f .calibration-cache.json && \
+		../.worktrees/bd-tudomesh-5np/tudomesh --config config.yaml --render --format both --output test.png --vector-format svg
