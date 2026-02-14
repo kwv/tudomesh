@@ -311,3 +311,56 @@ func CalculateRigidTransform(source, target []Point) AffineMatrix {
 
 	return AffineMatrix{A: a, B: b, Tx: tx, C: c, D: d, Ty: ty}
 }
+
+// CalculateWeightedRigidTransform computes the best rigid transform using weighted Procrustes analysis.
+// weights slice must have the same length as source and target.
+func CalculateWeightedRigidTransform(source, target []Point, weights []float64) AffineMatrix {
+	n := len(source)
+	if n < 2 || n != len(target) || n != len(weights) {
+		return Identity()
+	}
+
+	// Compute weighted centroids
+	totalWeight := 0.0
+	var srcSumX, srcSumY, tgtSumX, tgtSumY float64
+	for i := range source {
+		w := weights[i]
+		totalWeight += w
+		srcSumX += source[i].X * w
+		srcSumY += source[i].Y * w
+		tgtSumX += target[i].X * w
+		tgtSumY += target[i].Y * w
+	}
+
+	if totalWeight <= 0 {
+		return CalculateRigidTransform(source, target)
+	}
+
+	srcCentroid := Point{X: srcSumX / totalWeight, Y: srcSumY / totalWeight}
+	tgtCentroid := Point{X: tgtSumX / totalWeight, Y: tgtSumY / totalWeight}
+
+	// Compute weighted cross-covariance H
+	var h11, h12, h21, h22 float64
+	for i := range source {
+		w := weights[i]
+		sx := source[i].X - srcCentroid.X
+		sy := source[i].Y - srcCentroid.Y
+		tx := target[i].X - tgtCentroid.X
+		ty := target[i].Y - tgtCentroid.Y
+
+		h11 += w * sx * tx
+		h12 += w * sx * ty
+		h21 += w * sy * tx
+		h22 += w * sy * ty
+	}
+
+	theta := math.Atan2(h21-h12, h11+h22)
+	cos := math.Cos(theta)
+	sin := math.Sin(theta)
+
+	a, b, c, d := cos, -sin, sin, cos
+	tx := tgtCentroid.X - (a*srcCentroid.X + b*srcCentroid.Y)
+	ty := tgtCentroid.Y - (c*srcCentroid.X + d*srcCentroid.Y)
+
+	return AffineMatrix{A: a, B: b, Tx: tx, C: c, D: d, Ty: ty}
+}

@@ -878,3 +878,45 @@ func TestAlignMapsWithRotationHint_AllRotations(t *testing.T) {
 		})
 	}
 }
+func TestICP_HallwaySlippage(t *testing.T) {
+	// Create a reasonably sized room/hallway (3m x 1.5m)
+	hallwayLength := 3000.0 // 3 meters
+	hallwayWidth := 1500.0  // 1.5 meters
+	points := []Point{}
+	for y := 0.0; y <= hallwayLength; y += 10 {
+		points = append(points, Point{X: 0, Y: y})
+		points = append(points, Point{X: hallwayWidth, Y: y})
+	}
+	// Add end-caps (horizontal walls)
+	for x := 0.0; x <= hallwayWidth; x += 10 {
+		points = append(points, Point{X: x, Y: 0})
+		points = append(points, Point{X: x, Y: hallwayLength})
+	}
+
+	sourceCloud := FeatureSet{
+		WallPoints: points,
+		Centroid:   Centroid(points),
+	}
+
+	// Target is shifted slightly ALONG the axis (simulating slippage)
+	// and slightly across the axis.
+	expectedTx, expectedTy := 10.0, 50.0 // Slide 50mm along Y, shift 10mm along X
+	targetPoints := TransformPoints(sourceCloud.WallPoints, Translation(expectedTx, expectedTy))
+
+	// Add charger as a strong anchor
+	chargerSrc := Point{X: 100, Y: 100}
+	chargerTgt := TransformPoint(chargerSrc, Translation(expectedTx, expectedTy))
+
+	sourceMap := createTestValetudoMap(points, &chargerSrc)
+	targetMap := createTestValetudoMap(targetPoints, &chargerTgt)
+
+	config := DefaultICPConfig()
+	// Full AlignMaps should use findBestInitialAlignment which tries multiple offsets
+	result := AlignMaps(sourceMap, targetMap, config)
+
+	// We allow some tolerance, but it shouldn't "slip" indefinitely
+	if math.Abs(result.Transform.Tx-expectedTx) > 5.0 || math.Abs(result.Transform.Ty-expectedTy) > 10.0 {
+		t.Errorf("Hallway AlignMaps slipped! Got (%f, %f), want (%f, %f)",
+			result.Transform.Tx, result.Transform.Ty, expectedTx, expectedTy)
+	}
+}

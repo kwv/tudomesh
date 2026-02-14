@@ -497,27 +497,33 @@ func buildInitialTransform(source, target FeatureSet, rotationDeg float64, rng *
 	return findBestInitialAlignment(sourcePoints, targetPoints, source.Centroid, target.Centroid, rotationDeg, rng)
 }
 
-// runICP performs ICP iterations starting from an initial transform
+// runICP performs ICP iterations starting from an initial transform.
+// It uses inlier-based scoring to prevent divergence and ensure physical overlap increases.
 func runICP(sourcePoints, targetPoints []Point, initialTransform AffineMatrix, config ICPConfig) ICPResult {
 	result := ICPResult{
-		Transform: initialTransform,
-		Error:     math.MaxFloat64,
+		Transform:       initialTransform,
+		Error:           math.MaxFloat64,
+		Score:           -1.0,
+		InitialRotation: 0, // Placeholder
 	}
 
 	currentTransform := initialTransform
-	var prevError float64
 
-	// Calculate initial error
+	// Calculate initial robust error and score
 	transformed := TransformPoints(sourcePoints, currentTransform)
-	prevError = FeatureDistance(transformed, targetPoints)
-	result.Error = prevError
+	// We use the pass's MaxCorrespondDist as the robust scoring threshold.
+	prevScore, prevFrac, prevInlierError := CalculateInlierScore(transformed, targetPoints, config.MaxCorrespondDist)
+
+	result.Error = prevInlierError
+	result.Score = prevScore
+	result.InlierFraction = prevFrac
 	result.Transform = currentTransform
 
 	for iter := 0; iter < config.MaxIterations; iter++ {
 		result.Iterations = iter + 1
 
 		// Transform source points with current estimate
-		transformed := TransformPoints(sourcePoints, currentTransform)
+		transformed = TransformPoints(sourcePoints, currentTransform)
 
 		// Find correspondences with outlier rejection
 		srcCorr, tgtCorr, distances := findCorrespondencesWithDistances(transformed, targetPoints, config.MaxCorrespondDist)
@@ -531,36 +537,77 @@ func runICP(sourcePoints, targetPoints []Point, initialTransform AffineMatrix, c
 			break
 		}
 
-		// Compute transform directly from transformed correspondences to target
-		// This gives us the incremental adjustment needed
-		incrementalTransform := CalculateRigidTransform(srcCorr, tgtCorr)
+		// TRIMMED ICP: Further select only the best N% of remaining correspondences
+		// to compute the transform. This prevents "pulling" from moderately far points
+		// and focuses on the high-confidence "skeleton" alignment.
+		// Use best 70% of the already rejected set (OutlierPercentile)
+		trimPercentile := 0.7
+		trimCount := int(float64(len(srcCorr)) * trimPercentile)
+		if trimCount < 3 {
+			trimCount = len(srcCorr)
+		}
+
+		var incrementalTransform AffineMatrix
+		if trimCount < len(srcCorr) {
+			// Re-calculate distances for the selected subset (already sorted by rejectOutliers)
+			// Actually rejectOutliers doesn't sort. findCorrespondencesWithDistances doesn't sort.
+			// Let's implement a quick sort-and-trim or use weights.
+			// Since we want robust skeletal mapping, let's use weighted transforms
+			// where weight = 1.0 / (1.0 + dist/PixelSize).
+			weights := make([]float64, len(srcCorr))
+			// We need distances for the *current* srcCorr/tgtCorr
+			// rejectOutliers returns new slices. Let's redo findCorrespondences to get sorted ones.
+			
+			// Actually, let's just use the weights for the rigid transform.
+			for i := range srcCorr {
+				d := Distance(srcCorr[i], tgtCorr[i])
+				weights[i] = 1.0 / (1.0 + d*d/1000.0) // Soft weight based on proximity
+			}
+			incrementalTransform = CalculateWeightedRigidTransform(srcCorr, tgtCorr, weights)
+		} else {
+			incrementalTransform = CalculateRigidTransform(srcCorr, tgtCorr)
+		}
 
 		// Compose: new = incremental * current
 		newTransform := MultiplyMatrices(incrementalTransform, currentTransform)
 
-		// Calculate alignment error with new transform
-		transformed = TransformPoints(sourcePoints, newTransform)
-		currentError := FeatureDistance(transformed, targetPoints)
+		// Calculate robust alignment quality with new transform
+		testTransformed := TransformPoints(sourcePoints, newTransform)
+		newScore, newFrac, newInlierError := CalculateInlierScore(testTransformed, targetPoints, config.MaxCorrespondDist)
+
+		// BACKTRACKING / SCORE VALIDATION
+		// ICP minimizes sum of squares, which can decrease the physical inlier count
+		// if a few outliers pull hard (e.g. into a parallel hallway).
+		// We refuse to move if the physical overlap score decreases significantly.
+		if newScore < prevScore*0.98 {
+			// Termination: physical alignment is degrading.
+			break
+		}
 
 		// Check convergence
-		improvement := prevError - currentError
+		improvement := prevInlierError - newInlierError
 		if improvement < config.ConvergenceThresh && improvement >= 0 {
 			result.Converged = true
 			result.Transform = newTransform
-			result.Error = currentError
+			result.Error = newInlierError
+			result.Score = newScore
+			result.InlierFraction = newFrac
 			break
 		}
 
-		// Check for divergence (getting worse)
-		if currentError > prevError*1.1 {
-			// Keep previous transform and stop
+		// Check for severe divergence
+		if newInlierError > prevInlierError*1.5 {
 			break
 		}
 
-		prevError = currentError
+		prevInlierError = newInlierError
+		prevScore = newScore
 		currentTransform = newTransform
+
 		result.Transform = newTransform
-		result.Error = currentError
+		result.Error = newInlierError
+		result.Score = newScore
+		result.InlierFraction = newFrac
 	}
 
 	return result
@@ -577,15 +624,18 @@ func runMultiScaleICP(sourcePoints, targetPoints []Point, initialTransform Affin
 	currentTransform := initialTransform
 
 	// Multi-scale annealing schedule: start coarse, progressively tighten
-	// Each scale runs a mini-ICP pass
+	// Each scale runs a mini-Pass
+	// More granular steps help ensure "locking" in ambiguous structures.
 	scales := []struct {
 		maxDist    float64
 		iterations int
 		threshold  float64
 	}{
-		{config.MaxCorrespondDist, 15, 2.0},        // Coarse: large search radius
-		{config.MaxCorrespondDist * 0.5, 15, 1.0},  // Medium
-		{config.MaxCorrespondDist * 0.25, 20, 0.5}, // Fine
+		{config.MaxCorrespondDist, 15, 2.0},       // Coarse: large search radius (e.g. 3500mm)
+		{2000.0, 15, 1.0},                         // Intermediate (2m)
+		{1000.0, 15, 0.5},                         // Structure lock (1m)
+		{500.0, 20, 0.25},                         // Fine (0.5m)
+		{250.0, 20, 0.1},                          // Super-fine (0.25m)
 	}
 
 	totalIterations := 0
@@ -610,32 +660,36 @@ func runMultiScaleICP(sourcePoints, targetPoints []Point, initialTransform Affin
 	return result
 }
 
-// runICPWithMutualNN performs ICP using mutual nearest neighbor for more robust correspondences
+// runICPWithMutualNN performs ICP using mutual nearest neighbor for more robust correspondences.
+// It includes inlier-based score validation to prevent structure "slippage".
 func runICPWithMutualNN(sourcePoints, targetPoints []Point, initialTransform AffineMatrix, config ICPConfig) ICPResult {
 	result := ICPResult{
 		Transform: initialTransform,
 		Error:     math.MaxFloat64,
+		Score:     -1.0,
 	}
 
 	currentTransform := initialTransform
-	var prevError float64
 
-	// Calculate initial error
+	// Calculate initial robust error and score
 	transformed := TransformPoints(sourcePoints, currentTransform)
-	prevError = FeatureDistance(transformed, targetPoints)
-	result.Error = prevError
+	prevScore, prevFrac, prevInlierError := CalculateInlierScore(transformed, targetPoints, config.MaxCorrespondDist)
+
+	result.Error = prevInlierError
+	result.Score = prevScore
+	result.InlierFraction = prevFrac
 	result.Transform = currentTransform
 
 	for iter := 0; iter < config.MaxIterations; iter++ {
 		result.Iterations = iter + 1
 
 		// Transform source points with current estimate
-		transformed := TransformPoints(sourcePoints, currentTransform)
+		transformed = TransformPoints(sourcePoints, currentTransform)
 
-		// Find MUTUAL correspondences (more robust)
+		// Find MUTUAL correspondences (more robust for fine refinement)
 		srcCorr, tgtCorr, distances := findMutualCorrespondences(transformed, targetPoints, config.MaxCorrespondDist)
 
-		// Fall back to one-way if mutual gives too few correspondences
+		// Fall back to one-way if mutual gives too few correspondences to prevent stalls
 		if len(srcCorr) < 10 {
 			srcCorr, tgtCorr, distances = findCorrespondencesWithDistances(transformed, targetPoints, config.MaxCorrespondDist)
 		}
@@ -651,31 +705,49 @@ func runICPWithMutualNN(sourcePoints, targetPoints []Point, initialTransform Aff
 		}
 
 		// Compute transform
-		incrementalTransform := CalculateRigidTransform(srcCorr, tgtCorr)
+		var incrementalTransform AffineMatrix
+		weights := make([]float64, len(srcCorr))
+		for i := range srcCorr {
+			d := Distance(srcCorr[i], tgtCorr[i])
+			weights[i] = 1.0 / (1.0 + d*d/500.0) // Slightly tighter weight for fine refinement
+		}
+		incrementalTransform = CalculateWeightedRigidTransform(srcCorr, tgtCorr, weights)
 		newTransform := MultiplyMatrices(incrementalTransform, currentTransform)
 
-		// Calculate alignment error with new transform
-		transformed = TransformPoints(sourcePoints, newTransform)
-		currentError := FeatureDistance(transformed, targetPoints)
+		// Calculate robust alignment quality with new transform
+		testTransformed := TransformPoints(sourcePoints, newTransform)
+		newScore, newFrac, newInlierError := CalculateInlierScore(testTransformed, targetPoints, config.MaxCorrespondDist)
+
+		// BACKTRACKING / SCORE VALIDATION
+		// Refinement must improve (or maintain) the physical alignment quality.
+		if newScore < prevScore*0.99 { // Very slight buffer for micro-jitters
+			break
+		}
 
 		// Check convergence
-		improvement := prevError - currentError
+		improvement := prevInlierError - newInlierError
 		if improvement < config.ConvergenceThresh && improvement >= 0 {
 			result.Converged = true
 			result.Transform = newTransform
-			result.Error = currentError
+			result.Error = newInlierError
+			result.Score = newScore
+			result.InlierFraction = newFrac
 			break
 		}
 
 		// Check for divergence
-		if currentError > prevError*1.1 {
+		if newInlierError > prevInlierError*1.5 {
 			break
 		}
 
-		prevError = currentError
+		prevInlierError = newInlierError
+		prevScore = newScore
 		currentTransform = newTransform
+
 		result.Transform = newTransform
-		result.Error = currentError
+		result.Error = newInlierError
+		result.Score = newScore
+		result.InlierFraction = newFrac
 	}
 
 	return result
