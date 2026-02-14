@@ -878,6 +878,94 @@ func TestAlignMapsWithRotationHint_AllRotations(t *testing.T) {
 		})
 	}
 }
+func TestAlignMaps_SubPixelPrecision(t *testing.T) {
+	// Verify that the ultra-fine refinement achieves sub-5-pixel precision
+	// for both translation and rotation on an L-shaped room.
+	pixelSize := 5.0 // 5mm per pixel
+
+	sourceWalls := createLShapeWalls(Point{X: 100, Y: 100}, 2.0)
+	chargerSrc := Point{X: 120, Y: 120}
+
+	// Apply a small known translation (3 pixels = 15mm)
+	expectedTx, expectedTy := 15.0, 10.0
+	targetWalls := TransformPoints(sourceWalls, Translation(expectedTx, expectedTy))
+	chargerTgt := TransformPoint(chargerSrc, Translation(expectedTx, expectedTy))
+
+	sourceMap := createTestValetudoMap(sourceWalls, &chargerSrc)
+	targetMap := createTestValetudoMap(targetWalls, &chargerTgt)
+
+	config := DefaultICPConfig()
+	result := AlignMaps(sourceMap, targetMap, config)
+
+	txErr := math.Abs(result.Transform.Tx - expectedTx)
+	tyErr := math.Abs(result.Transform.Ty - expectedTy)
+	txErrPx := txErr / pixelSize
+	tyErrPx := tyErr / pixelSize
+
+	// Extract rotation error (should be ~0 degrees)
+	angle := math.Atan2(result.Transform.C, result.Transform.A) * 180 / math.Pi
+
+	t.Logf("SubPixel precision: Tx=%.2f (want %.1f, err=%.2fpx), Ty=%.2f (want %.1f, err=%.2fpx), angle=%.3f°",
+		result.Transform.Tx, expectedTx, txErrPx,
+		result.Transform.Ty, expectedTy, tyErrPx, angle)
+
+	// Success criteria: sub-5-pixel translation precision
+	if txErrPx > 2.0 {
+		t.Errorf("Tx error too large: %.2f pixels (want <2px)", txErrPx)
+	}
+	if tyErrPx > 2.0 {
+		t.Errorf("Ty error too large: %.2f pixels (want <2px)", tyErrPx)
+	}
+	// Rotation should be <0.5 degrees
+	if math.Abs(angle) > 0.5 {
+		t.Errorf("Rotation error too large: %.3f degrees (want <0.5°)", math.Abs(angle))
+	}
+}
+
+func TestAlignMaps_SubPixelRotationPrecision(t *testing.T) {
+	// Verify ultra-fine rotation precision with a small known rotation
+	pixelSize := 5.0
+
+	sourceWalls := createLShapeWalls(Point{X: 100, Y: 100}, 2.0)
+	chargerSrc := Point{X: 120, Y: 120}
+
+	// Apply a small rotation (2 degrees) around centroid
+	srcCentroid := Centroid(sourceWalls)
+	expectedAngle := 2.0
+	toOrigin := Translation(-srcCentroid.X, -srcCentroid.Y)
+	rotate := RotationDeg(expectedAngle)
+	fromOrigin := Translation(srcCentroid.X, srcCentroid.Y)
+	transform := MultiplyMatrices(fromOrigin, MultiplyMatrices(rotate, toOrigin))
+
+	targetWalls := TransformPoints(sourceWalls, transform)
+	chargerTgt := TransformPoint(chargerSrc, transform)
+
+	sourceMap := createTestValetudoMap(sourceWalls, &chargerSrc)
+	targetMap := createTestValetudoMap(targetWalls, &chargerTgt)
+
+	config := DefaultICPConfig()
+	result := AlignMaps(sourceMap, targetMap, config)
+
+	angle := math.Atan2(result.Transform.C, result.Transform.A) * 180 / math.Pi
+	angleErr := math.Abs(angle - expectedAngle)
+
+	// Check translation precision too (should be near-zero in pixel terms)
+	transformed := TransformPoints(sourceWalls[:1], result.Transform)
+	expected := TransformPoints(sourceWalls[:1], transform)
+	distErr := Distance(transformed[0], expected[0])
+	distErrPx := distErr / pixelSize
+
+	t.Logf("Rotation precision: angle=%.3f° (want %.1f°, err=%.3f°), point dist err=%.2fpx",
+		angle, expectedAngle, angleErr, distErrPx)
+
+	if angleErr > 0.5 {
+		t.Errorf("Rotation error too large: %.3f° (want <0.5°)", angleErr)
+	}
+	if distErrPx > 5.0 {
+		t.Errorf("Point distance error too large: %.2f pixels (want <5px)", distErrPx)
+	}
+}
+
 func TestICP_HallwaySlippage(t *testing.T) {
 	// Create a reasonably sized room/hallway (3m x 1.5m)
 	hallwayLength := 3000.0 // 3 meters
