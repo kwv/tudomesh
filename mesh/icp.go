@@ -76,7 +76,9 @@ func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, ro
 
 	// Calculate robust score
 	transformed := TransformPoints(sourcePoints, result.Transform)
-	score, frac, _ := CalculateInlierScore(transformed, targetPoints, 250.0) // 250mm = 50px * 5mm/px
+	// Use scale-aware score threshold: 50 pixels
+	scoreThreshold := 50.0 * float64(target.PixelSize)
+	score, frac, _ := CalculateInlierScore(transformed, targetPoints, scoreThreshold)
 	result.Score = score
 	result.InlierFraction = frac
 
@@ -101,14 +103,16 @@ func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, ro
 			result.Error = refinedResult.Error
 
 			// Micro-rotation and translation adjustments
-			result.Transform = FineTuneRotation(sourceWalls, targetWalls, result.Transform, tgtFeatures.Centroid, 2.0, 0.25)
-			result.Transform = FineTuneTranslation(sourceWalls, targetWalls, result.Transform, 2.0, 0.25)
-			result.Transform = FineTuneRotation(sourceWalls, targetWalls, result.Transform, tgtFeatures.Centroid, 1.0, 0.1)
-			result.Transform = FineTuneTranslation(sourceWalls, targetWalls, result.Transform, 0.5, 0.1)
+			// Use scale-aware snap tolerance: 15 pixels
+			snapTolerance := 15.0 * float64(target.PixelSize)
+			result.Transform = FineTuneRotation(sourceWalls, targetWalls, result.Transform, tgtFeatures.Centroid, 2.0, 0.25, snapTolerance)
+			result.Transform = FineTuneTranslation(sourceWalls, targetWalls, result.Transform, 2.0, 0.25, snapTolerance)
+			result.Transform = FineTuneRotation(sourceWalls, targetWalls, result.Transform, tgtFeatures.Centroid, 1.0, 0.1, snapTolerance)
+			result.Transform = FineTuneTranslation(sourceWalls, targetWalls, result.Transform, 0.5, 0.1, snapTolerance)
 
 			// Recalculate final score
 			transformed := TransformPoints(sourcePoints, result.Transform)
-			score, frac, _ := CalculateInlierScore(transformed, targetPoints, 250.0) // 250mm = 50px * 5mm/px
+			score, frac, _ := CalculateInlierScore(transformed, targetPoints, scoreThreshold)
 			result.Score = score
 			result.InlierFraction = frac
 		}
@@ -157,7 +161,9 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 
 		// Calculate robust score
 		transformed := TransformPoints(sourcePoints, result.Transform)
-		score, frac, _ := CalculateInlierScore(transformed, targetPoints, 250.0) // 250mm = 50px * 5mm/px
+		// Use scale-aware score threshold: 50 pixels
+		scoreThreshold := 50.0 * float64(target.PixelSize)
+		score, frac, _ := CalculateInlierScore(transformed, targetPoints, scoreThreshold)
 		result.Score = score
 		result.InlierFraction = frac
 
@@ -199,25 +205,29 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 			// Micro-rotation adjustment: ICP may not perfectly lock rotation
 			// Try small angle adjustments (±2° in 0.25° steps) to find optimal rotation
 			// Use target centroid as rotation pivot
-			bestResult.Transform = FineTuneRotation(sourceWalls, targetWalls, bestResult.Transform, targetFeatures.Centroid, 2.0, 0.25)
+			// Use scale-aware snap tolerance: 15 pixels
+			snapTolerance := 15.0 * float64(target.PixelSize)
+			bestResult.Transform = FineTuneRotation(sourceWalls, targetWalls, bestResult.Transform, targetFeatures.Centroid, 2.0, 0.25, snapTolerance)
 
 			// Final Nudge: Hill-climbing optimization for "snapping"
 			// ICP minimizes sum of squared errors, which can settle in local minima (average fits).
 			// We want to maximize strict overlap/proximity (snapping).
 			// Nudge the translation slightly to find the peak InlierScore.
 			// Reduced min step from 0.5 to 0.25 for sub-half-pixel precision
-			bestResult.Transform = FineTuneTranslation(sourceWalls, targetWalls, bestResult.Transform, 2.0, 0.25)
+			bestResult.Transform = FineTuneTranslation(sourceWalls, targetWalls, bestResult.Transform, 2.0, 0.25, snapTolerance)
 
 			// Second pass of rotation fine-tuning after translation adjustment
 			// Sometimes translation changes make a slight rotation adjustment beneficial
-			bestResult.Transform = FineTuneRotation(sourceWalls, targetWalls, bestResult.Transform, targetFeatures.Centroid, 1.0, 0.1)
+			bestResult.Transform = FineTuneRotation(sourceWalls, targetWalls, bestResult.Transform, targetFeatures.Centroid, 1.0, 0.1, snapTolerance)
 
 			// Final ultra-fine translation nudge
-			bestResult.Transform = FineTuneTranslation(sourceWalls, targetWalls, bestResult.Transform, 0.5, 0.1)
+			bestResult.Transform = FineTuneTranslation(sourceWalls, targetWalls, bestResult.Transform, 0.5, 0.1, snapTolerance)
 
 			// Recalculate robust score against standard points to ensure global consistency
+			// Use scale-aware score threshold: 50 pixels
+			scoreThreshold := 50.0 * float64(target.PixelSize)
 			transformed := TransformPoints(sourcePoints, bestResult.Transform)
-			score, frac, _ := CalculateInlierScore(transformed, targetPoints, 250.0) // 250mm = 50px * 5mm/px
+			score, frac, _ := CalculateInlierScore(transformed, targetPoints, scoreThreshold)
 			bestResult.Score = score
 			bestResult.InlierFraction = frac
 		}
@@ -228,12 +238,8 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 
 // FineTuneTranslation performs a hill-climbing search on translation (Tx, Ty)
 // to maximize the inlier score. It tests "nudges" in 8 directions (including diagonals).
-func FineTuneTranslation(source, target []Point, initial AffineMatrix, initialStep float64, minStep float64) AffineMatrix {
+func FineTuneTranslation(source, target []Point, initial AffineMatrix, initialStep float64, minStep float64, snapTolerance float64) AffineMatrix {
 	current := initial
-
-	// Tolerance for "snapping": tight fit (e.g. 15px ~ 75mm)
-	// Walls should align very closely.
-	snapTolerance := 75.0 // 75mm = 15px * 5mm/px
 
 	currentScore, _, _ := CalculateInlierScore(TransformPoints(source, current), target, snapTolerance)
 	step := initialStep
@@ -284,9 +290,8 @@ func FineTuneTranslation(source, target []Point, initial AffineMatrix, initialSt
 
 // FineTuneRotation performs micro-rotation adjustments to maximize alignment
 // Tests small rotation angles around the current transform
-func FineTuneRotation(source, target []Point, initial AffineMatrix, centroid Point, maxAngleDeg float64, stepDeg float64) AffineMatrix {
+func FineTuneRotation(source, target []Point, initial AffineMatrix, centroid Point, maxAngleDeg float64, stepDeg float64, snapTolerance float64) AffineMatrix {
 	current := initial
-	snapTolerance := 75.0 // 75mm = 15px * 5mm/px
 
 	currentScore, _, _ := CalculateInlierScore(TransformPoints(source, current), target, snapTolerance)
 
@@ -361,9 +366,10 @@ func CalculateInlierScore(source, target []Point, maxDist float64) (float64, flo
 
 	// Score formulation:
 	// We want high fraction, low distance.
-	// Score = Fraction / (1 + AvgDist/Tolerance)
+	// Score = Fraction / (1 + AvgDist / (2 * maxDist))
 	// This scales from 0 to 1 roughly.
-	score := inlierFraction / (1.0 + avgInlierDist/500.0) // 500mm = 100px * 5mm/px
+	// The denominator normalizes the distance based on the search tolerance.
+	score := inlierFraction / (1.0 + avgInlierDist/(2*maxDist))
 
 	return score, inlierFraction, avgInlierDist
 }
@@ -445,8 +451,9 @@ func findBestInitialAlignment(sourcePoints, targetPoints []Point, sourceCentroid
 				}
 			}
 
-			// Valid match if distance is reasonable (e.g. 50px = 250mm)
-			if minDist < 62500 { // 250^2 (250mm = 50px * 5mm/px)
+			// Valid match if distance is reasonable (e.g. 100 pixels)
+			limit := 100.0 * 5.0 // Base on standard 5mm/px for initial search robust to resolution
+			if minDist < limit*limit { 
 				score += math.Sqrt(minDist)
 				matchCount++
 			}

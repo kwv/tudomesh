@@ -148,7 +148,8 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 			if layer.Type == "floor" || layer.Type == "segment" {
 				// VectorizeLayer returns paths in local-mm (pixels already normalized).
 				// Transform maps local-mm to world-mm directly.
-				paths := VectorizeLayer(m, &layer, 5.0)
+				// Use pixelSize-aware tolerance (1.0 * pixelSize)
+				paths := VectorizeLayer(m, &layer, float64(m.PixelSize))
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
@@ -176,7 +177,8 @@ func (r *VectorRenderer) renderToCanvas(renderer canvasRenderer, minX, minY, max
 
 		for _, layer := range m.Layers {
 			if layer.Type == "wall" {
-				paths := VectorizeLayer(m, &layer, 2.0)
+				// Use tighter tolerance for walls (0.4 * pixelSize)
+				paths := VectorizeLayer(m, &layer, float64(m.PixelSize)*0.4)
 				for _, p := range paths {
 					cp := &canvas.Path{}
 					for i, pt := range p {
@@ -422,7 +424,8 @@ func (r *VectorRenderer) renderLiveToCanvas(
 
 	for _, layer := range baseMap.Layers {
 		if layer.Type == "floor" || layer.Type == "segment" {
-			paths := VectorizeLayer(baseMap, &layer, 5.0)
+			// Use pixelSize-aware tolerance
+			paths := VectorizeLayer(baseMap, &layer, float64(baseMap.PixelSize))
 			for _, p := range paths {
 				cp := &canvas.Path{}
 				for i, pt := range p {
@@ -450,7 +453,8 @@ func (r *VectorRenderer) renderLiveToCanvas(
 
 	for _, layer := range baseMap.Layers {
 		if layer.Type == "wall" {
-			paths := VectorizeLayer(baseMap, &layer, 2.0)
+			// Use tighter tolerance for walls
+			paths := VectorizeLayer(baseMap, &layer, float64(baseMap.PixelSize)*0.4)
 			for _, p := range paths {
 				cp := &canvas.Path{}
 				for i, pt := range p {
@@ -502,22 +506,12 @@ func (r *VectorRenderer) renderLiveToCanvas(
 	}
 	sort.Strings(vacIDs)
 
-	// Derive indicator sizes from the map extent so they scale with the floor plan.
-	// Use the shorter axis to keep proportions consistent across aspect ratios.
-	mapSpan := maxX - minX
-	if h := maxY - minY; h < mapSpan {
-		mapSpan = h
-	}
-	if mapSpan < 1 {
-		mapSpan = 1 // guard against degenerate maps
-	}
-	// The circle radius is ~0.4% of the shorter map dimension.
-	// For a 5 000 mm floor plan this gives a 20 mm radius -- visible but unobtrusive.
-	vacRadius := mapSpan * 0.004
-	vacDirLen := vacRadius * 1.75
-	vacStroke := vacRadius * 0.075
-	vacTagW := vacRadius * 1.25
-	vacTagH := vacRadius * 0.5
+	// Use physical sizes for indicators (350mm diameter robot)
+	vacRadius := 175.0
+	vacDirLen := vacRadius * 1.5
+	vacStroke := 15.0
+	vacTagW := 150.0
+	vacTagH := 60.0
 
 	for _, id := range vacIDs {
 		pos := positions[id]

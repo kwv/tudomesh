@@ -300,21 +300,21 @@ func TestRender_Layers(t *testing.T) {
 }
 
 func TestRender_Entities(t *testing.T) {
-	// Create map with charger at (10,10) and robot at (30,30)
-	// Use larger bounds so robot center is within image
+	// Create map with charger at (10,10) and robot at (150,150)
+	// Use sufficient spacing to avoid overlap at physical scale (Scale=1.0)
 	chargerEntity := MapEntity{
 		Type:   "charger_location",
 		Points: []int{10, 10},
 	}
 	robotEntity := MapEntity{
 		Type:   "robot_position",
-		Points: []int{30, 30},
+		Points: []int{150, 150},
 	}
 
 	m := &ValetudoMap{
 		MetaData: MapMetaData{Version: 2},
-		Size:     Size{X: 100, Y: 100},
-		Layers:   []MapLayer{{Type: "floor", Pixels: []int{10, 10, 40, 40}}}, // Bounds 10-40
+		Size:     Size{X: 200, Y: 200},
+		Layers:   []MapLayer{{Type: "floor", Pixels: []int{10, 10, 190, 190}}}, // Bounds 10-190
 		Entities: []MapEntity{chargerEntity, robotEntity},
 	}
 
@@ -332,15 +332,14 @@ func TestRender_Entities(t *testing.T) {
 	c1 := img.RGBAAt(0, 0)
 	gold := color.RGBA{255, 215, 0, 255}
 	if c1 != gold {
-		t.Errorf("Expected Charger (Gold) at charger loc, got %v", c1)
+		t.Errorf("Expected Charger (Gold) at charger loc (0,0), got %v", c1)
 	}
 
-	// Check Robot at relative (20,20) [World 30,30]
-	// Robot is drawn as circle with radius 6. Floor has alpha<255 so colors blend.
-	// Verify robot is rendered by checking blue component is dominant.
-	c2 := img.RGBAAt(20, 20)
+	// Check Robot at relative (140,140) [World 150,150]
+	// Bounds min is (10,10). (150-10, 150-10) -> (140,140)
+	c2 := img.RGBAAt(140, 140)
 	if c2.B == 0 || c2.R > c2.B || c2.G > c2.B {
-		t.Errorf("Expected Robot (blue dominant) at robot loc, got %v", c2)
+		t.Errorf("Expected Robot (blue dominant) at robot loc (140,140), got %v", c2)
 	}
 	if c2.A != 255 {
 		t.Errorf("Expected opaque pixel at robot loc, got alpha %d", c2.A)

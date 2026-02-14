@@ -299,16 +299,22 @@ func (r *CompositeRenderer) Render() *image.RGBA {
 		if charger, ok := ExtractChargerPosition(m); ok {
 			tc := TransformPoint(charger, transform)
 			ix, iy := toImage(tc)
-			drawSquare(img, ix, iy, 8, color.RGBA{255, 215, 0, 255}) // Gold charger
+			// Charger size: ~150mm, but at least 8px
+			size := max(8, int(150.0*r.Scale))
+			drawSquare(img, ix, iy, size, color.RGBA{255, 215, 0, 255}) // Gold charger
 		}
 
-		// Draw robot as circle
-		if robot, _, ok := ExtractRobotPosition(m); ok {
+		// Draw robot as stylized icon
+		if robot, angle, ok := ExtractRobotPosition(m); ok {
 			tr := TransformPoint(robot, transform)
 			ix, iy := toImage(tr)
-			// Convert NRGBA to RGBA for image rendering
+			// Robot diameter: ~350mm, but at least 20px for detail visibility
+			size := max(20, int(350.0*r.Scale))
+			// Convert NRGBA to RGBA for icon rendering
 			robotRGBA := color.RGBA{vc.Robot.R, vc.Robot.G, vc.Robot.B, vc.Robot.A}
-			drawCircle(img, ix, iy, 6, robotRGBA)
+			// Display angle: robot native angle + map global rotation
+			displayAngle := angle + r.GlobalRotation
+			drawVacuumIcon(img, ix, iy, size, displayAngle, robotRGBA)
 		}
 	}
 
@@ -426,13 +432,17 @@ func RenderSingleMapWithRotation(m *ValetudoMap, outputPath string, floorColor, 
 	// Draw charger
 	if charger, ok := ExtractChargerPosition(m); ok {
 		ix, iy := toImage(charger)
-		drawSquare(img, ix, iy, 8, color.RGBA{255, 215, 0, 255})
+		// Charger size: ~150mm, but at least 8px
+		size := max(8, int(150.0*scale))
+		drawSquare(img, ix, iy, size, color.RGBA{255, 215, 0, 255})
 	}
 
 	// Draw robot
-	if robot, _, ok := ExtractRobotPosition(m); ok {
+	if robot, angle, ok := ExtractRobotPosition(m); ok {
 		ix, iy := toImage(robot)
-		drawCircle(img, ix, iy, 6, color.RGBA{255, 0, 0, 255})
+		// Robot diameter: ~350mm, but at least 20px
+		size := max(20, int(350.0*scale))
+		drawVacuumIcon(img, ix, iy, size, angle, color.RGBA{255, 0, 0, 255})
 	}
 
 	// Draw origin (0,0) as purple triangle
@@ -481,19 +491,6 @@ func blendColors(bg color.RGBA, fg color.NRGBA) color.NRGBA {
 	}
 }
 
-// drawCircle draws a filled circle
-func drawCircle(img *image.RGBA, cx, cy, radius int, c color.RGBA) {
-	for dy := -radius; dy <= radius; dy++ {
-		for dx := -radius; dx <= radius; dx++ {
-			if dx*dx+dy*dy <= radius*radius {
-				x, y := cx+dx, cy+dy
-				if x >= 0 && x < img.Bounds().Max.X && y >= 0 && y < img.Bounds().Max.Y {
-					img.Set(x, y, c)
-				}
-			}
-		}
-	}
-}
 
 // drawSquare draws a filled square
 func drawSquare(img *image.RGBA, cx, cy, size int, c color.RGBA) {
@@ -534,20 +531,27 @@ func (r *CompositeRenderer) drawLegend(img *image.RGBA, width, height int) {
 	sort.Strings(ids)
 
 	// Legend in top-left corner
-	y := 15
+	// Scale legend based on map scale, but keep it readable
+	uiScale := math.Max(1.0, r.Scale*5.0) // Normalize to ~1.0 for 5mm/px
+	swatchSize := int(12 * uiScale)
+	lineHeight := int(18 * uiScale)
+	textX := int(28 * uiScale)
+
+	y := int(15 * uiScale)
 	for _, id := range ids {
 		vc := r.Colors[id]
 
-		// Draw color swatch (12x12 square)
-		for dy := 0; dy < 12; dy++ {
-			for dx := 0; dx < 12; dx++ {
-				img.Set(10+dx, y+dy-6, vc.Wall)
+		// Draw color swatch
+		half := swatchSize / 2
+		for dy := -half; dy < half; dy++ {
+			for dx := 0; dx < swatchSize; dx++ {
+				img.Set(10+dx, y+dy, vc.Wall)
 			}
 		}
 
-		drawText(img, 28, y, id, color.RGBA{0, 0, 0, 255})
+		drawText(img, textX, y+half/2, id, color.RGBA{0, 0, 0, 255})
 
-		y += 18
+		y += lineHeight
 	}
 }
 

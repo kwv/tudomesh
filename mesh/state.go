@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -174,7 +175,8 @@ func (st *StateTracker) UpdateUnifiedMap(calibData *CalibrationData) error {
 		}
 
 		// Convert the vacuum map to a GeoJSON feature collection in world coordinates.
-		fc := MapToFeatureCollection(vMap, vacuumID, vc.Transform, 5.0)
+		// Use native pixelSize as the simplification tolerance.
+		fc := MapToFeatureCollection(vMap, vacuumID, vc.Transform, float64(vMap.PixelSize))
 
 		src := FeatureSource{
 			VacuumID:  vacuumID,
@@ -198,18 +200,34 @@ func (st *StateTracker) UpdateUnifiedMap(calibData *CalibrationData) error {
 		}
 	}
 
+	// Determine resolution-aware clustering distances.
+	// We want the clustering to be at least a few pixels wide even on low-res maps.
+	maxPixelSize := 5
+	for _, vMap := range maps {
+		if vMap.PixelSize > maxPixelSize {
+			maxPixelSize = vMap.PixelSize
+		}
+	}
+	// Defaults are 50mm and 100mm. If pixelSize > 5, we scale them up.
+	// 10 pixels for walls, 20 pixels for floors.
+	wallClusterDist := math.Max(DefaultWallClusterDistance, 10.0*float64(maxPixelSize))
+	floorClusterDist := math.Max(DefaultFloorClusterDistance, 20.0*float64(maxPixelSize))
+
 	// Unify walls.
-	unifiedWalls := UnifyWalls(
+	unifiedWalls := UnifyWallsWithOptions(
 		extractWallFeatures(allWallFeatures),
 		allWallSources,
 		totalVacuums,
+		wallClusterDist,
+		DefaultConfidenceThreshold,
 	)
 
 	// Unify floors/segments.
-	unifiedFloors := UnifyFloors(
+	unifiedFloors := UnifyFloorsWithOptions(
 		extractFloorFeatures(allFloorFeatures),
 		allFloorSources,
 		totalVacuums,
+		floorClusterDist,
 	)
 
 	// Apply outlier detection.
@@ -259,9 +277,13 @@ func (st *StateTracker) UpdateUnifiedMap(calibData *CalibrationData) error {
 	}
 
 	// Apply geometry simplification.
-	simplifyUnifiedFeatures(newMap.Walls, DefaultWallSimplifyTolerance)
-	simplifyUnifiedFeatures(newMap.Floors, DefaultFloorSimplifyTolerance)
-	simplifyUnifiedFeatures(newMap.Segments, DefaultFloorSimplifyTolerance)
+	// Use scale-aware tolerances: at least 2 pixels or the default mm tolerance.
+	wallSimplify := math.Max(DefaultWallSimplifyTolerance, 2.0*float64(maxPixelSize))
+	floorSimplify := math.Max(DefaultFloorSimplifyTolerance, 4.0*float64(maxPixelSize))
+
+	simplifyUnifiedFeatures(newMap.Walls, wallSimplify)
+	simplifyUnifiedFeatures(newMap.Floors, floorSimplify)
+	simplifyUnifiedFeatures(newMap.Segments, floorSimplify)
 
 	// Store the unified map.
 	st.mu.Lock()
