@@ -27,7 +27,7 @@ func DefaultICPConfig() ICPConfig {
 	return ICPConfig{
 		MaxIterations:     50,
 		ConvergenceThresh: 1.0,    // 1mm improvement threshold
-		MaxCorrespondDist: 1000.0, // Max 1000mm (1m) for correspondence
+		MaxCorrespondDist: 5000.0, // Max 5000mm (5m) for correspondence
 		SamplePoints:      300,    // Use up to 300 feature points
 		OutlierPercentile: 0.8,    // Keep 80% closest correspondences
 		TryRotations:      true,   // Try all 4 rotations
@@ -92,7 +92,7 @@ func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, ro
 			refineConfig := config
 			refineConfig.MaxIterations = 50
 			refineConfig.ConvergenceThresh = 0.5
-			refineConfig.MaxCorrespondDist = 200.0
+			refineConfig.MaxCorrespondDist = 1000.0 // 1000mm wall refinement radius
 
 			refinedResult := runICPWithMutualNN(sourceWalls, targetWalls, result.Transform, refineConfig)
 			result.Transform = refinedResult.Transform
@@ -184,8 +184,8 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 			// Tighter convergence for refinement
 			refineConfig := config
 			refineConfig.MaxIterations = 50
-			refineConfig.ConvergenceThresh = 0.5   // Sub-pixel precision
-			refineConfig.MaxCorrespondDist = 200.0 // Don't drift too far from the coarse lock
+			refineConfig.ConvergenceThresh = 0.5    // Sub-mm precision
+			refineConfig.MaxCorrespondDist = 1000.0 // 1000mm wall refinement radius
 
 			// Run ICP with mutual NN for more robust wall matching
 			refinedResult := runICPWithMutualNN(sourceWalls, targetWalls, bestResult.Transform, refineConfig)
