@@ -27,7 +27,7 @@ func DefaultICPConfig() ICPConfig {
 	return ICPConfig{
 		MaxIterations:     50,
 		ConvergenceThresh: 1.0,    // 1mm improvement threshold
-		MaxCorrespondDist: 5000.0, // Max 5000mm (5m) for correspondence
+		MaxCorrespondDist: 3500.0, // Max 3500mm (3.5m) for correspondence - empirically optimal
 		SamplePoints:      300,    // Use up to 300 feature points
 		OutlierPercentile: 0.8,    // Keep 80% closest correspondences
 		TryRotations:      true,   // Try all 4 rotations
