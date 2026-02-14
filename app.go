@@ -95,6 +95,7 @@ func (a *App) parseAndPrint(path string) {
 	base := filepath.Base(path)
 	name := strings.TrimPrefix(base, "ValetudoMapExport-")
 	name = strings.Split(name, "-2")[0] // Remove timestamp
+	name = strings.TrimSuffix(name, ".json")
 
 	fmt.Printf("=== %s ===\n", name)
 	fmt.Printf("File: %s\n", path)
@@ -144,6 +145,7 @@ func (a *App) RunCompareRotation(vacuumID string) {
 		base := filepath.Base(file)
 		name := strings.TrimPrefix(base, "ValetudoMapExport-")
 		name = strings.Split(name, "-2")[0]
+		name = strings.TrimSuffix(name, ".json")
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -197,6 +199,7 @@ func (a *App) RunRender() {
 		base := filepath.Base(file)
 		name := strings.TrimPrefix(base, "ValetudoMapExport-")
 		name = strings.Split(name, "-2")[0]
+		name = strings.TrimSuffix(name, ".json")
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -458,6 +461,7 @@ func (a *App) RunRenderIndividual(individualRotationFlag string) {
 		base := filepath.Base(file)
 		name := strings.TrimPrefix(base, "ValetudoMapExport-")
 		name = strings.Split(name, "-2")[0]
+		name = strings.TrimSuffix(name, ".json")
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -503,6 +507,7 @@ func (a *App) RunCalibration() {
 		base := filepath.Base(file)
 		name := strings.TrimPrefix(base, "ValetudoMapExport-")
 		name = strings.Split(name, "-2")[0] // Remove timestamp
+		name = strings.TrimSuffix(name, ".json")
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -654,6 +659,7 @@ func (a *App) RunDetectRotation() {
 		base := filepath.Base(file)
 		name := strings.TrimPrefix(base, "ValetudoMapExport-")
 		name = strings.Split(name, "-2")[0]
+		name = strings.TrimSuffix(name, ".json")
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -1029,6 +1035,7 @@ func (a *App) loadInitialMaps(dataDir string) map[string]*mesh.ValetudoMap {
 		base := filepath.Base(file)
 		name := strings.TrimPrefix(base, "ValetudoMapExport-")
 		name = strings.Split(name, "-2")[0] // Remove timestamp
+		name = strings.TrimSuffix(name, ".json")
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
