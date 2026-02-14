@@ -1,6 +1,8 @@
 package mesh
 
 import (
+	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"sort"
@@ -28,7 +30,7 @@ func DefaultICPConfig() ICPConfig {
 		MaxIterations:     50,
 		ConvergenceThresh: 1.0,    // 1mm improvement threshold
 		MaxCorrespondDist: 3500.0, // Max 3500mm (3.5m) for correspondence - empirically optimal
-		SamplePoints:      300,    // Use up to 300 feature points
+		SamplePoints:      600,    // Use up to 600 feature points (denser sampling for rotation discrimination)
 		OutlierPercentile: 0.8,    // Keep 80% closest correspondences
 		TryRotations:      true,   // Try all 4 rotations
 		RNG:               rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -118,7 +120,50 @@ func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, ro
 		}
 	}
 
+	// Apply semantic bonus (room name matching)
+	if bonus, msg := CalculateSemanticBonus(srcFeatures, tgtFeatures, result.Transform); bonus > 0 {
+		result.Score += bonus
+		log.Println(msg)
+	}
+
 	return result
+}
+
+// CalculateSemanticBonus computes a score bonus based on the alignment of named room centroids.
+func CalculateSemanticBonus(source, target FeatureSet, transform AffineMatrix) (float64, string) {
+	semanticMatches := 0
+	semanticDistSum := 0.0
+	semanticScoreSum := 0.0
+
+	for name, srcCentroid := range source.SegmentCentroids {
+		if tgtCentroid, ok := target.SegmentCentroids[name]; ok {
+			// Transform source centroid
+			rx := srcCentroid.X*transform.A + srcCentroid.Y*transform.B + transform.Tx
+			ry := srcCentroid.X*transform.C + srcCentroid.Y*transform.D + transform.Ty
+			transformedCentroid := Point{X: rx, Y: ry}
+
+			dist := Distance(transformedCentroid, tgtCentroid)
+			// Use loose tolerance (3000mm = 3m) because segment definitions vary
+			// but 180-degree flips will be far larger (>10m typically).
+			if dist < 3000.0 {
+				semanticMatches++
+				semanticDistSum += dist
+				// Non-linear scoring: rewards close matches much more than loose ones
+				// 0m -> 1.0; 1m -> 0.5; 3m -> 0.25
+				semanticScoreSum += 1000.0 / (1000.0 + dist)
+			}
+		}
+	}
+
+	if semanticMatches > 0 {
+		// Bonus is proportional to the quality of the matches
+		// Weight: 0.4 per match (so 4 perfect matches = +1.6)
+		bonus := semanticScoreSum * 0.4
+		avgDist := semanticDistSum / float64(semanticMatches)
+		msg := fmt.Sprintf("   Semantic bonus: +%.3f (%d rooms matched, avg dist %.0fmm)", bonus, semanticMatches, avgDist)
+		return bonus, msg
+	}
+	return 0.0, ""
 }
 
 // AlignMaps computes the affine transform to align source map to target map
@@ -136,12 +181,29 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 	sourceFeatures := ExtractFeatures(source)
 	targetFeatures := ExtractFeatures(target)
 
-	// Sample features to limit computation
+	// Sample mixed features for final scoring (charger + walls + grid + boundary)
 	sourcePoints := SampleFeatures(sourceFeatures, config.SamplePoints)
 	targetPoints := SampleFeatures(targetFeatures, config.SamplePoints)
 
 	if len(sourcePoints) < 3 || len(targetPoints) < 3 {
 		return bestResult
+	}
+
+	// Use wall-only points for the rotation selection loop.
+	// Walls are the stable structural signal; floor/segment coverage varies
+	// between vacuum sessions and corrupts rotation discrimination.
+	sourceWalls := samplePointSlice(sourceFeatures.WallPoints, config.SamplePoints)
+	targetWalls := samplePointSlice(targetFeatures.WallPoints, config.SamplePoints)
+	wallCentroidSrc := Centroid(sourceWalls)
+	wallCentroidTgt := Centroid(targetWalls)
+
+	// Fall back to mixed features if walls are too sparse
+	rotSrc, rotTgt := sourceWalls, targetWalls
+	rotCentroidSrc, rotCentroidTgt := wallCentroidSrc, wallCentroidTgt
+	if len(sourceWalls) < 20 || len(targetWalls) < 20 {
+		rotSrc, rotTgt = sourcePoints, targetPoints
+		rotCentroidSrc = sourceFeatures.Centroid
+		rotCentroidTgt = targetFeatures.Centroid
 	}
 
 	// Rotations to try (in degrees)
@@ -150,24 +212,61 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 		rotations = []float64{0, 90, 180, 270}
 	}
 
-	// Try each initial rotation
+	// Try each initial rotation — using wall-only data for discrimination
 	for _, rotDeg := range rotations {
 		// Use robust initialization to find best translation for this rotation
-		initialTransform := findBestInitialAlignment(sourcePoints, targetPoints, sourceFeatures.Centroid, targetFeatures.Centroid, rotDeg, config.RNG)
+		initialTransform := findBestInitialAlignment(rotSrc, rotTgt, rotCentroidSrc, rotCentroidTgt, rotDeg, config.RNG)
 
 		// Use multi-scale ICP for better coarse-to-fine convergence
-		result := runMultiScaleICP(sourcePoints, targetPoints, initialTransform, config)
+		result := runMultiScaleICP(rotSrc, rotTgt, initialTransform, config)
 		result.InitialRotation = rotDeg
 
-		// Calculate robust score
-		transformed := TransformPoints(sourcePoints, result.Transform)
-		// Use scale-aware score threshold: 50 pixels
-		scoreThreshold := 50.0 * float64(target.PixelSize)
-		score, frac, _ := CalculateInlierScore(transformed, targetPoints, scoreThreshold)
+		// Use tighter scale-aware score threshold: 15 pixels (~75mm)
+		// This strictness is needed to distinguish 0° vs 180° in symmetric hallways
+		transformed := TransformPoints(rotSrc, result.Transform)
+		scoreThreshold := 15.0 * float64(target.PixelSize)
+		score, frac, _ := CalculateInlierScore(transformed, rotTgt, scoreThreshold)
 		result.Score = score
 		result.InlierFraction = frac
 
-		RotationErrors[rotDeg] = result.Error // Keep logging raw error for backward compat/debug
+		// Material consistency bonus (e.g. carpet matching) to break geometric symmetry
+		matScoreSum := 0.0
+		matMatches := 0
+		for mat, srcMatPts := range sourceFeatures.MaterialPoints {
+			if tgtMatPts, ok := targetFeatures.MaterialPoints[mat]; ok && len(srcMatPts) > 0 && len(tgtMatPts) > 0 {
+				// Downsample for speed
+				srcSample := samplePointSlice(srcMatPts, 200)
+				tgtSample := samplePointSlice(tgtMatPts, 200)
+
+				transformedMat := TransformPoints(srcSample, result.Transform)
+				// Use looser threshold for carpet (300mm) as edges are fuzzy
+				matThreshold := 60.0 * float64(target.PixelSize)
+				_, matchFrac, _ := CalculateInlierScore(transformedMat, tgtSample, matThreshold)
+
+				matScoreSum += matchFrac
+				matMatches++
+			}
+		}
+
+		if matMatches > 0 {
+			avgMatScore := matScoreSum / float64(matMatches)
+			bonus := avgMatScore * 0.3 // 30% bonus for material alignment
+			result.Score += bonus
+			log.Printf("   Material bonus: +%.3f (avg match %.3f on %d materials)", bonus, avgMatScore, matMatches)
+		}
+
+		// Semantic consistency bonus (room name matching)
+		if bonus, msg := CalculateSemanticBonus(sourceFeatures, targetFeatures, result.Transform); bonus > 0 {
+			result.Score += bonus
+			log.Println(msg)
+		}
+
+		RotationErrors[rotDeg] = result.Error
+
+		log.Printf("AlignMaps: rot=%.0f° score=%.6f frac=%.3f error=%.1f tx=%.1f ty=%.1f (walls=%d/%d)",
+			rotDeg, result.Score, result.InlierFraction, result.Error,
+			result.Transform.Tx, result.Transform.Ty,
+			len(rotSrc), len(rotTgt))
 
 		// Pick best by Score (Inlier-based), not raw Error (Average distance)
 		if result.Score > bestResult.Score {
@@ -230,6 +329,12 @@ func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
 			score, frac, _ := CalculateInlierScore(transformed, targetPoints, scoreThreshold)
 			bestResult.Score = score
 			bestResult.InlierFraction = frac
+
+			// Re-apply semantic bonus to final score
+			if bonus, msg := CalculateSemanticBonus(sourceFeatures, targetFeatures, bestResult.Transform); bonus > 0 {
+				bestResult.Score += bonus
+				log.Println("Refinement " + msg)
+			}
 		}
 	}
 
@@ -497,27 +602,33 @@ func buildInitialTransform(source, target FeatureSet, rotationDeg float64, rng *
 	return findBestInitialAlignment(sourcePoints, targetPoints, source.Centroid, target.Centroid, rotationDeg, rng)
 }
 
-// runICP performs ICP iterations starting from an initial transform
+// runICP performs ICP iterations starting from an initial transform.
+// It uses inlier-based scoring to prevent divergence and ensure physical overlap increases.
 func runICP(sourcePoints, targetPoints []Point, initialTransform AffineMatrix, config ICPConfig) ICPResult {
 	result := ICPResult{
-		Transform: initialTransform,
-		Error:     math.MaxFloat64,
+		Transform:       initialTransform,
+		Error:           math.MaxFloat64,
+		Score:           -1.0,
+		InitialRotation: 0, // Placeholder
 	}
 
 	currentTransform := initialTransform
-	var prevError float64
 
-	// Calculate initial error
+	// Calculate initial robust error and score
 	transformed := TransformPoints(sourcePoints, currentTransform)
-	prevError = FeatureDistance(transformed, targetPoints)
-	result.Error = prevError
+	// We use the pass's MaxCorrespondDist as the robust scoring threshold.
+	prevScore, prevFrac, prevInlierError := CalculateInlierScore(transformed, targetPoints, config.MaxCorrespondDist)
+
+	result.Error = prevInlierError
+	result.Score = prevScore
+	result.InlierFraction = prevFrac
 	result.Transform = currentTransform
 
 	for iter := 0; iter < config.MaxIterations; iter++ {
 		result.Iterations = iter + 1
 
 		// Transform source points with current estimate
-		transformed := TransformPoints(sourcePoints, currentTransform)
+		transformed = TransformPoints(sourcePoints, currentTransform)
 
 		// Find correspondences with outlier rejection
 		srcCorr, tgtCorr, distances := findCorrespondencesWithDistances(transformed, targetPoints, config.MaxCorrespondDist)
@@ -531,36 +642,77 @@ func runICP(sourcePoints, targetPoints []Point, initialTransform AffineMatrix, c
 			break
 		}
 
-		// Compute transform directly from transformed correspondences to target
-		// This gives us the incremental adjustment needed
-		incrementalTransform := CalculateRigidTransform(srcCorr, tgtCorr)
+		// TRIMMED ICP: Further select only the best N% of remaining correspondences
+		// to compute the transform. This prevents "pulling" from moderately far points
+		// and focuses on the high-confidence "skeleton" alignment.
+		// Use best 70% of the already rejected set (OutlierPercentile)
+		trimPercentile := 0.7
+		trimCount := int(float64(len(srcCorr)) * trimPercentile)
+		if trimCount < 3 {
+			trimCount = len(srcCorr)
+		}
+
+		var incrementalTransform AffineMatrix
+		if trimCount < len(srcCorr) {
+			// Re-calculate distances for the selected subset (already sorted by rejectOutliers)
+			// Actually rejectOutliers doesn't sort. findCorrespondencesWithDistances doesn't sort.
+			// Let's implement a quick sort-and-trim or use weights.
+			// Since we want robust skeletal mapping, let's use weighted transforms
+			// where weight = 1.0 / (1.0 + dist/PixelSize).
+			weights := make([]float64, len(srcCorr))
+			// We need distances for the *current* srcCorr/tgtCorr
+			// rejectOutliers returns new slices. Let's redo findCorrespondences to get sorted ones.
+			
+			// Actually, let's just use the weights for the rigid transform.
+			for i := range srcCorr {
+				d := Distance(srcCorr[i], tgtCorr[i])
+				weights[i] = 1.0 / (1.0 + d*d/1000.0) // Soft weight based on proximity
+			}
+			incrementalTransform = CalculateWeightedRigidTransform(srcCorr, tgtCorr, weights)
+		} else {
+			incrementalTransform = CalculateRigidTransform(srcCorr, tgtCorr)
+		}
 
 		// Compose: new = incremental * current
 		newTransform := MultiplyMatrices(incrementalTransform, currentTransform)
 
-		// Calculate alignment error with new transform
-		transformed = TransformPoints(sourcePoints, newTransform)
-		currentError := FeatureDistance(transformed, targetPoints)
+		// Calculate robust alignment quality with new transform
+		testTransformed := TransformPoints(sourcePoints, newTransform)
+		newScore, newFrac, newInlierError := CalculateInlierScore(testTransformed, targetPoints, config.MaxCorrespondDist)
+
+		// BACKTRACKING / SCORE VALIDATION
+		// ICP minimizes sum of squares, which can decrease the physical inlier count
+		// if a few outliers pull hard (e.g. into a parallel hallway).
+		// We refuse to move if the physical overlap score decreases significantly.
+		if newScore < prevScore*0.98 {
+			// Termination: physical alignment is degrading.
+			break
+		}
 
 		// Check convergence
-		improvement := prevError - currentError
+		improvement := prevInlierError - newInlierError
 		if improvement < config.ConvergenceThresh && improvement >= 0 {
 			result.Converged = true
 			result.Transform = newTransform
-			result.Error = currentError
+			result.Error = newInlierError
+			result.Score = newScore
+			result.InlierFraction = newFrac
 			break
 		}
 
-		// Check for divergence (getting worse)
-		if currentError > prevError*1.1 {
-			// Keep previous transform and stop
+		// Check for severe divergence
+		if newInlierError > prevInlierError*1.5 {
 			break
 		}
 
-		prevError = currentError
+		prevInlierError = newInlierError
+		prevScore = newScore
 		currentTransform = newTransform
+
 		result.Transform = newTransform
-		result.Error = currentError
+		result.Error = newInlierError
+		result.Score = newScore
+		result.InlierFraction = newFrac
 	}
 
 	return result
@@ -577,15 +729,18 @@ func runMultiScaleICP(sourcePoints, targetPoints []Point, initialTransform Affin
 	currentTransform := initialTransform
 
 	// Multi-scale annealing schedule: start coarse, progressively tighten
-	// Each scale runs a mini-ICP pass
+	// Each scale runs a mini-Pass
+	// More granular steps help ensure "locking" in ambiguous structures.
 	scales := []struct {
 		maxDist    float64
 		iterations int
 		threshold  float64
 	}{
-		{config.MaxCorrespondDist, 15, 2.0},        // Coarse: large search radius
-		{config.MaxCorrespondDist * 0.5, 15, 1.0},  // Medium
-		{config.MaxCorrespondDist * 0.25, 20, 0.5}, // Fine
+		{config.MaxCorrespondDist, 15, 2.0},       // Coarse: large search radius (e.g. 3500mm)
+		{2000.0, 15, 1.0},                         // Intermediate (2m)
+		{1000.0, 15, 0.5},                         // Structure lock (1m)
+		{500.0, 20, 0.25},                         // Fine (0.5m)
+		{250.0, 20, 0.1},                          // Super-fine (0.25m)
 	}
 
 	totalIterations := 0
@@ -610,32 +765,36 @@ func runMultiScaleICP(sourcePoints, targetPoints []Point, initialTransform Affin
 	return result
 }
 
-// runICPWithMutualNN performs ICP using mutual nearest neighbor for more robust correspondences
+// runICPWithMutualNN performs ICP using mutual nearest neighbor for more robust correspondences.
+// It includes inlier-based score validation to prevent structure "slippage".
 func runICPWithMutualNN(sourcePoints, targetPoints []Point, initialTransform AffineMatrix, config ICPConfig) ICPResult {
 	result := ICPResult{
 		Transform: initialTransform,
 		Error:     math.MaxFloat64,
+		Score:     -1.0,
 	}
 
 	currentTransform := initialTransform
-	var prevError float64
 
-	// Calculate initial error
+	// Calculate initial robust error and score
 	transformed := TransformPoints(sourcePoints, currentTransform)
-	prevError = FeatureDistance(transformed, targetPoints)
-	result.Error = prevError
+	prevScore, prevFrac, prevInlierError := CalculateInlierScore(transformed, targetPoints, config.MaxCorrespondDist)
+
+	result.Error = prevInlierError
+	result.Score = prevScore
+	result.InlierFraction = prevFrac
 	result.Transform = currentTransform
 
 	for iter := 0; iter < config.MaxIterations; iter++ {
 		result.Iterations = iter + 1
 
 		// Transform source points with current estimate
-		transformed := TransformPoints(sourcePoints, currentTransform)
+		transformed = TransformPoints(sourcePoints, currentTransform)
 
-		// Find MUTUAL correspondences (more robust)
+		// Find MUTUAL correspondences (more robust for fine refinement)
 		srcCorr, tgtCorr, distances := findMutualCorrespondences(transformed, targetPoints, config.MaxCorrespondDist)
 
-		// Fall back to one-way if mutual gives too few correspondences
+		// Fall back to one-way if mutual gives too few correspondences to prevent stalls
 		if len(srcCorr) < 10 {
 			srcCorr, tgtCorr, distances = findCorrespondencesWithDistances(transformed, targetPoints, config.MaxCorrespondDist)
 		}
@@ -651,31 +810,49 @@ func runICPWithMutualNN(sourcePoints, targetPoints []Point, initialTransform Aff
 		}
 
 		// Compute transform
-		incrementalTransform := CalculateRigidTransform(srcCorr, tgtCorr)
+		var incrementalTransform AffineMatrix
+		weights := make([]float64, len(srcCorr))
+		for i := range srcCorr {
+			d := Distance(srcCorr[i], tgtCorr[i])
+			weights[i] = 1.0 / (1.0 + d*d/500.0) // Slightly tighter weight for fine refinement
+		}
+		incrementalTransform = CalculateWeightedRigidTransform(srcCorr, tgtCorr, weights)
 		newTransform := MultiplyMatrices(incrementalTransform, currentTransform)
 
-		// Calculate alignment error with new transform
-		transformed = TransformPoints(sourcePoints, newTransform)
-		currentError := FeatureDistance(transformed, targetPoints)
+		// Calculate robust alignment quality with new transform
+		testTransformed := TransformPoints(sourcePoints, newTransform)
+		newScore, newFrac, newInlierError := CalculateInlierScore(testTransformed, targetPoints, config.MaxCorrespondDist)
+
+		// BACKTRACKING / SCORE VALIDATION
+		// Refinement must improve (or maintain) the physical alignment quality.
+		if newScore < prevScore*0.99 { // Very slight buffer for micro-jitters
+			break
+		}
 
 		// Check convergence
-		improvement := prevError - currentError
+		improvement := prevInlierError - newInlierError
 		if improvement < config.ConvergenceThresh && improvement >= 0 {
 			result.Converged = true
 			result.Transform = newTransform
-			result.Error = currentError
+			result.Error = newInlierError
+			result.Score = newScore
+			result.InlierFraction = newFrac
 			break
 		}
 
 		// Check for divergence
-		if currentError > prevError*1.1 {
+		if newInlierError > prevInlierError*1.5 {
 			break
 		}
 
-		prevError = currentError
+		prevInlierError = newInlierError
+		prevScore = newScore
 		currentTransform = newTransform
+
 		result.Transform = newTransform
-		result.Error = currentError
+		result.Error = newInlierError
+		result.Score = newScore
+		result.InlierFraction = newFrac
 	}
 
 	return result

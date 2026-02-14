@@ -48,6 +48,7 @@ type LayerMetaData struct {
 	Active     bool   `json:"active,omitempty"`
 	Source     string `json:"source,omitempty"`
 	PixelCount int    `json:"pixelCount,omitempty"`
+	Material   string `json:"material,omitempty"` // "generic", "tile", "wood", "wood_horizontal", "wood_vertical"
 }
 
 // MapEntity represents a map entity (robot position, charger, path)
