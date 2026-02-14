@@ -1,6 +1,7 @@
 package mesh
 
 import (
+	"math"
 	"testing"
 )
 
@@ -298,5 +299,231 @@ func TestTraceContoursSimple(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestTraceWallCenterlines verifies that centerline extraction produces
+// single paths through wall pixel centers, unlike boundary tracing which
+// produces parallel outline paths.
+func TestTraceWallCenterlines(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupGrid   func() ([]bool, int, int)
+		expectPaths int    // expected number of chains
+		expectLen   int    // expected length of the first chain
+		desc        string // test description
+	}{
+		{
+			name: "horizontal line produces single chain",
+			setupGrid: func() ([]bool, int, int) {
+				// . . . . . . .
+				// . X X X X X .
+				// . . . . . . .
+				grid := make([]bool, 21)
+				for x := 1; x <= 5; x++ {
+					grid[1*7+x] = true
+				}
+				return grid, 7, 3
+			},
+			expectPaths: 1,
+			expectLen:   5,
+			desc:        "5 pixels in a row should yield 1 path with 5 points",
+		},
+		{
+			name: "vertical line produces single chain",
+			setupGrid: func() ([]bool, int, int) {
+				// . . .
+				// . X .
+				// . X .
+				// . X .
+				// . X .
+				// . . .
+				grid := make([]bool, 18)
+				for y := 1; y <= 4; y++ {
+					grid[y*3+1] = true
+				}
+				return grid, 3, 6
+			},
+			expectPaths: 1,
+			expectLen:   4,
+			desc:        "4 pixels in a column should yield 1 path with 4 points",
+		},
+		{
+			name: "L shape produces single chain",
+			setupGrid: func() ([]bool, int, int) {
+				// . . . . .
+				// . X . . .
+				// . X . . .
+				// . X X X .
+				// . . . . .
+				grid := make([]bool, 25)
+				grid[1*5+1] = true // (1,1)
+				grid[2*5+1] = true // (1,2)
+				grid[3*5+1] = true // (1,3)
+				grid[3*5+2] = true // (2,3)
+				grid[3*5+3] = true // (3,3)
+				return grid, 5, 5
+			},
+			expectPaths: 1,
+			expectLen:   5,
+			desc:        "L-shape (5 pixels) should yield 1 chain with 5 points",
+		},
+		{
+			name: "two disconnected segments",
+			setupGrid: func() ([]bool, int, int) {
+				// . . . . . . .
+				// . X X . X X .
+				// . . . . . . .
+				grid := make([]bool, 21)
+				grid[1*7+1] = true // (1,1)
+				grid[1*7+2] = true // (2,1)
+				grid[1*7+4] = true // (4,1)
+				grid[1*7+5] = true // (5,1)
+				return grid, 7, 3
+			},
+			expectPaths: 2,
+			expectLen:   2,
+			desc:        "Two separate wall segments should yield 2 paths",
+		},
+		{
+			name: "single pixel is skipped",
+			setupGrid: func() ([]bool, int, int) {
+				// . . .
+				// . X .
+				// . . .
+				grid := make([]bool, 9)
+				grid[4] = true
+				return grid, 3, 3
+			},
+			expectPaths: 0,
+			expectLen:   0,
+			desc:        "Isolated pixel should not produce a path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			grid, width, height := tt.setupGrid()
+
+			paths := traceWallCenterlines(grid, width, height)
+
+			t.Logf("%s", tt.desc)
+			t.Logf("Got %d paths", len(paths))
+			for i, p := range paths {
+				t.Logf("  Path %d: %d points", i, len(p))
+				for j, pt := range p {
+					t.Logf("    [%d] (%.0f, %.0f)", j, pt.X, pt.Y)
+				}
+			}
+
+			if len(paths) != tt.expectPaths {
+				t.Errorf("Expected %d paths, got %d", tt.expectPaths, len(paths))
+			}
+
+			if tt.expectLen > 0 && len(paths) > 0 && len(paths[0]) != tt.expectLen {
+				t.Errorf("Expected first path to have %d points, got %d", tt.expectLen, len(paths[0]))
+			}
+		})
+	}
+}
+
+// TestVectorizeWallCenterlines_VsBoundary demonstrates that centerline
+// extraction produces fewer paths than boundary tracing for the same
+// wall pixel data.
+func TestVectorizeWallCenterlines_VsBoundary(t *testing.T) {
+	// Build a horizontal wall: 20 pixels at y=5.
+	var pixels []int
+	for x := 0; x < 20; x++ {
+		pixels = append(pixels, x, 5)
+	}
+
+	m := &ValetudoMap{
+		PixelSize: 1,
+		Layers: []MapLayer{
+			{Type: "wall", Pixels: pixels},
+		},
+	}
+	layer := &m.Layers[0]
+
+	// Boundary tracing (old method): produces parallel outlines.
+	boundaryPaths := VectorizeLayer(m, layer, 0.0)
+
+	// Centerline extraction (new method): produces single line.
+	centerPaths := VectorizeWallCenterlines(m, layer, 0.0)
+
+	t.Logf("Boundary tracing: %d paths", len(boundaryPaths))
+	for i, p := range boundaryPaths {
+		t.Logf("  Path %d: %d points", i, len(p))
+	}
+	t.Logf("Centerline extraction: %d paths", len(centerPaths))
+	for i, p := range centerPaths {
+		t.Logf("  Path %d: %d points", i, len(p))
+	}
+
+	// Centerline should produce exactly 1 path for a simple wall.
+	if len(centerPaths) != 1 {
+		t.Errorf("Expected 1 centerline path, got %d", len(centerPaths))
+	}
+
+	// Centerline path count should be less than or equal to boundary path count.
+	if len(centerPaths) > len(boundaryPaths) {
+		t.Errorf("Centerline produced more paths (%d) than boundary (%d)",
+			len(centerPaths), len(boundaryPaths))
+	}
+}
+
+// TestVectorizeWallCenterlines_NilInputs verifies safe handling of nil/empty inputs.
+func TestVectorizeWallCenterlines_NilInputs(t *testing.T) {
+	// Nil map.
+	paths := VectorizeWallCenterlines(nil, &MapLayer{Type: "wall"}, 0.0)
+	if paths != nil {
+		t.Errorf("Expected nil for nil map, got %d paths", len(paths))
+	}
+
+	// Nil layer.
+	m := &ValetudoMap{PixelSize: 1}
+	paths = VectorizeWallCenterlines(m, nil, 0.0)
+	if paths != nil {
+		t.Errorf("Expected nil for nil layer, got %d paths", len(paths))
+	}
+
+	// Empty pixels.
+	paths = VectorizeWallCenterlines(m, &MapLayer{Type: "wall", Pixels: nil}, 0.0)
+	if paths != nil {
+		t.Errorf("Expected nil for empty pixels, got %d paths", len(paths))
+	}
+}
+
+// TestVectorizeWallCenterlines_WithPixelSize verifies mm coordinate conversion.
+func TestVectorizeWallCenterlines_WithPixelSize(t *testing.T) {
+	// Wall pixels at grid positions (0,0), (1,0), (2,0) with pixelSize=50mm.
+	// After NormalizeToMM, pixels are in mm: (0,0), (50,0), (100,0).
+	// VectorizeWallCenterlines converts back to grid, traces, and converts to mm.
+	m := &ValetudoMap{
+		PixelSize: 50,
+		Layers: []MapLayer{
+			{
+				Type:   "wall",
+				Pixels: []int{0, 0, 50, 0, 100, 0},
+			},
+		},
+	}
+	layer := &m.Layers[0]
+
+	paths := VectorizeWallCenterlines(m, layer, 0.0)
+	if len(paths) != 1 {
+		t.Fatalf("Expected 1 path, got %d", len(paths))
+	}
+
+	// All points should be multiples of pixelSize.
+	for _, pt := range paths[0] {
+		if math.Mod(pt.X, 50) != 0 || math.Mod(pt.Y, 50) != 0 {
+			t.Errorf("Point (%.0f, %.0f) not aligned to pixelSize 50", pt.X, pt.Y)
+		}
+	}
+
+	t.Logf("Path with pixelSize=50: %d points", len(paths[0]))
+	for i, pt := range paths[0] {
+		t.Logf("  [%d] (%.0f, %.0f)", i, pt.X, pt.Y)
 	}
 }

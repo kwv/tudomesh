@@ -327,6 +327,243 @@ func traceBoundary(startX, startY, startFacing int, grid []bool, width, height i
 	return path
 }
 
+// VectorizeWallCenterlines converts wall layer pixels into centerline paths.
+// Unlike VectorizeLayer which traces boundary outlines (producing parallel
+// paths for thin walls), this function walks through pixel centers to produce
+// a single path per connected wall segment. This yields solid stroked lines
+// instead of hatched/railroad-track artifacts.
+//
+// The algorithm:
+//  1. Build a boolean grid from wall pixel coordinates
+//  2. Find connected components using flood-fill (8-connected)
+//  3. For each component, find an endpoint (degree <= 1) to start from
+//  4. Walk the chain of pixels using DFS, producing a single ordered path
+//  5. Apply RDP simplification
+//
+// Returns paths in local-mm coordinates, matching VectorizeLayer's contract.
+func VectorizeWallCenterlines(m *ValetudoMap, layer *MapLayer, tolerance float64) []Path {
+	if m == nil || layer == nil || len(layer.Pixels) == 0 {
+		return nil
+	}
+
+	pixelSize := m.PixelSize
+	if pixelSize <= 0 {
+		return nil
+	}
+
+	// Convert mm values back to grid indices.
+	gridPixels := make([]int, len(layer.Pixels))
+	for i, v := range layer.Pixels {
+		gridPixels[i] = v / pixelSize
+	}
+
+	// Build dense boolean grid with 1px padding.
+	grid, minX, minY, width, height := pixelsToGrid(gridPixels, pixelSize)
+	if grid == nil {
+		return nil
+	}
+
+	// Extract centerline chains from the grid.
+	chains := traceWallCenterlines(grid, width, height)
+
+	// Convert grid coordinates back to mm and simplify.
+	ps := float64(pixelSize)
+	var result []Path
+	for _, chain := range chains {
+		mmPath := make(Path, len(chain))
+		for i, p := range chain {
+			mmPath[i] = Point{
+				X: (p.X + float64(minX)) * ps,
+				Y: (p.Y + float64(minY)) * ps,
+			}
+		}
+
+		if tolerance > 0 {
+			mmPath = SimplifyRDP(mmPath, tolerance)
+		}
+		if len(mmPath) >= 2 {
+			result = append(result, mmPath)
+		}
+	}
+
+	return result
+}
+
+// traceWallCenterlines extracts ordered chains of pixels from a boolean grid.
+// Each connected component of set pixels becomes one Path, walked through
+// pixel centers. Uses 8-connectivity for neighbor detection to handle
+// diagonal wall segments.
+func traceWallCenterlines(grid []bool, width, height int) []Path {
+	visited := make([]bool, len(grid))
+	var paths []Path
+
+	isSet := func(x, y int) bool {
+		if x < 0 || x >= width || y < 0 || y >= height {
+			return false
+		}
+		return grid[y*width+x]
+	}
+
+	// 8-connected neighbors (cardinal first, then diagonal).
+	neighbors8 := [][2]int{
+		{1, 0}, {-1, 0}, {0, 1}, {0, -1},
+		{1, 1}, {1, -1}, {-1, 1}, {-1, -1},
+	}
+
+	// floodCollect gathers all pixels in a connected component using BFS.
+	floodCollect := func(startX, startY int) []Point {
+		var component []Point
+		queue := []Point{{X: float64(startX), Y: float64(startY)}}
+		visited[startY*width+startX] = true
+
+		for len(queue) > 0 {
+			p := queue[0]
+			queue = queue[1:]
+			component = append(component, p)
+
+			px, py := int(p.X), int(p.Y)
+			for _, n := range neighbors8 {
+				nx, ny := px+n[0], py+n[1]
+				if isSet(nx, ny) && !visited[ny*width+nx] {
+					visited[ny*width+nx] = true
+					queue = append(queue, Point{X: float64(nx), Y: float64(ny)})
+				}
+			}
+		}
+		return component
+	}
+
+	// orderChain takes a set of component pixels and orders them into a path
+	// by walking from an endpoint. For loops (all degree >= 2), starts from
+	// any pixel and walks until revisiting.
+	orderChain := func(component []Point) Path {
+		if len(component) <= 1 {
+			return component
+		}
+
+		// Build a set for fast lookup.
+		type coord struct{ x, y int }
+		inComponent := make(map[coord]bool, len(component))
+		for _, p := range component {
+			inComponent[coord{int(p.X), int(p.Y)}] = true
+		}
+
+		// Find an endpoint (degree 1 within the component) to start from.
+		// This produces a clean chain from one end to the other.
+		componentDegree := func(x, y int) int {
+			d := 0
+			for _, n := range neighbors8 {
+				nx, ny := x+n[0], y+n[1]
+				if inComponent[coord{nx, ny}] {
+					d++
+				}
+			}
+			return d
+		}
+
+		startPt := component[0]
+		for _, p := range component {
+			if componentDegree(int(p.X), int(p.Y)) <= 1 {
+				startPt = p
+				break
+			}
+		}
+
+		// Walk the chain using DFS (prefer cardinal over diagonal for smoother lines).
+		walked := make(map[coord]bool, len(component))
+		var chain Path
+		cx, cy := int(startPt.X), int(startPt.Y)
+		walked[coord{cx, cy}] = true
+		chain = append(chain, Point{X: float64(cx), Y: float64(cy)})
+
+		for {
+			found := false
+			for _, n := range neighbors8 {
+				nx, ny := cx+n[0], cy+n[1]
+				c := coord{nx, ny}
+				if inComponent[c] && !walked[c] {
+					walked[c] = true
+					chain = append(chain, Point{X: float64(nx), Y: float64(ny)})
+					cx, cy = nx, ny
+					found = true
+					break
+				}
+			}
+			if !found {
+				break
+			}
+		}
+
+		// If we didn't visit all component pixels, it means the component
+		// has branches (junction). Handle by appending remaining pixels
+		// as separate sub-chains connected to the main chain.
+		if len(walked) < len(component) {
+			// Find unvisited branch starts adjacent to walked pixels.
+			for _, p := range component {
+				c := coord{int(p.X), int(p.Y)}
+				if walked[c] {
+					continue
+				}
+				// Walk this branch.
+				var branch Path
+				bx, by := int(p.X), int(p.Y)
+				walked[coord{bx, by}] = true
+				branch = append(branch, Point{X: float64(bx), Y: float64(by)})
+				for {
+					found := false
+					for _, n := range neighbors8 {
+						nx, ny := bx+n[0], by+n[1]
+						bc := coord{nx, ny}
+						if inComponent[bc] && !walked[bc] {
+							walked[bc] = true
+							branch = append(branch, Point{X: float64(nx), Y: float64(ny)})
+							bx, by = nx, ny
+							found = true
+							break
+						}
+					}
+					if !found {
+						break
+					}
+				}
+				if len(branch) >= 2 {
+					// Find the junction point on the main chain and insert.
+					// For simplicity, append as a separate path segment.
+					chain = append(chain, branch...)
+				}
+			}
+		}
+
+		return chain
+	}
+
+	// Scan all pixels, find connected components, order each into a chain.
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			if !isSet(x, y) || visited[y*width+x] {
+				continue
+			}
+
+			component := floodCollect(x, y)
+			if len(component) == 0 {
+				continue
+			}
+
+			// Single isolated pixel: skip (produces no useful line).
+			if len(component) == 1 {
+				continue
+			}
+
+			chain := orderChain(component)
+			if len(chain) >= 2 {
+				paths = append(paths, chain)
+			}
+		}
+	}
+
+	return paths
+}
+
 // SimplifyRDP reduces points using Ramer-Douglas-Peucker algorithm
 func SimplifyRDP(points Path, epsilon float64) Path {
 	if len(points) < 3 {

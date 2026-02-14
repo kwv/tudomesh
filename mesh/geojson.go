@@ -253,8 +253,14 @@ func MapToFeatureCollection(valetudoMap *ValetudoMap, vacuumID string, transform
 	for i := range valetudoMap.Layers {
 		layer := &valetudoMap.Layers[i]
 
-		// Vectorize the layer
-		paths := VectorizeLayer(valetudoMap, layer, tolerance)
+		// Vectorize the layer. Use centerline extraction for walls to produce
+		// single LineString paths instead of parallel boundary outlines.
+		var paths []Path
+		if layer.Type == "wall" {
+			paths = VectorizeWallCenterlines(valetudoMap, layer, tolerance)
+		} else {
+			paths = VectorizeLayer(valetudoMap, layer, tolerance)
+		}
 		if len(paths) == 0 {
 			continue
 		}
