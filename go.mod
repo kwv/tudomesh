@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
-	github.com/paulmach/orb v0.12.0
+	github.com/paulmach/orb v0.13.0
 	github.com/stretchr/testify v1.11.1
 	github.com/tdewolff/canvas v0.0.0-20260129132952-fb83307db4c6
 	golang.org/x/image v0.35.0
