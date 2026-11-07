@@ -802,7 +802,7 @@ func TestAlignMaps_RotationSearchBehavior(t *testing.T) {
 
 	config := DefaultICPConfig()
 	config.TryRotations = true
-	result := AlignMaps(sourceMap, targetMap, config)
+	result := alignMapsICP(sourceMap, targetMap, config)
 
 	// Verify that rotation search was performed (RotationErrors should be populated)
 	if len(RotationErrors) == 0 {
@@ -864,7 +864,7 @@ func TestAlignMapsWithRotationHint_AllRotations(t *testing.T) {
 			config := DefaultICPConfig()
 			result := AlignMapsWithRotationHint(sourceMap, targetMap, config, tc.rotation)
 
-			if result.InitialRotation != tc.rotation {
+			if angleDiff(result.InitialRotation, tc.rotation) > 2 {
 				t.Errorf("InitialRotation mismatch: got %f, want %f",
 					result.InitialRotation, tc.rotation)
 			}

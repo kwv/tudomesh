@@ -31,7 +31,11 @@ type MapLayer struct {
 	Class    string        `json:"__class"`
 	MetaData LayerMetaData `json:"metaData"`
 	Type     string        `json:"type"` // "floor", "segment", "wall"
-	Pixels   []int         `json:"pixels"`
+	// Pixels are [x1,y1,x2,y2,...] in the same units as entity points
+	// (grid index * pixelSize). Filled from CompressedPixels on parse if empty.
+	Pixels []int `json:"pixels"`
+	// CompressedPixels is Valetudo's run-length form: [gridX, gridY, runLength, ...].
+	CompressedPixels []int `json:"compressedPixels,omitempty"`
 }
 
 // LayerMetaData contains layer metadata
@@ -108,7 +112,7 @@ type VacuumConfig struct {
 	Color       string             `yaml:"color" json:"color"`
 	Rotation    *float64           `yaml:"rotation,omitempty" json:"rotation,omitempty"`       // Optional rotation hint/override (0, 90, 180, 270)
 	Translation *TranslationOffset `yaml:"translation,omitempty" json:"translation,omitempty"` // Optional manual translation override
-	ApiURL      *string            `yaml:"apiUrl,omitempty" json:"apiUrl,omitempty"`             // Optional API URL for fetching map data
+	ApiURL      *string            `yaml:"apiUrl,omitempty" json:"apiUrl,omitempty"`           // Optional API URL for fetching map data
 }
 
 // Config represents the full configuration file
@@ -187,9 +191,9 @@ type CalibrationData struct {
 func (c *CalibrationData) UnmarshalJSON(data []byte) error {
 	// Step 1: Unmarshal the envelope with raw vacuum entries.
 	var envelope struct {
-		ReferenceVacuum string                        `json:"referenceVacuum"`
-		Vacuums         map[string]json.RawMessage    `json:"vacuums"`
-		LastUpdated     int64                         `json:"lastUpdated"`
+		ReferenceVacuum string                     `json:"referenceVacuum"`
+		Vacuums         map[string]json.RawMessage `json:"vacuums"`
+		LastUpdated     int64                      `json:"lastUpdated"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return err

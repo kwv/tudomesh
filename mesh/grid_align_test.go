@@ -1,0 +1,154 @@
+package mesh
+
+import (
+	"math"
+	"path/filepath"
+	"testing"
+)
+
+// lHouse builds an unnamed L-shaped floor plan with outer walls and one
+// interior wall, at pixelSize 5.
+func lHouse() *ValetudoMap {
+	inL := func(x, y int) bool {
+		return (x >= 0 && x < 800 && y >= 0 && y < 400) || (x >= 0 && x < 300 && y >= 400 && y < 900)
+	}
+	var floor, wall []int
+	for y := -5; y <= 905; y += 5 {
+		for x := -5; x <= 805; x += 5 {
+			if inL(x, y) {
+				if x == 500 && y < 300 { // interior wall with a doorway
+					wall = append(wall, x, y)
+				} else {
+					floor = append(floor, x, y)
+				}
+				continue
+			}
+			// Wall cell if a 4-neighbour is inside.
+			if inL(x+5, y) || inL(x-5, y) || inL(x, y+5) || inL(x, y-5) {
+				wall = append(wall, x, y)
+			}
+		}
+	}
+	return &ValetudoMap{PixelSize: 5, Layers: []MapLayer{
+		{Type: "floor", Pixels: floor},
+		{Type: "wall", Pixels: wall},
+	}}
+}
+
+func transformMap(m *ValetudoMap, t AffineMatrix) *ValetudoMap {
+	out := &ValetudoMap{PixelSize: m.PixelSize}
+	for _, l := range m.Layers {
+		nl := l
+		nl.Pixels = transformPixels(l.Pixels, t)
+		out.Layers = append(out.Layers, nl)
+	}
+	return out
+}
+
+func TestAlignByGridRecoversTransform(t *testing.T) {
+	target := lHouse()
+	for _, deg := range []float64{0, 90, 180, 270, 37} {
+		truth := CreateRotationTranslation(deg, 3000, -1200)
+		source := transformMap(target, InvertMatrix(truth))
+
+		ga, ok := AlignByGrid(source, target, GridAlignOptions{})
+		if !ok {
+			t.Fatalf("%v°: no result", deg)
+		}
+		if d := angleDiff(ga.RotationDeg, deg); d > 1.5 {
+			t.Errorf("%v°: rotation %.1f", deg, ga.RotationDeg)
+		}
+		if ga.Confidence < MinGridConfidence {
+			t.Errorf("%v°: confidence %.2f, want >= %.2f", deg, ga.Confidence, MinGridConfidence)
+		}
+		// Map corners of the source back and check they land within 3 cells.
+		for _, p := range []Point{{0, 0}, {800, 0}, {0, 900}} {
+			src := TransformPoint(p, InvertMatrix(truth))
+			if d := Distance(TransformPoint(src, ga.Transform), p); d > 15 {
+				t.Errorf("%v°: corner %v off by %.0f", deg, p, d)
+			}
+		}
+	}
+}
+
+func TestAlignByGridRotationHintLimitsSearch(t *testing.T) {
+	target := lHouse()
+	truth := CreateRotationTranslation(90, 500, 500)
+	source := transformMap(target, InvertMatrix(truth))
+
+	hint := 85.0
+	ga, ok := AlignByGrid(source, target, GridAlignOptions{RotationHint: &hint})
+	if !ok || angleDiff(ga.RotationDeg, 90) > 1.5 {
+		t.Fatalf("with hint: rotation %.1f ok=%v", ga.RotationDeg, ok)
+	}
+}
+
+func TestAlignByGridSymmetricRoomIsAmbiguous(t *testing.T) {
+	var floor, wall []int
+	for y := -5; y <= 400; y += 5 {
+		for x := -5; x <= 400; x += 5 {
+			if x < 0 || y < 0 || x >= 400 || y >= 400 {
+				wall = append(wall, x, y)
+			} else {
+				floor = append(floor, x, y)
+			}
+		}
+	}
+	square := &ValetudoMap{PixelSize: 5, Layers: []MapLayer{
+		{Type: "floor", Pixels: floor}, {Type: "wall", Pixels: wall},
+	}}
+	ga, ok := AlignByGrid(transformMap(square, RotationDeg(90)), square, GridAlignOptions{})
+	if !ok {
+		t.Fatal("no result")
+	}
+	if ga.Confidence >= MinGridConfidence {
+		t.Errorf("square room: confidence %.2f, want < %.2f", ga.Confidence, MinGridConfidence)
+	}
+}
+
+func TestAlignByGridEmptyMap(t *testing.T) {
+	if _, ok := AlignByGrid(&ValetudoMap{}, lHouse(), GridAlignOptions{}); ok {
+		t.Error("expected ok=false for empty source")
+	}
+}
+
+// TestAlignByGridRealMaps runs on local exports in ../tudomesh-data, with room
+// names removed, and checks against the known orientations.
+func TestAlignByGridRealMaps(t *testing.T) {
+	load := func(id string) *ValetudoMap {
+		m, err := ParseMapFile(filepath.Join("..", "tudomesh-data", "ValetudoMapExport-"+id+".json"))
+		if err != nil {
+			t.Skip("local map exports not present")
+		}
+		return m
+	}
+	ref := load("FrugalLameLion")
+	for id, want := range map[string]float64{"TrickyZanyPartridge": 180, "AppropriateMinorAntelope": 270} {
+		named := load(id)
+		unnamed := load(id)
+		for i := range unnamed.Layers {
+			unnamed.Layers[i].MetaData.Name = ""
+		}
+		ga, ok := AlignByGrid(unnamed, ref, GridAlignOptions{})
+		if !ok {
+			t.Fatalf("%s: no result", id)
+		}
+		if d := angleDiff(ga.RotationDeg, want); d > 5 {
+			t.Errorf("%s: rotation %.1f, want ~%.0f", id, ga.RotationDeg, want)
+		}
+		if ga.Confidence < MinGridConfidence {
+			t.Errorf("%s: confidence %.2f", id, ga.Confidence)
+		}
+		// Cross-check placement against the room-name fit.
+		if ra, ok := AlignByRooms(named, ref); ok {
+			var worst float64
+			for _, c := range RoomCentroids(named) {
+				worst = math.Max(worst, Distance(TransformPoint(c, ga.Transform), TransformPoint(c, ra.Transform)))
+			}
+			if worst > 60 {
+				t.Errorf("%s: grid and room fits disagree by %.0f", id, worst)
+			}
+			t.Logf("%s: rotation %.1f° confidence %.2f, max disagreement with room fit %.0f", id, ga.RotationDeg, ga.Confidence, worst)
+		}
+	}
+}

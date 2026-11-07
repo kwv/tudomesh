@@ -22,7 +22,37 @@ func ParseMapJSON(data []byte) (*ValetudoMap, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("parsing JSON: %w", err)
 	}
+	expandCompressedPixels(&m)
 	return &m, nil
+}
+
+// expandCompressedPixels fills layer.Pixels from layer.CompressedPixels for
+// layers that only carry the compressed form (live MQTT / API maps).
+func expandCompressedPixels(m *ValetudoMap) {
+	ps := m.PixelSize
+	if ps <= 0 {
+		ps = 5
+	}
+	for i := range m.Layers {
+		layer := &m.Layers[i]
+		if len(layer.Pixels) == 0 && len(layer.CompressedPixels) >= 3 {
+			layer.Pixels = DecodeCompressedPixels(layer.CompressedPixels, ps)
+		}
+	}
+}
+
+// DecodeCompressedPixels expands Valetudo run-length triplets
+// [gridX, gridY, runLength, ...] into [x1,y1,x2,y2,...] scaled by pixelSize.
+// A trailing incomplete triplet is ignored.
+func DecodeCompressedPixels(compressed []int, pixelSize int) []int {
+	var out []int
+	for i := 0; i+2 < len(compressed); i += 3 {
+		x, y, n := compressed[i], compressed[i+1], compressed[i+2]
+		for j := 0; j < n; j++ {
+			out = append(out, (x+j)*pixelSize, y*pixelSize)
+		}
+	}
+	return out
 }
 
 // ExtractRobotPosition finds the robot_position entity and returns its coordinates

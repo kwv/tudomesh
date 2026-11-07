@@ -291,8 +291,8 @@ func CalculateRigidTransform(source, target []Point) AffineMatrix {
 
 	// For 2D, we can directly compute the rotation angle using atan2
 	// The optimal rotation minimizes sum of squared distances
-	// theta = atan2(h21 - h12, h11 + h22)
-	theta := math.Atan2(h21-h12, h11+h22)
+	// theta = atan2(sum(sx*ty - sy*tx), sum(sx*tx + sy*ty)) = atan2(h12 - h21, h11 + h22)
+	theta := math.Atan2(h12-h21, h11+h22)
 
 	cos := math.Cos(theta)
 	sin := math.Sin(theta)

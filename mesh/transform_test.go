@@ -775,6 +775,23 @@ func TestCalculateRigidTransform(t *testing.T) {
 			},
 			shouldBeExact: true,
 		},
+		{
+			// 90° counter-clockwise: (x,y) -> (-y,x), then +(100,50)
+			name: "90 degree rotation + translation",
+			source: []Point{
+				{X: 0, Y: 0},
+				{X: 10, Y: 0},
+				{X: 10, Y: 20},
+				{X: 0, Y: 20},
+			},
+			target: []Point{
+				{X: 100, Y: 50},
+				{X: 100, Y: 60},
+				{X: 80, Y: 60},
+				{X: 80, Y: 50},
+			},
+			shouldBeExact: true,
+		},
 	}
 
 	for _, tt := range tests {
