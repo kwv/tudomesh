@@ -749,3 +749,21 @@ func BenchmarkCreateStateMessageHandler(b *testing.B) {
 		_ = client.createStateMessageHandler("vacuum1")
 	}
 }
+
+func TestStateHandlerReceivesEveryState(t *testing.T) {
+	client := &MQTTClient{}
+	var mu sync.Mutex
+	var got []string
+	client.SetStateHandler(func(vacuumID, state string) {
+		mu.Lock()
+		got = append(got, vacuumID+"="+state)
+		mu.Unlock()
+	})
+	handler := client.createStateMessageHandler("rocky7")
+	for _, payload := range []string{`{"value":"cleaning"}`, `"error"`, "docked"} {
+		handler(nil, &mockMessage{topic: "valetudo/rocky7/StatusStateAttribute/status", payload: []byte(payload)})
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{"rocky7=cleaning", "rocky7=error", "rocky7=docked"}, got)
+}

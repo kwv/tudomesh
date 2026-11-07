@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/png"
 	"math"
 	"math/rand"
@@ -953,6 +954,48 @@ func (r *CompositeRenderer) RenderLive(positions map[string]*LivePosition) *imag
 	drawLiveLegend(img, positions)
 
 	return img
+}
+
+// RenderLiveHighlight renders the live map like RenderLive, then draws a ring
+// around highlightID's position and adds a caption strip above the map. If the
+// vacuum has no position, only the caption is added.
+func (r *CompositeRenderer) RenderLiveHighlight(positions map[string]*LivePosition, highlightID, caption string) *image.RGBA {
+	img := r.RenderLive(positions)
+
+	if pos, ok := positions[highlightID]; ok {
+		minX, minY, _, _, centerX, centerY := r.CalculateBounds()
+		rp := r.applyGlobalRotation(Point{X: pos.X, Y: pos.Y}, centerX, centerY)
+		x := int((rp.X-minX)*r.Scale) + r.Padding
+		y := int((rp.Y-minY)*r.Scale) + r.Padding
+		drawRing(img, x, y, 34, 5, color.RGBA{230, 30, 30, 255})
+	}
+
+	if caption == "" {
+		return img
+	}
+	const bar = 24
+	b := img.Bounds()
+	out := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()+bar))
+	draw.Draw(out, image.Rect(0, 0, b.Dx(), bar), image.NewUniform(color.RGBA{30, 30, 30, 255}), image.Point{}, draw.Src)
+	draw.Draw(out, image.Rect(0, bar, b.Dx(), b.Dy()+bar), img, b.Min, draw.Src)
+	drawText(out, 8, 17, caption, color.RGBA{255, 255, 255, 255})
+	return out
+}
+
+// drawRing draws a circle outline of the given thickness.
+func drawRing(img *image.RGBA, cx, cy, radius, thickness int, c color.RGBA) {
+	inner := (radius - thickness) * (radius - thickness)
+	outer := radius * radius
+	b := img.Bounds()
+	for dy := -radius; dy <= radius; dy++ {
+		for dx := -radius; dx <= radius; dx++ {
+			d := dx*dx + dy*dy
+			x, y := cx+dx, cy+dy
+			if d <= outer && d >= inner && x >= b.Min.X && x < b.Max.X && y >= b.Min.Y && y < b.Max.Y {
+				img.Set(x, y, c)
+			}
+		}
+	}
 }
 
 // drawLiveLegend adds a legend with vacuum IDs and colors to the live position image
