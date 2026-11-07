@@ -558,13 +558,10 @@ func TestRenderLiveToSVG_MultipleVacuums(t *testing.T) {
 		t.Errorf("SVG is not valid XML: %v", err)
 	}
 
-	// Should have multiple path elements (base map + 2 vacuums * (circle + direction + tag)).
-	pathCount := strings.Count(svgContent, "<path")
-	if pathCount < 4 {
-		t.Errorf("Expected at least 4 path elements, got %d", pathCount)
+	// One group per vacuum.
+	if n := strings.Count(svgContent, `class="vacuum`); n != 2 {
+		t.Errorf("expected 2 vacuum groups, got %d", n)
 	}
-
-	t.Logf("Multi-vacuum live SVG: %d bytes, %d paths", len(svgContent), pathCount)
 }
 
 func TestRenderLiveToSVG_EmptyPositions(t *testing.T) {

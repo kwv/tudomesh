@@ -22,6 +22,8 @@ import (
 //	GET /vacuum/{key}      -> vacuumInfo
 //	GET /vacuum/{key}.png  -> live map with that vacuum circled and a caption;
 //	                          ?scale=1..8 sets image pixels per map pixel (default 3)
+//	GET /vacuum/{key}.svg  -> live SVG with that vacuum (and its room, if named
+//	                          the same on the base map) highlighted
 //
 // {key} is the vacuum id from config (case-insensitive) or the Valetudo
 // identifier from its MQTT topic, e.g. "rocky7" for
@@ -156,6 +158,48 @@ func vacuumCaption(info vacuumInfo) string {
 	return strings.Join(parts, " | ")
 }
 
+// writeLiveSVG renders the structured live SVG (see mesh.RenderLiveToSVG),
+// labelling every vacuum with its name, room and state. highlight is a
+// vacuum id or "".
+func writeLiveSVG(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.CalibrationData, config *mesh.Config, refID string, rotateAll float64, highlight string) {
+	maps := st.GetMaps()
+	if len(maps) == 0 {
+		http.Error(w, "No maps available", http.StatusServiceUnavailable)
+		return
+	}
+	effectiveRef := refID
+	if effectiveRef == "" {
+		effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
+	}
+	vr := mesh.NewVectorRenderer(maps, buildTransforms(maps, cache), effectiveRef)
+	vr.GlobalRotation = rotateAll
+	if config != nil && config.GridSpacing > 0 {
+		vr.Padding = config.GridSpacing / 2
+	}
+
+	positions := st.GetPositions()
+	vr.Meta = make(map[string]mesh.VacuumMeta, len(positions))
+	for key := range positions {
+		id, name, ok := resolveVacuum(strings.TrimSuffix(key, ".json"), config, maps)
+		if !ok {
+			continue
+		}
+		info := buildVacuumInfo(id, name, st)
+		meta := mesh.VacuumMeta{Name: name, State: info.State}
+		if info.Room != nil {
+			meta.Room = info.Room.Name
+		}
+		vr.Meta[key] = meta
+	}
+	vr.Highlight = highlight
+
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "no-cache")
+	if err := vr.RenderLiveToSVG(w, positions); err != nil {
+		log.Printf("Error encoding live SVG: %v", err)
+	}
+}
+
 // alertImageScale parses ?scale=, defaulting to 3 and clamping to 1..8.
 func alertImageScale(q string) float64 {
 	v, err := strconv.ParseFloat(q, 64)
@@ -186,8 +230,13 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 
 	mux.HandleFunc("GET /vacuum/{key}", func(w http.ResponseWriter, r *http.Request) {
 		key := r.PathValue("key")
-		wantPNG := strings.HasSuffix(key, ".png")
-		key = strings.TrimSuffix(key, ".png")
+		format := ""
+		for _, ext := range []string{".png", ".svg"} {
+			if strings.HasSuffix(key, ext) {
+				format = ext
+				key = strings.TrimSuffix(key, ext)
+			}
+		}
 
 		maps := st.GetMaps()
 		id, name, ok := resolveVacuum(key, config, maps)
@@ -197,8 +246,18 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 		}
 		info := buildVacuumInfo(id, name, st)
 
-		if !wantPNG {
+		switch format {
+		case "":
 			writeJSON(w, info)
+			return
+		case ".svg":
+			highlight := id
+			if _, ok := st.GetPositions()[highlight]; !ok {
+				if k, _ := mapFor(maps, id); k != "" {
+					highlight = k
+				}
+			}
+			writeLiveSVG(w, st, cache, config, refID, rotateAll, highlight)
 			return
 		}
 

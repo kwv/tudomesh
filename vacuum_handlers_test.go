@@ -5,6 +5,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/kwv/tudomesh/mesh"
@@ -131,5 +132,34 @@ func TestVacuumsEndpoint_ListsConfiguredAndMapped(t *testing.T) {
 	}
 	if list[1].Room == nil || list[1].Room.Name != "Kitchen" {
 		t.Errorf("second entry %+v", list[1])
+	}
+}
+
+func TestVacuumEndpoint_SVG(t *testing.T) {
+	srv, _ := vacuumTestServer()
+	for path, wantHighlight := range map[string]bool{"/vacuum/rocky7.svg": true, "/live.svg": false} {
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d: %s", path, rec.Code, rec.Body.String())
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "image/svg+xml" {
+			t.Errorf("%s: content-type %q", path, ct)
+		}
+		body := rec.Body.String()
+		for _, want := range []string{`id="vacuum-trickyzanypartridge"`, `data-name="rocky7"`, `data-room="Kitchen"`, `data-state="error"`, `class="room`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: missing %s", path, want)
+			}
+		}
+		if got := strings.Contains(body, "vacuum state-error highlight"); got != wantHighlight {
+			t.Errorf("%s: highlight=%v, want %v", path, got, wantHighlight)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/nope.svg", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown svg: status %d, want 404", rec.Code)
 	}
 }
