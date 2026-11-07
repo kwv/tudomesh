@@ -108,25 +108,49 @@ func AlignByRooms(source, target *ValetudoMap) (RoomAlignment, bool) {
 	return ra, true
 }
 
-// alignByRoomsResult wraps AlignByRooms as an ICPResult for the AlignMaps entry
-// points. Score/InlierFraction are 1 because there is no point-cloud score.
-func alignByRoomsResult(source, target *ValetudoMap) (ICPResult, bool) {
-	ra, ok := AlignByRooms(source, target)
-	if !ok {
-		if len(ra.SharedRooms) >= MinSharedRooms {
-			log.Printf("Room alignment rejected: %d shared rooms, mean error %.0f vs spread %.0f; falling back to ICP",
-				len(ra.SharedRooms), ra.MeanResidual, ra.Spread)
-		}
-		return ICPResult{}, false
+// alignGeometric picks a transform for AlignMaps / AlignMapsWithRotationHint:
+//  1. AlignByGrid (map geometry only). Used if its Confidence >= MinGridConfidence.
+//  2. Otherwise AlignByRooms, if the maps share enough named rooms.
+//  3. Otherwise the ambiguous grid result, logged as low confidence.
+//
+// ok is false only when neither method can run (no geometry, no rooms).
+// Score is 1 for a confident result and 0.5 for an ambiguous one.
+func alignGeometric(source, target *ValetudoMap, rotationHint *float64) (ICPResult, bool) {
+	ga, gridOK := AlignByGrid(source, target, GridAlignOptions{RotationHint: rotationHint})
+	if gridOK && ga.Confidence >= MinGridConfidence {
+		log.Printf("Grid alignment: rotation=%.1f° confidence=%.2f", ga.RotationDeg, ga.Confidence)
+		return gridResult(ga, 1), true
 	}
-	log.Printf("Room alignment: rotation=%.1f° using %d rooms %v, mean error %.0f",
-		ra.RotationDeg, len(ra.SharedRooms), ra.SharedRooms, ra.MeanResidual)
+
+	ra, roomOK := AlignByRooms(source, target)
+	if roomOK {
+		log.Printf("Grid alignment ambiguous (confidence %.2f); using room names: rotation=%.1f° from %v, mean error %.0f",
+			ga.Confidence, ra.RotationDeg, ra.SharedRooms, ra.MeanResidual)
+		return ICPResult{
+			Transform:       ra.Transform,
+			Error:           ra.MeanResidual,
+			Score:           1,
+			InlierFraction:  1,
+			Converged:       true,
+			InitialRotation: ra.RotationDeg,
+		}, true
+	}
+
+	if gridOK {
+		log.Printf("WARNING: grid alignment ambiguous (rotation=%.1f°, confidence %.2f); set a rotation hint in config to resolve",
+			ga.RotationDeg, ga.Confidence)
+		return gridResult(ga, 0.5), true
+	}
+	return ICPResult{}, false
+}
+
+func gridResult(ga GridAlignment, score float64) ICPResult {
 	return ICPResult{
-		Transform:       ra.Transform,
-		Error:           ra.MeanResidual,
-		Score:           1,
-		InlierFraction:  1,
+		Transform:       ga.Transform,
+		Error:           1, // non-zero: callers treat 0 as "no result"
+		Score:           score,
+		InlierFraction:  score,
 		Converged:       true,
-		InitialRotation: ra.RotationDeg,
-	}, true
+		InitialRotation: ga.RotationDeg,
+	}
 }

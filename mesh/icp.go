@@ -1,7 +1,6 @@
 package mesh
 
 import (
-	"log"
 	"math"
 	"math/rand"
 	"sort"
@@ -46,19 +45,11 @@ type ICPResult struct {
 // RotationErrors stores the error for each rotation tried (for debugging)
 var RotationErrors map[float64]float64
 
-// AlignMapsWithRotationHint runs ICP alignment with a preferred rotation hint as starting point
-// This allows using rotation hints from config or CLI while still running full ICP refinement.
-// Room-based alignment takes precedence over the hint when available.
+// AlignMapsWithRotationHint aligns source to target, searching near rotationHint
+// (degrees). Uses geometric alignment (see alignGeometric); falls back to ICP
+// started from the hint when the maps have no usable geometry.
 func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, rotationHint float64) ICPResult {
-	if r, ok := alignByRoomsResult(source, target); ok {
-		diff := math.Abs(NormalizeAngle(r.InitialRotation - rotationHint))
-		if diff > 180 {
-			diff = 360 - diff
-		}
-		if diff > 45 {
-			log.Printf("Room alignment rotation %.0f° disagrees with rotation hint %.0f°; using room alignment",
-				r.InitialRotation, rotationHint)
-		}
+	if r, ok := alignGeometric(source, target, &rotationHint); ok {
 		return r
 	}
 
@@ -128,13 +119,17 @@ func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, ro
 }
 
 // AlignMaps computes the affine transform to align source map to target map.
-// Uses AlignByRooms when the maps share enough named rooms, otherwise ICP.
-// Tries multiple initial rotations and picks the best result
+// Uses geometric alignment (see alignGeometric); falls back to ICP when the
+// maps have no usable geometry.
 func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
-	if r, ok := alignByRoomsResult(source, target); ok {
+	if r, ok := alignGeometric(source, target, nil); ok {
 		return r
 	}
+	return alignMapsICP(source, target, config)
+}
 
+// alignMapsICP runs ICP from each of the 4 cardinal rotations and keeps the best.
+func alignMapsICP(source, target *ValetudoMap, config ICPConfig) ICPResult {
 	bestResult := ICPResult{
 		Transform: Identity(),
 		Error:     math.MaxFloat64,
