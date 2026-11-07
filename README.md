@@ -484,7 +484,7 @@ When rendering vector to PNG, set DPI (default: 300):
 
 ### Live View
 
-- `/live.svg` - Greyscale unified floorplan with live vacuum positions (SVG). This is the primary live endpoint, used by the homepage. Renders the base map with colored position indicators and vacuum ID labels. SVG output scales cleanly to any display resolution.
+- `/live.svg` - Greyscale unified floorplan with live vacuum positions (SVG). This is the primary live endpoint, used by the homepage. Structured for styling and scripting: each room and each vacuum is its own element with stable ids and `data-` attributes (see [Live SVG Structure](#live-svg-structure)).
 - `/live.png` - Greyscale floor plan with live position icons and legend (PNG)
 
 ### Static Maps
@@ -501,6 +501,7 @@ When rendering vector to PNG, set DPI (default: 300):
 - `/vacuums` - JSON list of every vacuum (same fields as below)
 - `/vacuum/{id}` - JSON: room, last Valetudo status, position on the shared map
 - `/vacuum/{id}.png` - Live map with the vacuum circled and a caption (`rocky7 | Kitchen | error`). `?scale=1..8` sets the size (default 3).
+- `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and its room tinted, when the base map has a room of the same name.
 
 ```json
 {
@@ -515,6 +516,37 @@ When rendering vector to PNG, set DPI (default: 300):
 ```
 
 `room` comes from the robot's own map (the segment it is in, or the nearest one within ~50cm), so it is correct even before maps are aligned. Unnamed segments are reported as `segment <id>`. `state` requires `--mqtt`.
+
+### Live SVG Structure
+
+```text
+<svg>
+  <style>…</style>                          default colors (override freely)
+  <g id="map" transform="…">                map geometry in grid cells
+    <g id="rooms">
+      <path id="room-16" class="room" data-room="Kitchen" data-segment-id="16"/>
+      <path class="floor"/>                 unsegmented floor
+    </g>
+    <g id="walls"><path class="wall"/></g>
+  </g>
+  <g id="grid"><path class="grid-line"/></g>
+  <g id="vacuums">
+    <g id="vacuum-trickyzanypartridge" class="vacuum state-error highlight"
+       data-id="TrickyZanyPartridge" data-name="rocky7" data-room="Kitchen" data-state="error">
+      <circle class="ring"/>                only when highlighted
+      <circle class="body"/> <line class="heading"/> <text class="label">rocky7</text>
+    </g>
+  </g>
+</svg>
+```
+
+Example: embed `/live.svg` inline and flag any vacuum in an error state, or hide one robot:
+
+```css
+.vacuum.state-error .body { fill: #e61e1e; }
+#vacuum-frugallamelion { display: none; }
+.room[data-room="Kitchen"] { fill: #fff3c4; }
+```
 
 ## Alerts with Node-RED
 

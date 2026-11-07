@@ -108,17 +108,21 @@ func CalibrateVacuums(maps map[string]*ValetudoMap, referenceID string) (*Calibr
 // based on total layer area (largest map coverage)
 // configs parameter is deprecated and ignored (kept for compatibility)
 func SelectReferenceVacuum(maps map[string]*ValetudoMap, configs []VacuumConfig) string {
-	// Auto-select by largest totalLayerArea
-	var bestID string
-	var maxArea int
-
+	// Auto-select by largest totalLayerArea; ties (including maps with no
+	// area metadata) go to the lexicographically smallest id so the choice is
+	// stable. Returns "" only when maps is empty.
+	bestID := ""
+	maxArea := -1
 	for id, m := range maps {
-		if m.MetaData.TotalLayerArea > maxArea {
-			maxArea = m.MetaData.TotalLayerArea
+		area := 0
+		if m != nil {
+			area = m.MetaData.TotalLayerArea
+		}
+		if area > maxArea || (area == maxArea && id < bestID) {
+			maxArea = area
 			bestID = id
 		}
 	}
-
 	return bestID
 }
 
