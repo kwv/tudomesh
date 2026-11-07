@@ -158,5 +158,5 @@ endef
 # Render composite map (clears cache for fresh ICP)
 render: build
 	@echo "Rendering composite map..."
-	@cd ../../tudomesh-data && rm -f .calibration-cache.json && \
-		../.worktrees/bd-tudomesh-5np/tudomesh --config config.yaml --render --format both --output test.png --vector-format svg
+	@cd tudomesh-data && rm -f .calibration-cache.json && \
+		../tudomesh --config config.yaml --render --format both --output test.png --vector-format svg
