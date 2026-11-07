@@ -6,7 +6,7 @@ tudomesh
 config.yaml
 *.svg
 
-# Beads task tracking (ephemeral)
+# Leftover beads data (tool removed; safe to delete)
 .beads/
 .mcp.json
 
