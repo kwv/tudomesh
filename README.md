@@ -24,9 +24,9 @@ TudoMesh can automatically keep vacuum alignment up to date without manual inter
 
 2. **Debounce (30 minutes)**: To avoid excessive recalibration, TudoMesh skips recalibration if the last calibration for that vacuum was less than 30 minutes ago and the map area has not changed.
 
-3. **Map Fetch**: TudoMesh fetches the vacuum's full map via its REST API (`apiUrl` in config). This provides a complete, high-quality map suitable for ICP alignment.
+3. **Map Fetch**: TudoMesh fetches the vacuum's full map via its REST API (`apiUrl` in config). This provides a complete, high-quality map for alignment.
 
-4. **ICP Alignment**: The fetched map is aligned against the reference vacuum using the same ICP algorithm used in batch calibration. The resulting affine transform is stored.
+4. **Alignment**: The fetched map is aligned against the reference vacuum using the same grid search used in batch calibration. The resulting affine transform is stored.
 
 5. **Cache Update**: The updated transform is written to `.calibration-cache.json` so it persists across restarts.
 
@@ -191,7 +191,7 @@ vacuums:
   - id: vacuum2
     topic: valetudo/vacuum2/MapData/map-data
     color: "#057dcd"
-    rotation: 180  # ICP will refine this hint
+    rotation: 180  # optional: search near 180° only
 ```
 
 ### 3. Generate Composite Map (CLI Mode)
@@ -568,7 +568,7 @@ To use it: import the flow, set the `TUDOMESH_URL` environment variable on the f
 | `--config=FILE` | Configuration file path (default: config.yaml inside --data-dir) |
 | `--calibration-cache=FILE` | Calibration cache path (relative to --data-dir) |
 | `--render` | Batch mode: Render composite PNG from local files |
-| `--calibrate` | Batch mode: Run detailed ICP analysis on local files |
+| `--calibrate` | Batch mode: Align local files, report rotation/confidence per vacuum, write the calibration cache |
 | `--compare-rotation=ID` | Debug: Generate 4 rotation options for a vacuum |
 | `--force-rotation=ID=DEG` | Override: Manual rotation (0, 90, 180, 270) |
 | `--format=[raster\|vector\|both]` | Render format: raster PNG, vector SVG, or both (default: raster) |
@@ -585,4 +585,4 @@ MIT License - See LICENSE file for details.
 ## Acknowledgments
 
 - Built for use with [Valetudo](https://valetudo.cloud/) open-source vacuum firmware.
-- Map alignment uses occupancy-grid search over floor and wall cells, with ICP as a last-resort fallback.
+- Map alignment uses occupancy-grid search over floor and wall cells.

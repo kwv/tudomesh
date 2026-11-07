@@ -21,8 +21,8 @@ func makeLineFeature(pts [][2]float64, props map[string]interface{}) *Feature {
 
 func makeSource(vacuumID string, icpScore float64) FeatureSource {
 	return FeatureSource{
-		VacuumID: vacuumID,
-		ICPScore: icpScore,
+		VacuumID:   vacuumID,
+		AlignScore: icpScore,
 	}
 }
 
@@ -205,7 +205,7 @@ func TestUnifyWalls_SingleVacuumSingleWall(t *testing.T) {
 }
 
 func TestUnifyWalls_PropertiesMerged(t *testing.T) {
-	// Higher ICP score source should win on conflicting properties.
+	// Higher alignment score source should win on conflicting properties.
 	f1 := makeLineFeature([][2]float64{{0, 0}, {100, 0}}, map[string]interface{}{
 		"layerType": "wall",
 		"color":     "red",
@@ -228,7 +228,7 @@ func TestUnifyWalls_PropertiesMerged(t *testing.T) {
 
 	color, ok := result[0].Properties["color"].(string)
 	if !ok || color != "blue" {
-		t.Errorf("Expected color 'blue' (higher ICP), got %q", color)
+		t.Errorf("Expected color 'blue' (higher alignment score), got %q", color)
 	}
 }
 
@@ -635,7 +635,7 @@ func TestMergeProperties(t *testing.T) {
 	merged := mergeProperties([]*Feature{f1, f2}, sources)
 
 	if merged["color"] != "blue" {
-		t.Errorf("Expected 'blue' from higher ICP, got %v", merged["color"])
+		t.Errorf("Expected 'blue' from higher alignment score, got %v", merged["color"])
 	}
 	if merged["unique"] != "only-f1" {
 		t.Errorf("Expected 'only-f1', got %v", merged["unique"])
@@ -1077,7 +1077,7 @@ func TestUnifyFloors_SourcesPreserved(t *testing.T) {
 	})
 
 	sources := []FeatureSource{
-		{VacuumID: "vac-A", ICPScore: 0.95, Timestamp: 1000},
+		{VacuumID: "vac-A", AlignScore: 0.95, Timestamp: 1000},
 	}
 
 	result := UnifyFloors([]*Feature{f1}, sources, 1)
@@ -1094,8 +1094,8 @@ func TestUnifyFloors_SourcesPreserved(t *testing.T) {
 	if src.VacuumID != "vac-A" {
 		t.Errorf("Expected VacuumID 'vac-A', got %q", src.VacuumID)
 	}
-	if src.ICPScore != 0.95 {
-		t.Errorf("Expected ICPScore 0.95, got %f", src.ICPScore)
+	if src.AlignScore != 0.95 {
+		t.Errorf("Expected AlignScore 0.95, got %f", src.AlignScore)
 	}
 	if src.Timestamp != 1000 {
 		t.Errorf("Expected Timestamp 1000, got %d", src.Timestamp)
@@ -1291,12 +1291,12 @@ func TestDetectOutliers_GhostRoom(t *testing.T) {
 }
 
 func TestDetectOutliers_LowICPConfidence(t *testing.T) {
-	// Feature seen by 1 vacuum with very low ICP score.
-	// With TotalVacuums=2, 1 vacuum with low ICP -> weighted 0.5/2 = 0.25 < 0.3 threshold.
+	// Feature seen by 1 vacuum with very low alignment score.
+	// With TotalVacuums=2, 1 vacuum with a low alignment score -> weighted 0.5/2 = 0.25 < 0.3 threshold.
 	geom := PathToLineString(Path{{X: 0, Y: 0}, {X: 100, Y: 0}})
 
 	lowICP := makeUnifiedFeature(geom, []FeatureSource{
-		makeSource("vac-A", 0.2), // below minICPScore of 0.5
+		makeSource("vac-A", 0.2), // below minAlignScore of 0.5
 	}, 0.5, 1)
 
 	config := DefaultOutlierConfig(2)
@@ -1382,10 +1382,10 @@ func TestDetectOutliers_MultipleReasons(t *testing.T) {
 		features = append(features, makeUnifiedFeature(geom, goodSources, 1.0, 3))
 	}
 
-	// Add the far ghost with low ICP
+	// Add the far ghost with a low alignment score
 	farGhostGeom := PathToLineString(Path{{X: 5000000, Y: 5000000}, {X: 5000010, Y: 5000000}})
 	features = append(features, makeUnifiedFeature(farGhostGeom, []FeatureSource{
-		makeSource("a", 0.2), // low ICP, single vacuum
+		makeSource("a", 0.2), // low alignment score, single vacuum
 	}, 1.0/3.0, 1))
 
 	config := DefaultOutlierConfig(3)
@@ -1490,7 +1490,7 @@ func TestDetectOutliers_CustomConfig(t *testing.T) {
 	config := OutlierConfig{
 		ConfidenceThreshold: 0.8, // very aggressive
 		IsolationMultiplier: 3.0,
-		MinICPScore:         0.5,
+		MinAlignScore:       0.5,
 		TotalVacuums:        2,
 	}
 	retained, outliers := DetectOutliers(features, config)
@@ -1514,7 +1514,7 @@ func TestComputeConfidenceWeighted(t *testing.T) {
 		expect       float64
 	}{
 		{
-			name: "all high ICP",
+			name: "all high alignment scores",
 			sources: []FeatureSource{
 				makeSource("a", 0.9),
 				makeSource("b", 0.8),
@@ -1524,7 +1524,7 @@ func TestComputeConfidenceWeighted(t *testing.T) {
 			expect:       1.0, // 2 vacuums * 1.0 weight / 2
 		},
 		{
-			name: "one low ICP",
+			name: "one low alignment score",
 			sources: []FeatureSource{
 				makeSource("a", 0.9),
 				makeSource("b", 0.3), // below minICP
@@ -1534,7 +1534,7 @@ func TestComputeConfidenceWeighted(t *testing.T) {
 			expect:       0.75, // (1.0 + 0.5) / 2
 		},
 		{
-			name: "all low ICP",
+			name: "all low alignment scores",
 			sources: []FeatureSource{
 				makeSource("a", 0.2),
 				makeSource("b", 0.1),
@@ -1570,7 +1570,7 @@ func TestComputeConfidenceWeighted(t *testing.T) {
 			expect:       0,
 		},
 		{
-			name: "single low ICP of three",
+			name: "single low alignment score of three",
 			sources: []FeatureSource{
 				makeSource("a", 0.2),
 			},
@@ -1642,8 +1642,8 @@ func TestDefaultOutlierConfig(t *testing.T) {
 	if config.IsolationMultiplier != DefaultIsolationDistanceMultiplier {
 		t.Errorf("Expected multiplier %f, got %f", DefaultIsolationDistanceMultiplier, config.IsolationMultiplier)
 	}
-	if config.MinICPScore != 0.5 {
-		t.Errorf("Expected MinICPScore 0.5, got %f", config.MinICPScore)
+	if config.MinAlignScore != 0.5 {
+		t.Errorf("Expected MinAlignScore 0.5, got %f", config.MinAlignScore)
 	}
 	if config.TotalVacuums != 5 {
 		t.Errorf("Expected TotalVacuums 5, got %d", config.TotalVacuums)

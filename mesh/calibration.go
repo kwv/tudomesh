@@ -12,7 +12,7 @@ import (
 const DefaultCalibrationCachePath = ".calibration-cache.json"
 
 // LoadCalibration loads auto-computed calibration data from a JSON cache file
-// This cache stores ICP-computed AffineMatrix transforms
+// This cache stores auto-computed AffineMatrix transforms
 func LoadCalibration(path string) (*CalibrationData, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -84,20 +84,15 @@ func CalibrateVacuums(maps map[string]*ValetudoMap, referenceID string) (*Calibr
 			continue
 		}
 
-		transform, err := AlignToReference(vacuumMap, referenceMap)
-		if err != 0 && err < 100 { // Reasonable error threshold
-			cal.Vacuums[id] = VacuumCalibration{
-				Transform:            transform,
-				LastUpdated:          now,
-				MapAreaAtCalibration: vacuumMap.MetaData.TotalLayerArea,
-			}
-		} else {
-			// Fallback to quick charger-based alignment
-			cal.Vacuums[id] = VacuumCalibration{
-				Transform:            QuickAlign(vacuumMap, referenceMap),
-				LastUpdated:          now,
-				MapAreaAtCalibration: vacuumMap.MetaData.TotalLayerArea,
-			}
+		result, ok := AlignMaps(vacuumMap, referenceMap)
+		if !ok {
+			// No floor geometry: leave uncalibrated so it is retried later.
+			continue
+		}
+		cal.Vacuums[id] = VacuumCalibration{
+			Transform:            result.Transform,
+			LastUpdated:          now,
+			MapAreaAtCalibration: vacuumMap.MetaData.TotalLayerArea,
 		}
 	}
 

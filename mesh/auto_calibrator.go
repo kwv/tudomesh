@@ -18,7 +18,7 @@ const (
 
 // AutoCalibrator orchestrates automatic calibration when a vacuum docks.
 // It debounces frequent docking events, fetches a fresh map from the robot's
-// HTTP API, validates the map, runs ICP alignment, and persists the result.
+// HTTP API, validates the map, aligns it to the reference, and persists the result.
 type AutoCalibrator struct {
 	config       *Config
 	cache        *CalibrationData
@@ -142,21 +142,20 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 		return
 	}
 
-	// --- Step 7: Run ICP calibration ---
-	log.Printf("[AUTO-CAL] %s: running ICP alignment against reference %s", vacuumID, referenceID)
-
-	// Use rotation hint from config if available.
-	var result ICPResult
-	icpCfg := DefaultICPConfig()
+	// --- Step 7: Align against the reference ---
+	var result Alignment
+	var aligned bool
 	if vc.Rotation != nil {
-		result = AlignMapsWithRotationHint(freshMap, refMap, icpCfg, *vc.Rotation)
-		log.Printf("[AUTO-CAL] %s: ICP with rotation hint %.0f: error=%.2f, iterations=%d, converged=%v",
-			vacuumID, *vc.Rotation, result.Error, result.Iterations, result.Converged)
+		result, aligned = AlignMapsWithRotationHint(freshMap, refMap, *vc.Rotation)
 	} else {
-		result = AlignMaps(freshMap, refMap, icpCfg)
-		log.Printf("[AUTO-CAL] %s: ICP full: error=%.2f, iterations=%d, converged=%v",
-			vacuumID, result.Error, result.Iterations, result.Converged)
+		result, aligned = AlignMaps(freshMap, refMap)
 	}
+	if !aligned {
+		log.Printf("[AUTO-CAL] %s: map has no floor geometry; keeping previous calibration", vacuumID)
+		return
+	}
+	log.Printf("[AUTO-CAL] %s: aligned against %s: rotation=%.1f° method=%s confidence=%.2f",
+		vacuumID, referenceID, result.RotationDeg, result.Method, result.Confidence)
 
 	transform := result.Transform
 

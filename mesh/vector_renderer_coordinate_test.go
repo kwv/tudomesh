@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestVectorRendererCoordinateScale verifies that ICP transforms are applied
+// TestVectorRendererCoordinateScale verifies that alignment transforms are applied
 // at the correct scale (pixel scale before world scale conversion)
 func TestVectorRendererCoordinateScale(t *testing.T) {
 	// Create two simple maps with a known transformation
@@ -34,7 +34,7 @@ func TestVectorRendererCoordinateScale(t *testing.T) {
 	}
 
 	// Create a transform that translates by (5, 5) pixels
-	// This simulates an ICP result at pixel scale
+	// This simulates an alignment result in grid units
 	transform := Translation(5, 5)
 
 	maps := map[string]*ValetudoMap{

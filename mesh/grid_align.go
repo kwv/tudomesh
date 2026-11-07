@@ -32,6 +32,8 @@ type GridAlignOptions struct {
 	// around this angle (degrees). nil searches the full circle.
 	RotationHint  *float64
 	HintWindowDeg float64 // default 20
+	// FixRotation uses exactly RotationHint and only searches translation.
+	FixRotation   bool
 	CoarseStepDeg float64 // default 2
 }
 
@@ -194,7 +196,9 @@ func AlignByGrid(source, target *ValetudoMap, opts GridAlignOptions) (GridAlignm
 	}
 
 	var rotations []float64
-	if opts.RotationHint != nil {
+	if opts.RotationHint != nil && opts.FixRotation {
+		rotations = []float64{*opts.RotationHint}
+	} else if opts.RotationHint != nil {
 		win := opts.HintWindowDeg
 		if win <= 0 {
 			win = 20
@@ -243,7 +247,11 @@ func AlignByGrid(source, target *ValetudoMap, opts GridAlignOptions) (GridAlignm
 	k := int(math.Round(coarse / fine))
 	refine := func(c placement) placement {
 		out := placement{score: math.MinInt}
-		for d := -step; d <= step; d += step / 4 {
+		span := step
+		if opts.FixRotation {
+			span = 0
+		}
+		for d := -span; d <= span; d += step / 4 {
 			rot := c.rot + d
 			R := rotationAbout(pivot, rot)
 			sg := newOccGrid(TransformPoints(sFloor, R), TransformPoints(sWall, R), fine)

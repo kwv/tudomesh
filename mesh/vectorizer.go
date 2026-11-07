@@ -30,7 +30,7 @@ func VectorizeLayer(layer *MapLayer, pixelSize int, tolerance float64) []Path {
 	var result []Path
 	for _, contour := range contours {
 		// Convert grid coordinates to pixel coordinates (not world coordinates)
-		// ICP transforms operate at pixel scale, so we must not scale here
+		// alignment transforms operate in grid units, so we must not scale here
 		pixelContour := make(Path, len(contour))
 		for i, p := range contour {
 			pixelContour[i] = Point{

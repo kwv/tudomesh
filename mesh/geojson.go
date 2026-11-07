@@ -184,7 +184,7 @@ func LayerToFeature(layer *MapLayer, paths []Path, vacuumID string, transform Af
 	}
 
 	// Transform paths from pixel coordinates to world coordinates
-	// First apply the transform (ICP operates at pixel scale)
+	// First apply the transform (transforms operate in grid units)
 	transformedPaths := TransformPaths(paths, transform)
 	// Then scale to world coordinates
 	worldPaths := make([]Path, len(transformedPaths))

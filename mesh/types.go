@@ -177,7 +177,7 @@ type VacuumCalibration struct {
 }
 
 // CalibrationData stores calibration matrices for all vacuums.
-// This is the auto-computed ICP transform cache stored as JSON.
+// This is the auto-computed alignment transform cache stored as JSON.
 type CalibrationData struct {
 	ReferenceVacuum string                       `json:"referenceVacuum"`
 	Vacuums         map[string]VacuumCalibration `json:"vacuums"`

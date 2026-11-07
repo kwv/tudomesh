@@ -227,8 +227,8 @@ func TestUnifiedMap_Persistence(t *testing.T) {
 		Confidence:       0.8,
 		ObservationCount: 2,
 		Sources: []FeatureSource{
-			{VacuumID: "vac-1", ICPScore: 0.9},
-			{VacuumID: "vac-2", ICPScore: 0.85},
+			{VacuumID: "vac-1", AlignScore: 0.9},
+			{VacuumID: "vac-2", AlignScore: 0.85},
 		},
 	})
 	um.Floors = append(um.Floors, &UnifiedFeature{

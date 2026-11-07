@@ -36,7 +36,7 @@ type FeatureSource struct {
 	VacuumID     string    `json:"vacuumId"`
 	OriginalGeom *Geometry `json:"originalGeometry"`
 	Timestamp    int64     `json:"timestamp"`
-	ICPScore     float64   `json:"icpScore"`
+	AlignScore   float64   `json:"icpScore"`
 }
 
 // UnifiedMetadata provides provenance information for a UnifiedMap.
@@ -124,7 +124,7 @@ func UnifyWallsWithOptions(features []*Feature, sources []FeatureSource, totalVa
 		medianGeom := medianLine(lines)
 
 		// Merge properties: collect all unique property keys, preferring values
-		// from the source with the highest ICP score.
+		// from the source with the highest alignment score.
 		mergedProps := mergeProperties(cluster, clusterSources)
 		mergedProps["observationCount"] = observationCount
 		mergedProps["confidence"] = confidence
@@ -273,7 +273,7 @@ func medianOfSorted(sorted []float64) float64 {
 
 // mergeProperties combines properties from all features in a cluster.
 // When multiple features define the same key, the value from the feature
-// whose source has the highest ICP score wins.
+// whose source has the highest alignment score wins.
 func mergeProperties(cluster []*Feature, sources []FeatureSource) map[string]interface{} {
 	merged := make(map[string]interface{})
 	bestScore := make(map[string]float64)
@@ -281,7 +281,7 @@ func mergeProperties(cluster []*Feature, sources []FeatureSource) map[string]int
 	for i, f := range cluster {
 		var score float64
 		if i < len(sources) {
-			score = sources[i].ICPScore
+			score = sources[i].AlignScore
 		}
 
 		for k, v := range f.Properties {
@@ -663,9 +663,9 @@ func mergeFloorProperties(features []*Feature, sources []FeatureSource) map[stri
 
 	for i, f := range features {
 		area := featureArea(f)
-		// Fall back to ICP score if no area is set.
+		// Fall back to alignment score if no area is set.
 		if area == 0 && i < len(sources) {
-			area = sources[i].ICPScore
+			area = sources[i].AlignScore
 		}
 
 		for k, v := range f.Properties {
@@ -736,10 +736,10 @@ type OutlierConfig struct {
 	// a feature is considered spatially isolated. Default: 3.0.
 	IsolationMultiplier float64
 
-	// MinICPScore is the minimum ICP alignment score for a source to be
+	// MinAlignScore is the minimum alignment score for a source to be
 	// considered high quality. Sources below this contribute less to
 	// confidence. Default: 0.5.
-	MinICPScore float64
+	MinAlignScore float64
 
 	// TotalVacuums is the total number of vacuums in the system. Required
 	// for computing observation-based confidence.
@@ -751,7 +751,7 @@ func DefaultOutlierConfig(totalVacuums int) OutlierConfig {
 	return OutlierConfig{
 		ConfidenceThreshold: DefaultOutlierConfidenceThreshold,
 		IsolationMultiplier: DefaultIsolationDistanceMultiplier,
-		MinICPScore:         0.5,
+		MinAlignScore:       0.5,
 		TotalVacuums:        totalVacuums,
 	}
 }
@@ -784,7 +784,7 @@ type OutlierResult struct {
 // that do not. A feature is flagged if any of the following hold:
 //
 //   - Ghost room: observed by only 1 vacuum when TotalVacuums > 1
-//   - Low confidence: ICP-weighted confidence is below ConfidenceThreshold
+//   - Low confidence: alignment-weighted confidence is below ConfidenceThreshold
 //   - Spatially isolated: centroid distance from map center exceeds
 //     IsolationMultiplier * mean distance
 //
@@ -841,8 +841,8 @@ func DetectOutliers(features []*UnifiedFeature, config OutlierConfig) (retained 
 			reasons = append(reasons, OutlierGhostRoom)
 		}
 
-		// 2. Compute ICP-weighted confidence.
-		weightedConf := ComputeConfidenceWeighted(f.Sources, config.TotalVacuums, config.MinICPScore)
+		// 2. Compute alignment-weighted confidence.
+		weightedConf := ComputeConfidenceWeighted(f.Sources, config.TotalVacuums, config.MinAlignScore)
 
 		if weightedConf < config.ConfidenceThreshold {
 			reasons = append(reasons, OutlierLowConfidence)
@@ -868,37 +868,37 @@ func DetectOutliers(features []*UnifiedFeature, config OutlierConfig) (retained 
 }
 
 // ComputeConfidenceWeighted calculates a confidence score that accounts for
-// both observation coverage and ICP alignment quality. It extends
-// ComputeConfidence by applying a quality penalty: sources with an ICP score
-// below minICPScore are counted at half weight.
+// both observation coverage and alignment quality. It extends
+// ComputeConfidence by applying a quality penalty: sources with an alignment score
+// below minAlignScore are counted at half weight.
 //
 // The formula is:
 //
 //	weightedCount = sum(weight_i for each unique vacuum)
-//	weight_i = 1.0 if best ICP score for vacuum >= minICPScore, else 0.5
+//	weight_i = 1.0 if best alignment score for vacuum >= minAlignScore, else 0.5
 //	confidence = weightedCount / totalVacuums
 //
-// This means a vacuum with poor ICP alignment contributes only half as much
+// This means a vacuum with poor alignment contributes only half as much
 // confidence as one with good alignment.
-func ComputeConfidenceWeighted(sources []FeatureSource, totalVacuums int, minICPScore float64) float64 {
+func ComputeConfidenceWeighted(sources []FeatureSource, totalVacuums int, minAlignScore float64) float64 {
 	if totalVacuums <= 0 || len(sources) == 0 {
 		return 0
 	}
 
-	// For each unique vacuum, take the best ICP score among its observations.
+	// For each unique vacuum, take the best alignment score among its observations.
 	bestScores := make(map[string]float64)
 	for _, s := range sources {
 		if s.VacuumID == "" {
 			continue
 		}
-		if prev, ok := bestScores[s.VacuumID]; !ok || s.ICPScore > prev {
-			bestScores[s.VacuumID] = s.ICPScore
+		if prev, ok := bestScores[s.VacuumID]; !ok || s.AlignScore > prev {
+			bestScores[s.VacuumID] = s.AlignScore
 		}
 	}
 
 	var weightedCount float64
 	for _, score := range bestScores {
-		if score >= minICPScore {
+		if score >= minAlignScore {
 			weightedCount += 1.0
 		} else {
 			weightedCount += 0.5
