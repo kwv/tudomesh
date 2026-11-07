@@ -1,6 +1,7 @@
 package mesh
 
 import (
+	"log"
 	"math"
 	"math/rand"
 	"sort"
@@ -46,8 +47,21 @@ type ICPResult struct {
 var RotationErrors map[float64]float64
 
 // AlignMapsWithRotationHint runs ICP alignment with a preferred rotation hint as starting point
-// This allows using rotation hints from config or CLI while still running full ICP refinement
+// This allows using rotation hints from config or CLI while still running full ICP refinement.
+// Room-based alignment takes precedence over the hint when available.
 func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, rotationHint float64) ICPResult {
+	if r, ok := alignByRoomsResult(source, target); ok {
+		diff := math.Abs(NormalizeAngle(r.InitialRotation - rotationHint))
+		if diff > 180 {
+			diff = 360 - diff
+		}
+		if diff > 45 {
+			log.Printf("Room alignment rotation %.0f° disagrees with rotation hint %.0f°; using room alignment",
+				r.InitialRotation, rotationHint)
+		}
+		return r
+	}
+
 	srcFeatures := ExtractFeatures(source)
 	tgtFeatures := ExtractFeatures(target)
 
@@ -113,9 +127,14 @@ func AlignMapsWithRotationHint(source, target *ValetudoMap, config ICPConfig, ro
 	return result
 }
 
-// AlignMaps computes the affine transform to align source map to target map
+// AlignMaps computes the affine transform to align source map to target map.
+// Uses AlignByRooms when the maps share enough named rooms, otherwise ICP.
 // Tries multiple initial rotations and picks the best result
 func AlignMaps(source, target *ValetudoMap, config ICPConfig) ICPResult {
+	if r, ok := alignByRoomsResult(source, target); ok {
+		return r
+	}
+
 	bestResult := ICPResult{
 		Transform: Identity(),
 		Error:     math.MaxFloat64,

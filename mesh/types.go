@@ -31,7 +31,11 @@ type MapLayer struct {
 	Class    string        `json:"__class"`
 	MetaData LayerMetaData `json:"metaData"`
 	Type     string        `json:"type"` // "floor", "segment", "wall"
-	Pixels   []int         `json:"pixels"`
+	// Pixels are [x1,y1,x2,y2,...] in the same units as entity points
+	// (grid index * pixelSize). Filled from CompressedPixels on parse if empty.
+	Pixels []int `json:"pixels"`
+	// CompressedPixels is Valetudo's run-length form: [gridX, gridY, runLength, ...].
+	CompressedPixels []int `json:"compressedPixels,omitempty"`
 }
 
 // LayerMetaData contains layer metadata
