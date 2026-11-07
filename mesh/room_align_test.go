@@ -128,8 +128,8 @@ func TestRoomCentroidsSkipsUnnamedAndDuplicates(t *testing.T) {
 }
 
 func TestDecodeCompressedPixels(t *testing.T) {
-	got := DecodeCompressedPixels([]int{10, 20, 3, 5, 6, 1, 99}, 5)
-	want := []int{50, 100, 55, 100, 60, 100, 25, 30}
+	got := DecodeCompressedPixels([]int{10, 20, 3, 5, 6, 1, 99})
+	want := []int{10, 20, 11, 20, 12, 20, 5, 6}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
@@ -143,16 +143,20 @@ func TestDecodeCompressedPixels(t *testing.T) {
 func TestParseMapJSONExpandsCompressedPixels(t *testing.T) {
 	data := []byte(`{"pixelSize":5,"layers":[
 		{"type":"segment","metaData":{"name":"a"},"compressedPixels":[2,4,2]},
-		{"type":"wall","pixels":[1,2],"compressedPixels":[9,9,9]}]}`)
+		{"type":"wall","pixels":[1,2]},
+		{"type":"floor","pixels":[10,20,15,20],"compressedPixels":[2,4,2]}]}`)
 	m, err := ParseMapJSON(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := m.Layers[0].Pixels; len(got) != 4 || got[0] != 10 || got[1] != 20 || got[2] != 15 {
-		t.Errorf("segment pixels = %v", got)
+	if got := m.Layers[0].Pixels; len(got) != 4 || got[0] != 2 || got[1] != 4 || got[2] != 3 {
+		t.Errorf("segment pixels = %v, want [2 4 3 4]", got)
 	}
 	if got := m.Layers[1].Pixels; len(got) != 2 || got[0] != 1 {
-		t.Errorf("existing pixels should be kept, got %v", got)
+		t.Errorf("pixels without compressed form should be kept, got %v", got)
+	}
+	if got := m.Layers[2].Pixels; len(got) != 4 || got[0] != 2 {
+		t.Errorf("compressed form should win over pre-scaled pixels, got %v", got)
 	}
 }
 

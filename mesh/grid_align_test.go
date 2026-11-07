@@ -6,17 +6,17 @@ import (
 	"testing"
 )
 
-// lHouse builds an unnamed L-shaped floor plan with outer walls and one
-// interior wall, at pixelSize 5.
+// lHouse builds an unnamed L-shaped floor plan (grid units, pixelSize 5)
+// with outer walls and one interior wall.
 func lHouse() *ValetudoMap {
 	inL := func(x, y int) bool {
-		return (x >= 0 && x < 800 && y >= 0 && y < 400) || (x >= 0 && x < 300 && y >= 400 && y < 900)
+		return (x >= 0 && x < 160 && y >= 0 && y < 80) || (x >= 0 && x < 60 && y >= 80 && y < 180)
 	}
 	var floor, wall []int
-	for y := -5; y <= 905; y += 5 {
-		for x := -5; x <= 805; x += 5 {
+	for y := -1; y <= 181; y++ {
+		for x := -1; x <= 161; x++ {
 			if inL(x, y) {
-				if x == 500 && y < 300 { // interior wall with a doorway
+				if x == 100 && y < 60 { // interior wall with a doorway
 					wall = append(wall, x, y)
 				} else {
 					floor = append(floor, x, y)
@@ -24,7 +24,7 @@ func lHouse() *ValetudoMap {
 				continue
 			}
 			// Wall cell if a 4-neighbour is inside.
-			if inL(x+5, y) || inL(x-5, y) || inL(x, y+5) || inL(x, y-5) {
+			if inL(x+1, y) || inL(x-1, y) || inL(x, y+1) || inL(x, y-1) {
 				wall = append(wall, x, y)
 			}
 		}
@@ -48,7 +48,7 @@ func transformMap(m *ValetudoMap, t AffineMatrix) *ValetudoMap {
 func TestAlignByGridRecoversTransform(t *testing.T) {
 	target := lHouse()
 	for _, deg := range []float64{0, 90, 180, 270, 37} {
-		truth := CreateRotationTranslation(deg, 3000, -1200)
+		truth := CreateRotationTranslation(deg, 600, -240)
 		source := transformMap(target, InvertMatrix(truth))
 
 		ga, ok := AlignByGrid(source, target, GridAlignOptions{})
@@ -62,9 +62,9 @@ func TestAlignByGridRecoversTransform(t *testing.T) {
 			t.Errorf("%v°: confidence %.2f, want >= %.2f", deg, ga.Confidence, MinGridConfidence)
 		}
 		// Map corners of the source back and check they land within 3 cells.
-		for _, p := range []Point{{0, 0}, {800, 0}, {0, 900}} {
+		for _, p := range []Point{{0, 0}, {160, 0}, {0, 180}} {
 			src := TransformPoint(p, InvertMatrix(truth))
-			if d := Distance(TransformPoint(src, ga.Transform), p); d > 15 {
+			if d := Distance(TransformPoint(src, ga.Transform), p); d > 3 {
 				t.Errorf("%v°: corner %v off by %.0f", deg, p, d)
 			}
 		}
@@ -73,7 +73,7 @@ func TestAlignByGridRecoversTransform(t *testing.T) {
 
 func TestAlignByGridRotationHintLimitsSearch(t *testing.T) {
 	target := lHouse()
-	truth := CreateRotationTranslation(90, 500, 500)
+	truth := CreateRotationTranslation(90, 100, 100)
 	source := transformMap(target, InvertMatrix(truth))
 
 	hint := 85.0
@@ -85,9 +85,9 @@ func TestAlignByGridRotationHintLimitsSearch(t *testing.T) {
 
 func TestAlignByGridSymmetricRoomIsAmbiguous(t *testing.T) {
 	var floor, wall []int
-	for y := -5; y <= 400; y += 5 {
-		for x := -5; x <= 400; x += 5 {
-			if x < 0 || y < 0 || x >= 400 || y >= 400 {
+	for y := -1; y <= 80; y++ {
+		for x := -1; x <= 80; x++ {
+			if x < 0 || y < 0 || x >= 80 || y >= 80 {
 				wall = append(wall, x, y)
 			} else {
 				floor = append(floor, x, y)
@@ -145,7 +145,7 @@ func TestAlignByGridRealMaps(t *testing.T) {
 			for _, c := range RoomCentroids(named) {
 				worst = math.Max(worst, Distance(TransformPoint(c, ga.Transform), TransformPoint(c, ra.Transform)))
 			}
-			if worst > 60 {
+			if worst > 12 { // grid cells (60cm at pixelSize 5)
 				t.Errorf("%s: grid and room fits disagree by %.0f", id, worst)
 			}
 			t.Logf("%s: rotation %.1f° confidence %.2f, max disagreement with room fit %.0f", id, ga.RotationDeg, ga.Confidence, worst)

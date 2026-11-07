@@ -31,6 +31,7 @@ type MQTTClient struct {
 	config         *Config
 	messageHandler MessageHandler
 	dockingHandler DockingHandler
+	stateHandler   StateHandler
 	isConnected    bool
 	mu             sync.RWMutex
 }
@@ -238,6 +239,16 @@ func (c *MQTTClient) createMessageHandler(vacuumID string) mqtt.MessageHandler {
 	}
 }
 
+// StateHandler is called with every status value received for a vacuum.
+type StateHandler func(vacuumID, state string)
+
+// SetStateHandler registers a callback for every status update.
+func (c *MQTTClient) SetStateHandler(handler StateHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stateHandler = handler
+}
+
 // SetDockingHandler registers a callback that is invoked when a vacuum docks
 func (c *MQTTClient) SetDockingHandler(handler DockingHandler) {
 	c.mu.Lock()
@@ -304,6 +315,13 @@ func (c *MQTTClient) createStateMessageHandler(vacuumID string) mqtt.MessageHand
 		}
 
 		log.Printf("Vacuum %s state: %s", vacuumID, stateValue)
+
+		c.mu.RLock()
+		onState := c.stateHandler
+		c.mu.RUnlock()
+		if onState != nil {
+			onState(vacuumID, stateValue)
+		}
 
 		if stateValue == "docked" {
 			handler := c.getDockingHandler()

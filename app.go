@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -19,12 +20,12 @@ import (
 
 // App encapsulates the application state and dependencies
 type App struct {
-	Config          *mesh.Config
-	Calibration     *mesh.CalibrationData
-	StateTracker    *mesh.StateTracker
-	MQTTClient      *mesh.MQTTClient
-	Publisher       *mesh.Publisher
-	AutoCalibrator  *mesh.AutoCalibrator
+	Config         *mesh.Config
+	Calibration    *mesh.CalibrationData
+	StateTracker   *mesh.StateTracker
+	MQTTClient     *mesh.MQTTClient
+	Publisher      *mesh.Publisher
+	AutoCalibrator *mesh.AutoCalibrator
 
 	// CLI Flags (effectively dependencies)
 	DataDir          string
@@ -93,8 +94,7 @@ func (a *App) RunParseOnly() {
 func (a *App) parseAndPrint(path string) {
 	// Extract vacuum name from filename
 	base := filepath.Base(path)
-	name := strings.TrimPrefix(base, "ValetudoMapExport-")
-	name = strings.Split(name, "-2")[0] // Remove timestamp
+	name := vacuumIDFromExport(base)
 
 	fmt.Printf("=== %s ===\n", name)
 	fmt.Printf("File: %s\n", path)
@@ -142,8 +142,7 @@ func (a *App) RunCompareRotation(vacuumID string) {
 	maps := make(map[string]*mesh.ValetudoMap)
 	for _, file := range files {
 		base := filepath.Base(file)
-		name := strings.TrimPrefix(base, "ValetudoMapExport-")
-		name = strings.Split(name, "-2")[0]
+		name := vacuumIDFromExport(base)
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -195,8 +194,7 @@ func (a *App) RunRender() {
 	maps := make(map[string]*mesh.ValetudoMap)
 	for _, file := range files {
 		base := filepath.Base(file)
-		name := strings.TrimPrefix(base, "ValetudoMapExport-")
-		name = strings.Split(name, "-2")[0]
+		name := vacuumIDFromExport(base)
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -456,8 +454,7 @@ func (a *App) RunRenderIndividual(individualRotationFlag string) {
 
 	for i, file := range files {
 		base := filepath.Base(file)
-		name := strings.TrimPrefix(base, "ValetudoMapExport-")
-		name = strings.Split(name, "-2")[0]
+		name := vacuumIDFromExport(base)
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -501,8 +498,7 @@ func (a *App) RunCalibration() {
 	maps := make(map[string]*mesh.ValetudoMap)
 	for _, file := range files {
 		base := filepath.Base(file)
-		name := strings.TrimPrefix(base, "ValetudoMapExport-")
-		name = strings.Split(name, "-2")[0] // Remove timestamp
+		name := vacuumIDFromExport(base)
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -652,8 +648,7 @@ func (a *App) RunDetectRotation() {
 	maps := make(map[string]*mesh.ValetudoMap)
 	for _, file := range files {
 		base := filepath.Base(file)
-		name := strings.TrimPrefix(base, "ValetudoMapExport-")
-		name = strings.Split(name, "-2")[0]
+		name := vacuumIDFromExport(base)
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -967,6 +962,7 @@ func (a *App) RunService() {
 		// Initialize auto-calibrator and register docking handler
 		a.AutoCalibrator = mesh.NewAutoCalibrator(config, cache, resolvedCache, a.DataDir, a.StateTracker)
 		mqttClient.SetDockingHandler(a.AutoCalibrator.OnDockingEvent)
+		mqttClient.SetStateHandler(a.StateTracker.UpdateStatus)
 		fmt.Println("Auto-calibrator initialized (triggers on docking events)")
 	}
 
@@ -1040,8 +1036,7 @@ func (a *App) loadInitialMaps(dataDir string) map[string]*mesh.ValetudoMap {
 
 	for _, file := range files {
 		base := filepath.Base(file)
-		name := strings.TrimPrefix(base, "ValetudoMapExport-")
-		name = strings.Split(name, "-2")[0] // Remove timestamp
+		name := vacuumIDFromExport(base)
 
 		m, err := mesh.ParseMapFile(file)
 		if err != nil {
@@ -1052,6 +1047,17 @@ func (a *App) loadInitialMaps(dataDir string) map[string]*mesh.ValetudoMap {
 	}
 
 	return maps
+}
+
+// exportTimestamp matches a trailing date on export filenames: Valetudo's
+// "-YYYY-MM-DDTHH-MM-SS" plus shorter forms like "-YYYYMMDD" and "-YYYY".
+var exportTimestamp = regexp.MustCompile(`-\d{4}(-?\d{2}){0,2}(T[\d-]+)?$`)
+
+// vacuumIDFromExport turns "ValetudoMapExport-<id>[-<timestamp>].json" into <id>,
+// matching the vacuum ids used in config.
+func vacuumIDFromExport(base string) string {
+	name := strings.TrimSuffix(strings.TrimPrefix(base, "ValetudoMapExport-"), ".json")
+	return exportTimestamp.ReplaceAllString(name, "")
 }
 
 // checkWritability verifies that a directory is writable by creating and deleting a temporary file

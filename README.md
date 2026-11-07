@@ -1,11 +1,11 @@
 # TudoMesh
 
-Combines multiple Valetudo vacuum robot maps into a single unified coordinate system using automatic ICP alignment. Supports both CLI batch processing and real-time MQTT integration.
+Combines multiple Valetudo vacuum robot maps into a single unified coordinate system and serves the result over HTTP, including per-robot endpoints for "where is my stuck vacuum?" alerts. Supports both CLI batch processing and real-time MQTT integration.
 
 ## Features
 
-- **Automatic Map Alignment**: Uses Iterative Closest Point (ICP) algorithm for sub-pixel precision.
-- **Auto-Rotation**: Tests all 4 orientations (0°, 90°, 180°, 270°) to find the best fit.
+- **Automatic Map Alignment**: Searches every rotation and offset for the placement where floor lands on floor and wall on wall. Uses map geometry only (no room names needed), gives the same answer every run, and reports a confidence score. Same-named rooms break ties for very symmetric layouts; a `rotation` hint in config narrows the search.
+- **Stuck-Vacuum Alerts**: `/vacuum/{id}` reports which room a robot is in and its last status; `/vacuum/{id}.png` returns the map with that robot circled. See [Alerts with Node-RED](#alerts-with-node-red).
 - **Smart Persistence**:
   - **Auto-Cache**: Automatically saves full maps received via MQTT to disk.
   - **Transform Cache**: Stores alignment results in `.calibration-cache.json` for instant startups.
@@ -494,6 +494,38 @@ When rendering vector to PNG, set DPI (default: 300):
 - `/composite-map.svg` - Color-coded vacuum maps (SVG)
 - `/floorplan.svg` - Greyscale unified floor plan without positions (SVG)
 
+### Per-Vacuum (Alerts)
+
+`{id}` is the vacuum `id` from config (case-insensitive) or the identifier in its MQTT topic, e.g. `rocky7` for `valetudo/rocky7/MapData/map-data`.
+
+- `/vacuums` - JSON list of every vacuum (same fields as below)
+- `/vacuum/{id}` - JSON: room, last Valetudo status, position on the shared map
+- `/vacuum/{id}.png` - Live map with the vacuum circled and a caption (`rocky7 | Kitchen | error`). `?scale=1..8` sets the size (default 3).
+
+```json
+{
+  "id": "TrickyZanyPartridge",
+  "name": "rocky7",
+  "state": "error",
+  "stateSince": "2026-11-07T14:46:25Z",
+  "room": { "name": "Kitchen", "segmentId": "4", "distance": 0 },
+  "position": { "x": 517.3, "y": 314.9, "angle": 183, "updatedAt": "2026-11-07T14:46:25Z" },
+  "mapUrl": "/vacuum/rocky7.png"
+}
+```
+
+`room` comes from the robot's own map (the segment it is in, or the nearest one within ~50cm), so it is correct even before maps are aligned. Unnamed segments are reported as `segment <id>`. `state` requires `--mqtt`.
+
+## Alerts with Node-RED
+
+[`examples/node-red/stuck-vacuum-alert.json`](examples/node-red/stuck-vacuum-alert.json) is an importable flow:
+
+1. Listens on `valetudo/+/StatusStateAttribute/status` and passes on only `error`.
+2. Calls `GET /vacuum/{id}` for the room, then `GET /vacuum/{id}.png` for the map.
+3. Emits `msg.topic` = "rocky7 is stuck", `msg.payload` = "rocky7 reported an error in Kitchen.", `msg.image` = PNG Buffer.
+
+To use it: import the flow, set the `TUDOMESH_URL` environment variable on the flow (default `http://tudomesh:8080`), point the MQTT node at your broker, and replace the debug node with your notifier (Telegram, Pushover, Home Assistant, ...).
+
 ## CLI Flags
 
 | Flag | Description |
@@ -521,4 +553,4 @@ MIT License - See LICENSE file for details.
 ## Acknowledgments
 
 - Built for use with [Valetudo](https://valetudo.cloud/) open-source vacuum firmware.
-- ICP implementation optimized for 2D structural floorplan alignment.
+- Map alignment uses occupancy-grid search over floor and wall cells, with ICP as a last-resort fallback.

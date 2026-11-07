@@ -40,8 +40,8 @@ type GridAlignment struct {
 	Transform   AffineMatrix
 	RotationDeg float64
 	Score       int
-	// Confidence is the coarse winner's score divided by the best score at a
-	// rotation more than 15° away. Values near 1 mean another orientation fits
+	// Confidence is the winner's score divided by the best score at a rotation
+	// more than 15° away, both refined at fine resolution. Values near 1 mean another orientation fits
 	// about as well. +Inf when nothing else scored above zero or a
 	// RotationHint was given.
 	Confidence float64
@@ -160,13 +160,10 @@ func angleDiff(a, b float64) float64 {
 	return d
 }
 
-// gridCellSizes picks coarse and fine cell sizes: about 1/30 of the target
-// map's extent, clamped to 2..10 pixels for coarse, and 1/5 of that for fine.
-func gridCellSizes(target *ValetudoMap, floor, wall []Point) (coarse, fine float64) {
-	ps := float64(target.PixelSize)
-	if ps <= 0 {
-		ps = 5
-	}
+// gridCellSizes picks coarse and fine cell sizes in grid units (layer pixels):
+// coarse is about 1/30 of the target map's extent, clamped to 2..10 pixels;
+// fine is 1/5 of that, at least 1 pixel.
+func gridCellSizes(floor, wall []Point) (coarse, fine float64) {
 	minX, minY := math.Inf(1), math.Inf(1)
 	maxX, maxY := math.Inf(-1), math.Inf(-1)
 	for _, set := range [][]Point{floor, wall} {
@@ -176,7 +173,7 @@ func gridCellSizes(target *ValetudoMap, floor, wall []Point) (coarse, fine float
 		}
 	}
 	extent := math.Max(maxX-minX, maxY-minY)
-	coarse = math.Max(2*ps, math.Min(10*ps, extent/30))
+	coarse = math.Max(2, math.Min(10, extent/30))
 	fine = math.Max(1, coarse/5)
 	return coarse, fine
 }
@@ -190,7 +187,7 @@ func AlignByGrid(source, target *ValetudoMap, opts GridAlignOptions) (GridAlignm
 		return GridAlignment{}, false
 	}
 
-	coarse, fine := gridCellSizes(target, tFloor, tWall)
+	coarse, fine := gridCellSizes(tFloor, tWall)
 	step := opts.CoarseStepDeg
 	if step <= 0 {
 		step = 2
@@ -240,41 +237,59 @@ func AlignByGrid(source, target *ValetudoMap, opts GridAlignOptions) (GridAlignm
 			best = r
 		}
 	}
-	runnerUp := 0
-	for _, r := range results {
-		if angleDiff(r.rot, best.rot) > 15 && r.score > runnerUp {
-			runnerUp = r.score
-		}
-	}
 
 	// Fine pass: finer grid, rotation within one coarse step, shift within one coarse cell.
 	tFine := newOccGrid(tFloor, tWall, fine)
 	k := int(math.Round(coarse / fine))
-	fineBest := placement{score: math.MinInt}
-	for d := -step; d <= step; d += step / 4 {
-		rot := best.rot + d
-		R := rotationAbout(pivot, rot)
-		sg := newOccGrid(TransformPoints(sFloor, R), TransformPoints(sWall, R), fine)
-		p := bestShift(sg, tFine, rot, best.dx*k-k, best.dx*k+k, best.dy*k-k, best.dy*k+k)
-		if p.score > fineBest.score {
-			fineBest = p
+	refine := func(c placement) placement {
+		out := placement{score: math.MinInt}
+		for d := -step; d <= step; d += step / 4 {
+			rot := c.rot + d
+			R := rotationAbout(pivot, rot)
+			sg := newOccGrid(TransformPoints(sFloor, R), TransformPoints(sWall, R), fine)
+			p := bestShift(sg, tFine, rot, c.dx*k-k, c.dx*k+k, c.dy*k-k, c.dy*k+k)
+			if p.score > out.score {
+				out = p
+			}
+		}
+		return out
+	}
+	winner := refine(best)
+
+	// A rotation hint already settles orientation. For a full sweep, refine the
+	// best clearly different orientation too and compare at fine resolution;
+	// coarse cells can hide a near-tie (e.g. a rectangle at 0° vs 180°).
+	conf := math.Inf(1)
+	if opts.RotationHint == nil {
+		rival := placement{score: 0}
+		for _, r := range results {
+			if angleDiff(r.rot, best.rot) > 15 && r.score > rival.score {
+				rival = r
+			}
+		}
+		if rival.score > 0 {
+			other := refine(rival)
+			if other.score > winner.score {
+				winner, other = other, winner
+			}
+			if other.score > 0 {
+				conf = float64(winner.score) / float64(other.score)
+			}
+			// On a near-tie, prefer the smaller rotation so the result is stable.
+			if conf < MinGridConfidence && angleDiff(other.rot, 0) < angleDiff(winner.rot, 0) {
+				winner = other
+			}
 		}
 	}
 
 	transform := MultiplyMatrices(
-		Translation(float64(fineBest.dx)*fine, float64(fineBest.dy)*fine),
-		rotationAbout(pivot, fineBest.rot),
+		Translation(float64(winner.dx)*fine, float64(winner.dy)*fine),
+		rotationAbout(pivot, winner.rot),
 	)
-	// A rotation hint already settles orientation, so only a full sweep
-	// reports how much better the winner is than other orientations.
-	conf := math.Inf(1)
-	if opts.RotationHint == nil && runnerUp > 0 {
-		conf = float64(best.score) / float64(runnerUp)
-	}
 	return GridAlignment{
 		Transform:   transform,
-		RotationDeg: NormalizeAngle(fineBest.rot),
-		Score:       fineBest.score,
+		RotationDeg: NormalizeAngle(winner.rot),
+		Score:       winner.score,
 		Confidence:  conf,
 	}, true
 }

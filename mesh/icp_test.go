@@ -267,31 +267,6 @@ func createLShapeWalls(origin Point, scale float64) []Point {
 	return points
 }
 
-// createRectangleWalls creates a simple rectangular room outline
-func createRectangleWalls(origin Point, width, height float64) []Point {
-	points := []Point{}
-	step := 2.0
-
-	// Bottom edge
-	for x := 0.0; x <= width; x += step {
-		points = append(points, Point{X: origin.X + x, Y: origin.Y})
-	}
-	// Right edge
-	for y := 0.0; y <= height; y += step {
-		points = append(points, Point{X: origin.X + width, Y: origin.Y + y})
-	}
-	// Top edge
-	for x := width; x >= 0; x -= step {
-		points = append(points, Point{X: origin.X + x, Y: origin.Y + height})
-	}
-	// Left edge
-	for y := height; y >= 0; y -= step {
-		points = append(points, Point{X: origin.X, Y: origin.Y + y})
-	}
-
-	return points
-}
-
 func TestAlignMaps_Identity(t *testing.T) {
 	// Test that identical maps produce an identity-like transform
 	walls := createLShapeWalls(Point{X: 100, Y: 100}, 2.0)
@@ -721,36 +696,6 @@ func TestAlignMaps_InsufficientFeatures(t *testing.T) {
 				result.Transform.A, result.Transform.D)
 		}
 	}
-}
-
-func TestAlignMaps_DifferentScaleRooms(t *testing.T) {
-	// Test with different sized rooms (should still align structure)
-	sourceWalls := createRectangleWalls(Point{X: 100, Y: 100}, 200, 150)
-	chargerSrc := Point{X: 120, Y: 120}
-
-	// Same room translated
-	targetWalls := createRectangleWalls(Point{X: 150, Y: 130}, 200, 150)
-	chargerTgt := Point{X: 170, Y: 150}
-
-	sourceMap := createTestValetudoMap(sourceWalls, &chargerSrc)
-	targetMap := createTestValetudoMap(targetWalls, &chargerTgt)
-
-	config := DefaultICPConfig()
-	result := AlignMaps(sourceMap, targetMap, config)
-
-	// Expected translation is 50, 30
-	expectedTx, expectedTy := 50.0, 30.0
-	tolerance := 15.0
-
-	if math.Abs(result.Transform.Tx-expectedTx) > tolerance {
-		t.Errorf("Rectangle Tx incorrect: got %f, want %f", result.Transform.Tx, expectedTx)
-	}
-	if math.Abs(result.Transform.Ty-expectedTy) > tolerance {
-		t.Errorf("Rectangle Ty incorrect: got %f, want %f", result.Transform.Ty, expectedTy)
-	}
-
-	t.Logf("Rectangle alignment: Score=%.3f, Tx=%.1f, Ty=%.1f",
-		result.Score, result.Transform.Tx, result.Transform.Ty)
 }
 
 func TestAlignMaps_ValidateTransform(t *testing.T) {

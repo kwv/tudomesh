@@ -26,6 +26,7 @@ type StateTracker struct {
 	positions  map[string]*LivePosition
 	maps       map[string]*ValetudoMap
 	colors     map[string]string // vacuum ID -> hex color
+	status     map[string]VacuumStatus
 	unifiedMap *UnifiedMap
 	cachePath  string // path to .unified-map.json cache file; empty disables persistence
 }
@@ -36,6 +37,7 @@ func NewStateTracker() *StateTracker {
 		positions: make(map[string]*LivePosition),
 		maps:      make(map[string]*ValetudoMap),
 		colors:    make(map[string]string),
+		status:    make(map[string]VacuumStatus),
 	}
 }
 
@@ -47,6 +49,7 @@ func NewStateTrackerWithCache(cachePath string) *StateTracker {
 		positions: make(map[string]*LivePosition),
 		maps:      make(map[string]*ValetudoMap),
 		colors:    make(map[string]string),
+		status:    make(map[string]VacuumStatus),
 		cachePath: cachePath,
 	}
 	if cachePath != "" {
@@ -82,6 +85,31 @@ func (st *StateTracker) UpdatePosition(vacuumID string, x, y, angle float64) {
 		Timestamp: time.Now(),
 		Color:     color,
 	}
+}
+
+// VacuumStatus is the last Valetudo status value seen for a vacuum
+// (e.g. "docked", "cleaning", "error") and when it last changed.
+type VacuumStatus struct {
+	State string    `json:"state"`
+	Since time.Time `json:"since"`
+}
+
+// UpdateStatus records a vacuum's status. Since only moves when the value changes.
+func (st *StateTracker) UpdateStatus(vacuumID, state string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if cur, ok := st.status[vacuumID]; ok && cur.State == state {
+		return
+	}
+	st.status[vacuumID] = VacuumStatus{State: state, Since: time.Now()}
+}
+
+// GetStatus returns the last recorded status for a vacuum.
+func (st *StateTracker) GetStatus(vacuumID string) (VacuumStatus, bool) {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	s, ok := st.status[vacuumID]
+	return s, ok
 }
 
 // UpdateMap stores the latest map data for a vacuum

@@ -257,6 +257,8 @@ img{display:block;width:100vw;height:100vh;object-fit:contain}
 </html>`)
 	})
 
+	registerVacuumHandlers(mux, stateTracker, cache, config, refID, rotateAll)
+
 	// Wrap mux with logging middleware
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[HTTP] %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
