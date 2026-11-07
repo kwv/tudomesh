@@ -629,24 +629,17 @@ func (a *App) RunService() {
 	}
 
 	// 3. Load calibration cache (optional but recommended)
-	var cache *mesh.CalibrationData
-	cache, err = mesh.LoadCalibration(resolvedCache)
-	if err != nil {
-		log.Printf("Warning: Failed to load calibration cache %s: %v", resolvedCache, err)
-	} else if cache != nil {
-		a.Calibration = cache
-		log.Printf("Loaded calibration cache from %s", resolvedCache)
-	} else {
-		log.Printf("Warning: No calibration cache found at %s. Positions will not be transformed.", resolvedCache)
-		log.Printf("Run './tudomesh --calibrate' to generate it.")
-	}
+	// One instance shared by HTTP handlers, MQTT position updates and the
+	// auto-calibrator, so calibrations made at runtime apply immediately.
+	cache := loadServiceCalibration(resolvedCache)
+	a.Calibration = cache
 
 	// 3. Determine reference vacuum
 	refID := ""
 	if config.Reference != "" {
 		refID = config.Reference
-	} else if cache != nil && cache.ReferenceVacuum != "" {
-		refID = cache.ReferenceVacuum
+	} else if ref := cache.Reference(); ref != "" {
+		refID = ref
 	}
 	if refID != "" {
 		log.Printf("Reference vacuum: %s", refID)
@@ -915,6 +908,23 @@ var exportTimestamp = regexp.MustCompile(`-\d{4}(-?\d{2}){0,2}(T[\d-]+)?$`)
 func vacuumIDFromExport(base string) string {
 	name := strings.TrimSuffix(strings.TrimPrefix(base, "ValetudoMapExport-"), ".json")
 	return exportTimestamp.ReplaceAllString(name, "")
+}
+
+// loadServiceCalibration loads the calibration cache for service mode. It
+// never returns nil: a missing or unreadable cache yields an empty one that
+// the auto-calibrator fills in as vacuums dock.
+func loadServiceCalibration(path string) *mesh.CalibrationData {
+	cache, err := mesh.LoadCalibration(path)
+	switch {
+	case err != nil:
+		log.Printf("Warning: Failed to load calibration cache %s: %v", path, err)
+	case cache != nil:
+		log.Printf("Loaded calibration cache from %s", path)
+		return cache
+	default:
+		log.Printf("No calibration cache at %s yet; vacuums are aligned as they dock (or run --calibrate).", path)
+	}
+	return &mesh.CalibrationData{Vacuums: make(map[string]mesh.VacuumCalibration)}
 }
 
 // checkWritability verifies that a directory is writable by creating and deleting a temporary file

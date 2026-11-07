@@ -1,6 +1,9 @@
 package mesh
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"sync"
+)
 
 // ValetudoMap represents the root map structure from Valetudo JSON export
 type ValetudoMap struct {
@@ -178,10 +181,17 @@ type VacuumCalibration struct {
 
 // CalibrationData stores calibration matrices for all vacuums.
 // This is the auto-computed alignment transform cache stored as JSON.
+//
+// In service mode one instance is shared by the HTTP handlers, the MQTT
+// position handler and the AutoCalibrator. Use the methods (which lock) rather
+// than the fields once it is shared; direct field access is fine while a
+// single goroutine owns it (loading, CLI batch modes).
 type CalibrationData struct {
 	ReferenceVacuum string                       `json:"referenceVacuum"`
 	Vacuums         map[string]VacuumCalibration `json:"vacuums"`
 	LastUpdated     int64                        `json:"lastUpdated"`
+
+	mu sync.RWMutex
 }
 
 // UnmarshalJSON provides backward compatibility with old cache files where

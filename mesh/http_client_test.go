@@ -186,8 +186,8 @@ func TestFetchMapFromAPI_HTTPS(t *testing.T) {
 
 func TestFetchOptions_Defaults(t *testing.T) {
 	cfg := defaultFetchConfig()
-	if cfg.timeout != 30*time.Second {
-		t.Errorf("default timeout = %v, want 30s", cfg.timeout)
+	if cfg.timeout != 10*time.Second {
+		t.Errorf("default timeout = %v, want 10s", cfg.timeout)
 	}
 	if cfg.maxRetries != 3 {
 		t.Errorf("default maxRetries = %d, want 3", cfg.maxRetries)

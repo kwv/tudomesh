@@ -63,10 +63,8 @@ func MergeCalibrationIntoConfig(config *Config, cache *CalibrationData) map[stri
 	transforms := make(map[string]AffineMatrix)
 
 	// Start with cached transforms if available
-	if cache != nil {
-		for id, vc := range cache.Vacuums {
-			transforms[id] = vc.Transform
-		}
+	for id, t := range cache.Transforms() {
+		transforms[id] = t
 	}
 
 	// Override with manual calibrations from config
@@ -95,9 +93,9 @@ func GetEffectiveReference(config *Config, cache *CalibrationData, maps map[stri
 	}
 
 	// Priority 2: Cache reference (if still valid)
-	if cache != nil && cache.ReferenceVacuum != "" {
-		if _, ok := maps[cache.ReferenceVacuum]; ok {
-			return cache.ReferenceVacuum
+	if ref := cache.Reference(); ref != "" {
+		if _, ok := maps[ref]; ok {
+			return ref
 		}
 	}
 

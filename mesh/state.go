@@ -195,14 +195,8 @@ func (st *StateTracker) UpdateUnifiedMap(calibData *CalibrationData) error {
 	var allFloorSources []FeatureSource
 
 	for vacuumID, vMap := range maps {
-		vc, ok := calibData.Vacuums[vacuumID]
-		if !ok {
-			// No calibration for this vacuum; use identity transform.
-			vc = VacuumCalibration{Transform: Identity()}
-		}
-
-		// Convert the vacuum map to a GeoJSON feature collection in world coordinates.
-		fc := MapToFeatureCollection(vMap, vacuumID, vc.Transform, 5.0)
+		// Identity when this vacuum is not calibrated.
+		fc := MapToFeatureCollection(vMap, vacuumID, calibData.GetTransform(vacuumID), 5.0)
 
 		src := FeatureSource{
 			VacuumID:   vacuumID,
@@ -263,7 +257,7 @@ func (st *StateTracker) UpdateUnifiedMap(calibData *CalibrationData) error {
 		Segments: segments,
 		Metadata: UnifiedMetadata{
 			VacuumCount:     totalVacuums,
-			ReferenceVacuum: calibData.ReferenceVacuum,
+			ReferenceVacuum: calibData.Reference(),
 			LastUpdated:     time.Now().Unix(),
 		},
 	}
