@@ -287,7 +287,7 @@ func (r *VectorRenderer) calculateWorldBounds() (minX, minY, maxX, maxY, centerX
 			if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
 				points := PixelsToPoints(layer.Pixels)
 				for _, p := range points {
-					// Apply transform to pixel coordinates first (ICP operates at pixel scale)
+					// Apply transform to pixel coordinates first (transforms operate in grid units)
 					tp := TransformPoint(p, transform)
 					// Then scale to world coordinates
 					worldP := Point{

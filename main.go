@@ -24,7 +24,6 @@ type AppOptions struct {
 	RotateAll          float64
 	OutputFile         string
 	DataDir            string
-	DetectRotation     bool
 	CalibrationCache   string
 	MqttMode           bool
 	HttpMode           bool
@@ -42,7 +41,6 @@ type MainApp interface {
 	RunRender()
 	RunRenderIndividual(string)
 	RunCompareRotation(string)
-	RunDetectRotation()
 	RunService()
 }
 
@@ -73,7 +71,6 @@ func run(args []string, out io.Writer, app MainApp) error {
 	fs.Float64Var(&opts.RotateAll, "rotate-all", 0, "Rotate entire composite by degrees (0, 90, 180, 270)")
 	fs.StringVar(&opts.OutputFile, "output", "composite-map.png", "Output file for --render mode")
 	fs.StringVar(&opts.DataDir, "data-dir", ".", "Directory containing JSON exports for parse-only mode")
-	fs.BoolVar(&opts.DetectRotation, "detect-rotation", false, "Analyze wall angles to detect rotation differences")
 	fs.StringVar(&opts.CalibrationCache, "calibration-cache", ".calibration-cache.json", "Path to calibration cache file")
 	fs.BoolVar(&opts.MqttMode, "mqtt", false, "Run MQTT service mode for real-time position tracking")
 	fs.BoolVar(&opts.HttpMode, "http", false, "Enable HTTP server for serving map images")
@@ -115,11 +112,6 @@ func run(args []string, out io.Writer, app MainApp) error {
 		return nil
 	}
 
-	if opts.DetectRotation {
-		app.RunDetectRotation()
-		return nil
-	}
-
 	if opts.MqttMode || opts.HttpMode {
 		app.RunService()
 		return nil
@@ -128,16 +120,15 @@ func run(args []string, out io.Writer, app MainApp) error {
 	// Normal service mode - to be implemented
 	_, _ = fmt.Fprintln(out, "tudomesh service starting...")
 	_, _ = fmt.Fprintln(out, "Use --parse-only to test JSON parsing")
-	_, _ = fmt.Fprintln(out, "Use --calibrate to test ICP calibration")
+	_, _ = fmt.Fprintln(out, "Use --calibrate to align maps and write the calibration cache")
 	_, _ = fmt.Fprintln(out, "Use --render to output composite map PNG")
 	_, _ = fmt.Fprintln(out, "Use --compare-rotation=VACUUM_ID to compare rotation options")
-	_, _ = fmt.Fprintln(out, "Use --detect-rotation to analyze wall angles")
 	_, _ = fmt.Fprintln(out, "Use --mqtt to run MQTT service mode")
 	_, _ = fmt.Fprintln(out, "Use --http to run HTTP server mode")
 	_, _ = fmt.Fprintln(out, "Use --mqtt --http to run both MQTT and HTTP together")
 	_, _ = fmt.Fprintln(out, "\nConfiguration:")
 	_, _ = fmt.Fprintln(out, "  config.yaml - MQTT settings and calibration overrides")
-	_, _ = fmt.Fprintln(out, "  .calibration-cache.json - Auto-computed ICP transforms (cached)")
+	_, _ = fmt.Fprintln(out, "  .calibration-cache.json - Auto-computed alignment transforms (cached)")
 	_, _ = fmt.Fprintln(out, "\nFull service mode not yet implemented")
 
 	return nil

@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -220,7 +221,7 @@ func (a *App) RunRender() {
 		}
 	}
 
-	// Load calibration cache (auto-computed ICP transforms)
+	// Load calibration cache (auto-computed transforms)
 	var cache *mesh.CalibrationData
 	cache, err = mesh.LoadCalibration(a.CalibrationCache)
 	if err != nil {
@@ -239,7 +240,7 @@ func (a *App) RunRender() {
 	}
 	fmt.Printf("Reference vacuum: %s\n", effectiveRef)
 
-	// Build transforms from cache, config, and CLI (priority: CLI > config > cache > ICP)
+	// Build transforms from cache, config, and CLI (priority: CLI > config > cache > auto-alignment)
 	transforms := make(map[string]mesh.AffineMatrix)
 	transforms[effectiveRef] = mesh.Identity()
 	needsRecalibration := false
@@ -250,7 +251,7 @@ func (a *App) RunRender() {
 		}
 
 		var transform mesh.AffineMatrix
-		source := "ICP (auto-computed)"
+		source := ""
 
 		// Priority 1: Check cache
 		if cache != nil && cache.ReferenceVacuum == effectiveRef {
@@ -260,16 +261,15 @@ func (a *App) RunRender() {
 			}
 		}
 
-		// Priority 2: Check config rotation hints (run ICP with hint as starting point)
+		// Priority 2: Config rotation hint narrows the search to ±20°
 		if config != nil {
 			vc := config.GetVacuumByID(id)
 			if vc != nil && vc.Rotation != nil {
 				rotHint := *vc.Rotation
-				fmt.Printf("  %s: re-running ICP with rotation hint %.0f° from config\n", id, rotHint)
-				icpConfig := mesh.DefaultICPConfig()
-				result := mesh.AlignMapsWithRotationHint(maps[id], maps[effectiveRef], icpConfig, rotHint)
+				fmt.Printf("  %s: aligning near rotation hint %.0f° from config\n", id, rotHint)
+				result, _ := mesh.AlignMapsWithRotationHint(maps[id], maps[effectiveRef], rotHint)
 				transform = result.Transform
-				source = fmt.Sprintf("ICP+hint(%.0f°)", rotHint)
+				source = fmt.Sprintf("hint(%.0f°)", rotHint)
 				needsRecalibration = true
 
 				// Apply manual translation if provided
@@ -280,26 +280,24 @@ func (a *App) RunRender() {
 			}
 		}
 
-		// Priority 3: CLI --force-rotation override (highest priority)
+		// Priority 3: CLI --force-rotation fixes the rotation exactly (highest priority)
 		if a.ForceRotation != "" {
 			cliRotations := mesh.BuildForceRotationMap(a.ForceRotation)
 			if rotDeg, ok := cliRotations[id]; ok {
-				fmt.Printf("  %s: CLI override rotation %.0f° (running ICP with hint)\n", id, rotDeg)
-				icpConfig := mesh.DefaultICPConfig()
-				result := mesh.AlignMapsWithRotationHint(maps[id], maps[effectiveRef], icpConfig, rotDeg)
+				fmt.Printf("  %s: CLI forced rotation %.0f°\n", id, rotDeg)
+				result, _ := mesh.AlignMapsAtRotation(maps[id], maps[effectiveRef], rotDeg)
 				transform = result.Transform
-				source = fmt.Sprintf("CLI+ICP(%.0f°)", rotDeg)
+				source = fmt.Sprintf("forced(%.0f°)", rotDeg)
 				needsRecalibration = true
 			}
 		}
 
-		// If no transform found, run full ICP
+		// Otherwise run full alignment
 		if transform.A == 0 && transform.D == 0 {
-			fmt.Printf("  %s: running full ICP alignment (not in cache)\n", id)
-			icpConfig := mesh.DefaultICPConfig()
-			result := mesh.AlignMaps(maps[id], maps[effectiveRef], icpConfig)
+			fmt.Printf("  %s: aligning (not in cache)\n", id)
+			result, _ := mesh.AlignMaps(maps[id], maps[effectiveRef])
 			transform = result.Transform
-			source = "ICP (auto-computed)"
+			source = result.Method
 			needsRecalibration = true
 		}
 
@@ -476,7 +474,7 @@ func (a *App) RunRenderIndividual(individualRotationFlag string) {
 	fmt.Println("Done!")
 }
 
-// RunCalibration loads all JSON exports and runs ICP calibration
+// RunCalibration loads all JSON exports, aligns them to the reference and writes the calibration cache
 func (a *App) RunCalibration() {
 	pattern := filepath.Join(a.DataDir, "ValetudoMapExport-*.json")
 	files, err := filepath.Glob(pattern)
@@ -519,75 +517,6 @@ func (a *App) RunCalibration() {
 
 	refMap := maps[refID]
 
-	// Run ICP alignment for each non-reference vacuum
-	fmt.Println("Running ICP alignment...")
-	fmt.Println(strings.Repeat("-", 60))
-
-	for id, m := range maps {
-		if id == refID {
-			fmt.Printf("%-25s: [REFERENCE - identity transform]\n", id)
-			continue
-		}
-
-		// Extract features for comparison
-		srcFeatures := mesh.ExtractFeatures(m)
-		tgtFeatures := mesh.ExtractFeatures(refMap)
-
-		fmt.Printf("%-25s:\n", id)
-		fmt.Printf("  Source: %d walls, %d grid, %d boundary, %d corners, charger=%v\n",
-			len(srcFeatures.WallPoints), len(srcFeatures.GridPoints),
-			len(srcFeatures.BoundaryPoints), len(srcFeatures.Corners), srcFeatures.HasCharger)
-		fmt.Printf("  Target: %d walls, %d grid, %d boundary, %d corners, charger=%v\n",
-			len(tgtFeatures.WallPoints), len(tgtFeatures.GridPoints),
-			len(tgtFeatures.BoundaryPoints), len(tgtFeatures.Corners), tgtFeatures.HasCharger)
-
-		// Run ICP
-		config := mesh.DefaultICPConfig()
-		result := mesh.AlignMaps(m, refMap, config)
-
-		valid := mesh.ValidateAlignment(result.Transform)
-
-		// Calculate total rotation angle from transform matrix
-		totalRotation := math.Atan2(result.Transform.C, result.Transform.A) * 180 / math.Pi
-		if totalRotation < 0 {
-			totalRotation += 360
-		}
-
-		fmt.Printf("  ICP result: %d iterations, error=%.2f, score=%.4f, inliers=%.1f%%, converged=%v, valid=%v\n",
-			result.Iterations, result.Error, result.Score, result.InlierFraction*100, result.Converged, valid)
-		fmt.Printf("  Rotation errors: 0°=%.1f, 90°=%.1f, 180°=%.1f, 270°=%.1f\n",
-			mesh.RotationErrors[0], mesh.RotationErrors[90],
-			mesh.RotationErrors[180], mesh.RotationErrors[270])
-		fmt.Printf("  Initial rotation: %.0f°, Final rotation: %.1f°\n", result.InitialRotation, totalRotation)
-		fmt.Printf("  Translation: (%.1f, %.1f)\n", result.Transform.Tx, result.Transform.Ty)
-
-		// Show transformed positions
-		srcPos, srcAngle, _ := mesh.ExtractRobotPosition(m)
-		srcCharger, _ := mesh.ExtractChargerPosition(m)
-
-		worldPos := mesh.TransformPoint(srcPos, result.Transform)
-		worldCharger := mesh.TransformPoint(srcCharger, result.Transform)
-
-		// Adjust robot angle by the transform rotation
-		worldAngle := mesh.TransformAngle(srcAngle, result.Transform)
-
-		fmt.Printf("  Robot: local(%.0f,%.0f) -> world(%.0f,%.0f)\n",
-			srcPos.X, srcPos.Y, worldPos.X, worldPos.Y)
-		fmt.Printf("  Robot angle: local=%.0f° -> world=%.0f°\n", srcAngle, worldAngle)
-		fmt.Printf("  Charger: local(%.0f,%.0f) -> world(%.0f,%.0f)\n",
-			srcCharger.X, srcCharger.Y, worldCharger.X, worldCharger.Y)
-		fmt.Println()
-	}
-
-	// Show reference vacuum positions
-	refPos, refAngle, _ := mesh.ExtractRobotPosition(refMap)
-	refCharger, _ := mesh.ExtractChargerPosition(refMap)
-	fmt.Println(strings.Repeat("-", 60))
-	fmt.Printf("Reference (%s) positions (world coordinates):\n", refID)
-	fmt.Printf("  Robot: (%.0f, %.0f) angle=%.0f°\n", refPos.X, refPos.Y, refAngle)
-	fmt.Printf("  Charger: (%.0f, %.0f)\n", refCharger.X, refCharger.Y)
-
-	// Save calibration cache
 	now := time.Now().Unix()
 	cache := mesh.CalibrationData{
 		ReferenceVacuum: refID,
@@ -599,23 +528,63 @@ func (a *App) RunCalibration() {
 		MapAreaAtCalibration: refMap.MetaData.TotalLayerArea,
 	}
 
-	// Re-run alignment to get transforms for cache
-	fmt.Println()
+	fmt.Println("Aligning maps...")
 	fmt.Println(strings.Repeat("-", 60))
-	fmt.Println("Building calibration cache...")
-	for id, m := range maps {
+
+	ids := make([]string, 0, len(maps))
+	for id := range maps {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		m := maps[id]
 		if id == refID {
+			fmt.Printf("%-25s: [REFERENCE - identity transform]\n", id)
 			continue
 		}
-		config := mesh.DefaultICPConfig()
-		result := mesh.AlignMaps(m, refMap, config)
+
+		result, ok := mesh.AlignMaps(m, refMap)
+		if !ok {
+			fmt.Printf("%-25s: no floor geometry, skipped\n", id)
+			continue
+		}
 		cache.Vacuums[id] = mesh.VacuumCalibration{
 			Transform:            result.Transform,
 			LastUpdated:          now,
 			MapAreaAtCalibration: m.MetaData.TotalLayerArea,
 		}
-		fmt.Printf("  %s: cached transform (rotation %.1f°)\n", id, math.Atan2(result.Transform.C, result.Transform.A)*180/math.Pi)
+
+		fmt.Printf("%-25s:\n", id)
+		fmt.Printf("  Method: %s, rotation %.1f°, confidence %.2f (>= %.2f is unambiguous)\n",
+			result.Method, result.RotationDeg, result.Confidence, mesh.MinGridConfidence)
+		fmt.Printf("  Translation: (%.1f, %.1f)\n", result.Transform.Tx, result.Transform.Ty)
+
+		srcPos, srcAngle, _ := mesh.ExtractRobotPosition(m)
+		srcCharger, _ := mesh.ExtractChargerPosition(m)
+		ps := float64(m.PixelSize)
+		if ps == 0 {
+			ps = 5
+		}
+		// Entity positions are in pixelSize units; transforms work in grid cells.
+		toWorld := func(p mesh.Point) mesh.Point {
+			g := mesh.TransformPoint(mesh.Point{X: p.X / ps, Y: p.Y / ps}, result.Transform)
+			return mesh.Point{X: g.X * ps, Y: g.Y * ps}
+		}
+		worldPos, worldCharger := toWorld(srcPos), toWorld(srcCharger)
+		fmt.Printf("  Robot: local(%.0f,%.0f) -> world(%.0f,%.0f), angle %.0f° -> %.0f°\n",
+			srcPos.X, srcPos.Y, worldPos.X, worldPos.Y, srcAngle, mesh.TransformAngle(srcAngle, result.Transform))
+		fmt.Printf("  Charger: local(%.0f,%.0f) -> world(%.0f,%.0f)\n",
+			srcCharger.X, srcCharger.Y, worldCharger.X, worldCharger.Y)
+		fmt.Println()
 	}
+
+	refPos, refAngle, _ := mesh.ExtractRobotPosition(refMap)
+	refCharger, _ := mesh.ExtractChargerPosition(refMap)
+	fmt.Println(strings.Repeat("-", 60))
+	fmt.Printf("Reference (%s) positions (world coordinates):\n", refID)
+	fmt.Printf("  Robot: (%.0f, %.0f) angle=%.0f°\n", refPos.X, refPos.Y, refAngle)
+	fmt.Printf("  Charger: (%.0f, %.0f)\n", refCharger.X, refCharger.Y)
 
 	// Save to cache file
 	fmt.Printf("\nSaving calibration cache to %s\n", a.CalibrationCache)
@@ -624,118 +593,6 @@ func (a *App) RunCalibration() {
 	} else {
 		fmt.Println("Calibration cache saved successfully")
 	}
-}
-
-// RunDetectRotation analyzes wall angles to detect rotation differences between maps
-func (a *App) RunDetectRotation() {
-	pattern := filepath.Join(a.DataDir, "ValetudoMapExport-*.json")
-	files, err := filepath.Glob(pattern)
-	if err != nil {
-		log.Fatalf("Error finding JSON files: %v", err)
-	}
-
-	if len(files) == 0 {
-		files, _ = filepath.Glob("ValetudoMapExport-*.json")
-	}
-
-	if len(files) == 0 {
-		log.Fatal("No ValetudoMapExport-*.json files found")
-	}
-
-	fmt.Printf("Found %d map export(s)\n\n", len(files))
-
-	// Load all maps
-	maps := make(map[string]*mesh.ValetudoMap)
-	for _, file := range files {
-		base := filepath.Base(file)
-		name := vacuumIDFromExport(base)
-
-		m, err := mesh.ParseMapFile(file)
-		if err != nil {
-			fmt.Printf("Error loading %s: %v\n", name, err)
-			continue
-		}
-		maps[name] = m
-	}
-
-	if len(maps) < 2 {
-		log.Fatal("Need at least 2 maps for rotation detection")
-	}
-
-	// Select reference vacuum
-	refID := a.ReferenceVacuum
-	if refID == "" {
-		refID = mesh.SelectReferenceVacuum(maps, nil)
-	}
-	refMap := maps[refID]
-
-	fmt.Printf("Reference vacuum: %s\n", refID)
-	fmt.Println(strings.Repeat("=", 70))
-
-	// Analyze wall angles for reference
-	refHist := mesh.ExtractWallAngles(refMap)
-	refDominant := refHist.DominantAngles(4)
-	fmt.Printf("\n%s (reference) dominant wall angles: ", refID)
-	for i, a := range refDominant {
-		if i > 0 {
-			fmt.Print(", ")
-		}
-		fmt.Printf("%.0f°", a)
-	}
-	fmt.Printf(" (%d edges analyzed)\n", refHist.TotalEdges)
-
-	// Analyze each other vacuum
-	fmt.Println(strings.Repeat("-", 70))
-	for id, m := range maps {
-		if id == refID {
-			continue
-		}
-
-		fmt.Printf("\n%s:\n", id)
-
-		// Get wall angle histogram
-		hist := mesh.ExtractWallAngles(m)
-		dominant := hist.DominantAngles(4)
-		fmt.Printf("  Dominant wall angles: ")
-		for i, a := range dominant {
-			if i > 0 {
-				fmt.Print(", ")
-			}
-			fmt.Printf("%.0f°", a)
-		}
-		fmt.Printf(" (%d edges)\n", hist.TotalEdges)
-
-		// Run rotation detection with detailed output
-		analysis := mesh.DetectRotationWithFeaturesDebug(m, refMap)
-
-		fmt.Printf("  Rotation scores:\n")
-		for _, rot := range []float64{0, 90, 180, 270} {
-			marker := ""
-			if rot == analysis.BestRotation {
-				marker = " <-- BEST"
-			}
-			fmt.Printf("    %3.0f°: %.4f%s\n", rot, analysis.Scores[rot], marker)
-		}
-		fmt.Printf("  Detected rotation: %.0f° (confidence: %.1f%%)\n",
-			analysis.BestRotation, analysis.Confidence*100)
-	}
-
-	fmt.Println(strings.Repeat("=", 70))
-	fmt.Println("\nTo apply detected rotations, use:")
-	fmt.Print("  --force-rotation=\"")
-	first := true
-	for id, m := range maps {
-		if id == refID {
-			continue
-		}
-		analysis := mesh.DetectRotationWithFeatures(m, refMap)
-		if !first {
-			fmt.Print(",")
-		}
-		fmt.Printf("%s=%.0f", id, analysis.BestRotation)
-		first = false
-	}
-	fmt.Println("\"")
 }
 
 // RunService starts the combined MQTT and/or HTTP service

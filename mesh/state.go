@@ -205,9 +205,9 @@ func (st *StateTracker) UpdateUnifiedMap(calibData *CalibrationData) error {
 		fc := MapToFeatureCollection(vMap, vacuumID, vc.Transform, 5.0)
 
 		src := FeatureSource{
-			VacuumID:  vacuumID,
-			Timestamp: time.Now().Unix(),
-			ICPScore:  1.0, // default; real ICP score could be stored in calibration
+			VacuumID:   vacuumID,
+			Timestamp:  time.Now().Unix(),
+			AlignScore: 1.0, // default; real alignment score could be stored in calibration
 		}
 
 		for _, f := range fc.Features {

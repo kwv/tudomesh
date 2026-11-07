@@ -24,7 +24,6 @@ func (m *mockApp) RunCalibration()              { m.called["RunCalibration"] = t
 func (m *mockApp) RunRender()                   { m.called["RunRender"] = true }
 func (m *mockApp) RunRenderIndividual(s string) { m.called["RunRenderIndividual"] = true; m.sArg = s }
 func (m *mockApp) RunCompareRotation(s string)  { m.called["RunCompareRotation"] = true; m.sArg = s }
-func (m *mockApp) RunDetectRotation()           { m.called["RunDetectRotation"] = true }
 func (m *mockApp) RunService()                  { m.called["RunService"] = true }
 
 func TestRun_Flags(t *testing.T) {
@@ -96,19 +95,6 @@ func TestRun_Flags(t *testing.T) {
 			verifyOpts: func(t *testing.T, opts AppOptions) {
 				if opts.CompareRotation != "vac2" {
 					t.Errorf("expected CompareRotation vac2, got %s", opts.CompareRotation)
-				}
-			},
-		},
-		{
-			name:           "DetectRotation",
-			args:           []string{"--detect-rotation", "--reference", "refVac"},
-			expectedCalled: "RunDetectRotation",
-			verifyOpts: func(t *testing.T, opts AppOptions) {
-				if opts.ReferenceVacuum != "refVac" {
-					t.Errorf("expected ReferenceVacuum refVac, got %s", opts.ReferenceVacuum)
-				}
-				if !opts.DetectRotation {
-					t.Error("expected DetectRotation true")
 				}
 			},
 		},

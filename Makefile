@@ -155,7 +155,7 @@ define bump_version
 	gh pr create --fill --base main --title "chore: release $$NEW_TAG"
 endef
 
-# Render composite map (clears cache for fresh ICP)
+# Render composite map (clears cache to force a fresh alignment)
 render: build
 	@echo "Rendering composite map..."
 	@cd tudomesh-data && rm -f .calibration-cache.json && \

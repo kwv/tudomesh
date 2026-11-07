@@ -1,7 +1,6 @@
 package mesh
 
 import (
-	"log"
 	"math"
 	"sort"
 	"strings"
@@ -14,7 +13,7 @@ const MinSharedRooms = 3
 
 // maxRoomResidualRatio caps the mean room-center error as a fraction of how
 // spread out the rooms are. Above this, the room names probably don't refer
-// to the same places and alignment falls back to ICP.
+// to the same places and room alignment is rejected.
 const maxRoomResidualRatio = 0.15
 
 // RoomAlignment describes the result of AlignByRooms.
@@ -106,51 +105,4 @@ func AlignByRooms(source, target *ValetudoMap) (RoomAlignment, bool) {
 		return ra, false
 	}
 	return ra, true
-}
-
-// alignGeometric picks a transform for AlignMaps / AlignMapsWithRotationHint:
-//  1. AlignByGrid (map geometry only). Used if its Confidence >= MinGridConfidence.
-//  2. Otherwise AlignByRooms, if the maps share enough named rooms.
-//  3. Otherwise the ambiguous grid result, logged as low confidence.
-//
-// ok is false only when neither method can run (no geometry, no rooms).
-// Score is 1 for a confident result and 0.5 for an ambiguous one.
-func alignGeometric(source, target *ValetudoMap, rotationHint *float64) (ICPResult, bool) {
-	ga, gridOK := AlignByGrid(source, target, GridAlignOptions{RotationHint: rotationHint})
-	if gridOK && ga.Confidence >= MinGridConfidence {
-		log.Printf("Grid alignment: rotation=%.1f° confidence=%.2f", ga.RotationDeg, ga.Confidence)
-		return gridResult(ga, 1), true
-	}
-
-	ra, roomOK := AlignByRooms(source, target)
-	if roomOK {
-		log.Printf("Grid alignment ambiguous (confidence %.2f); using room names: rotation=%.1f° from %v, mean error %.0f",
-			ga.Confidence, ra.RotationDeg, ra.SharedRooms, ra.MeanResidual)
-		return ICPResult{
-			Transform:       ra.Transform,
-			Error:           ra.MeanResidual,
-			Score:           1,
-			InlierFraction:  1,
-			Converged:       true,
-			InitialRotation: ra.RotationDeg,
-		}, true
-	}
-
-	if gridOK {
-		log.Printf("WARNING: grid alignment ambiguous (rotation=%.1f°, confidence %.2f); set a rotation hint in config to resolve",
-			ga.RotationDeg, ga.Confidence)
-		return gridResult(ga, 0.5), true
-	}
-	return ICPResult{}, false
-}
-
-func gridResult(ga GridAlignment, score float64) ICPResult {
-	return ICPResult{
-		Transform:       ga.Transform,
-		Error:           1, // non-zero: callers treat 0 as "no result"
-		Score:           score,
-		InlierFraction:  score,
-		Converged:       true,
-		InitialRotation: ga.RotationDeg,
-	}
 }

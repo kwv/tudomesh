@@ -7,10 +7,8 @@ import (
 	"image/draw"
 	"image/png"
 	"math"
-	"math/rand"
 	"os"
 	"sort"
-	"time"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -343,8 +341,8 @@ func RenderSingleMap(m *ValetudoMap, outputPath string, floorColor, wallColor co
 // RenderSingleMapWithRotation renders a single vacuum map with rotation applied
 func RenderSingleMapWithRotation(m *ValetudoMap, outputPath string, floorColor, wallColor color.RGBA, rotationDeg float64) error {
 	// Build rotation transform around centroid
-	features := ExtractFeatures(m)
-	centroid := features.Centroid
+	floor, _ := mapGeometry(m)
+	centroid := Centroid(floor)
 
 	// Create transform: translate to origin, rotate, translate back
 	toOrigin := Translation(-centroid.X, -centroid.Y)
@@ -567,7 +565,7 @@ func drawText(img *image.RGBA, x, y int, text string, c color.RGBA) {
 	d.DrawString(text)
 }
 
-// RenderCompositeMap is a convenience function to render all maps with ICP alignment
+// RenderCompositeMap aligns all maps to the reference (see AlignMaps) and renders them
 func RenderCompositeMap(maps map[string]*ValetudoMap, outputPath string, referenceOverride string, globalRotation float64) error {
 	if len(maps) < 2 {
 		return nil
@@ -584,13 +582,11 @@ func RenderCompositeMap(maps map[string]*ValetudoMap, outputPath string, referen
 	transforms[refID] = Identity()
 
 	refMap := maps[refID]
-	config := DefaultICPConfig()
-
 	for id, m := range maps {
 		if id == refID {
 			continue
 		}
-		result := AlignMaps(m, refMap, config)
+		result, _ := AlignMaps(m, refMap)
 		transforms[id] = result.Transform
 	}
 
@@ -620,18 +616,13 @@ func RenderWithForcedRotation(maps map[string]*ValetudoMap, vacuumID string, rot
 			continue
 		}
 
+		var result Alignment
 		if id == vacuumID {
-			// Use forced rotation
-			srcFeatures := ExtractFeatures(m)
-			tgtFeatures := ExtractFeatures(refMap)
-			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-			transforms[id] = buildInitialTransform(srcFeatures, tgtFeatures, rotationDeg, rng)
+			result, _ = AlignMapsAtRotation(m, refMap, rotationDeg)
 		} else {
-			// Use ICP
-			config := DefaultICPConfig()
-			result := AlignMaps(m, refMap, config)
-			transforms[id] = result.Transform
+			result, _ = AlignMaps(m, refMap)
 		}
+		transforms[id] = result.Transform
 	}
 
 	renderer := NewCompositeRenderer(maps, transforms, refID)
@@ -660,21 +651,13 @@ func RenderWithCalibration(maps map[string]*ValetudoMap, rotations map[string]fl
 		}
 
 		if rotDeg, ok := rotations[id]; ok {
-			// Use forced rotation
-			srcFeatures := ExtractFeatures(m)
-			tgtFeatures := ExtractFeatures(refMap)
-			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-			transforms[id] = buildInitialTransform(srcFeatures, tgtFeatures, rotDeg, rng)
-
-			// Apply translation if available
+			result, _ := AlignMapsAtRotation(m, refMap, rotDeg)
+			transforms[id] = result.Transform
 			if trans, ok := translations[id]; ok && (trans.X != 0 || trans.Y != 0) {
 				transforms[id] = MultiplyMatrices(Translation(trans.X, trans.Y), transforms[id])
 			}
-
 		} else {
-			// Use ICP
-			config := DefaultICPConfig()
-			result := AlignMaps(m, refMap, config)
+			result, _ := AlignMaps(m, refMap)
 			transforms[id] = result.Transform
 		}
 	}
