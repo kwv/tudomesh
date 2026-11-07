@@ -112,7 +112,7 @@ type VacuumConfig struct {
 	Color       string             `yaml:"color" json:"color"`
 	Rotation    *float64           `yaml:"rotation,omitempty" json:"rotation,omitempty"`       // Optional rotation hint/override (0, 90, 180, 270)
 	Translation *TranslationOffset `yaml:"translation,omitempty" json:"translation,omitempty"` // Optional manual translation override
-	ApiURL      *string            `yaml:"apiUrl,omitempty" json:"apiUrl,omitempty"`             // Optional API URL for fetching map data
+	ApiURL      *string            `yaml:"apiUrl,omitempty" json:"apiUrl,omitempty"`           // Optional API URL for fetching map data
 }
 
 // Config represents the full configuration file
@@ -191,9 +191,9 @@ type CalibrationData struct {
 func (c *CalibrationData) UnmarshalJSON(data []byte) error {
 	// Step 1: Unmarshal the envelope with raw vacuum entries.
 	var envelope struct {
-		ReferenceVacuum string                        `json:"referenceVacuum"`
-		Vacuums         map[string]json.RawMessage    `json:"vacuums"`
-		LastUpdated     int64                         `json:"lastUpdated"`
+		ReferenceVacuum string                     `json:"referenceVacuum"`
+		Vacuums         map[string]json.RawMessage `json:"vacuums"`
+		LastUpdated     int64                      `json:"lastUpdated"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return err
