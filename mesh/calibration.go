@@ -38,10 +38,10 @@ func SaveCalibration(path string, cal *CalibrationData) error {
 		return fmt.Errorf("creating calibration directory: %w", err)
 	}
 
-	// Update timestamp
+	cal.mu.Lock()
 	cal.LastUpdated = time.Now().Unix()
-
 	data, err := json.MarshalIndent(cal, "", "  ")
+	cal.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("marshaling calibration data: %w", err)
 	}
@@ -124,9 +124,11 @@ func SelectReferenceVacuum(maps map[string]*ValetudoMap, configs []VacuumConfig)
 // GetTransform retrieves the transformation matrix for a vacuum.
 // Returns identity if not found.
 func (c *CalibrationData) GetTransform(vacuumID string) AffineMatrix {
-	if c == nil || c.Vacuums == nil {
+	if c == nil {
 		return Identity()
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if vc, ok := c.Vacuums[vacuumID]; ok {
 		return vc.Transform
 	}
@@ -136,9 +138,11 @@ func (c *CalibrationData) GetTransform(vacuumID string) AffineMatrix {
 // GetVacuumCalibration retrieves the full per-vacuum calibration metadata.
 // Returns nil if the vacuum is not calibrated.
 func (c *CalibrationData) GetVacuumCalibration(vacuumID string) *VacuumCalibration {
-	if c == nil || c.Vacuums == nil {
+	if c == nil {
 		return nil
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if vc, ok := c.Vacuums[vacuumID]; ok {
 		return &vc
 	}
@@ -147,6 +151,8 @@ func (c *CalibrationData) GetVacuumCalibration(vacuumID string) *VacuumCalibrati
 
 // UpdateVacuumCalibration stores or replaces calibration metadata for a single vacuum.
 func (c *CalibrationData) UpdateVacuumCalibration(vacuumID string, cal VacuumCalibration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.Vacuums == nil {
 		c.Vacuums = make(map[string]VacuumCalibration)
 	}
@@ -165,10 +171,12 @@ func (c *CalibrationData) UpdateVacuumCalibration(vacuumID string, cal VacuumCal
 //
 // The minInterval acts as a debounce to avoid recalibrating too frequently.
 func (c *CalibrationData) ShouldRecalibrate(vacuumID string, newMapArea int, minInterval time.Duration) bool {
-	if c == nil || c.Vacuums == nil {
+	if c == nil {
 		return true
 	}
+	c.mu.RLock()
 	vc, ok := c.Vacuums[vacuumID]
+	c.mu.RUnlock()
 	if !ok || vc.LastUpdated == 0 {
 		return true // never calibrated
 	}
@@ -176,6 +184,37 @@ func (c *CalibrationData) ShouldRecalibrate(vacuumID string, newMapArea int, min
 		return true // map changed
 	}
 	return time.Since(time.Unix(vc.LastUpdated, 0)) > minInterval
+}
+
+// Reference returns the reference vacuum id.
+func (c *CalibrationData) Reference() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ReferenceVacuum
+}
+
+// SetReference sets the reference vacuum id.
+func (c *CalibrationData) SetReference(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ReferenceVacuum = id
+}
+
+// Transforms returns a copy of every stored transform, keyed by vacuum id.
+func (c *CalibrationData) Transforms() map[string]AffineMatrix {
+	out := make(map[string]AffineMatrix)
+	if c == nil {
+		return out
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for id, vc := range c.Vacuums {
+		out[id] = vc.Transform
+	}
+	return out
 }
 
 // TransformPosition transforms a vacuum's local position to world coordinates
@@ -203,6 +242,8 @@ func (c *CalibrationData) GetStatus(expectedVacuums []string) CalibrationStatus 
 		return status
 	}
 
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	status.ReferenceVacuum = c.ReferenceVacuum
 	status.LastUpdated = time.Unix(c.LastUpdated, 0)
 
@@ -223,7 +264,12 @@ func (c *CalibrationData) GetStatus(expectedVacuums []string) CalibrationStatus 
 
 // NeedsRecalibration checks if calibration should be refreshed
 func (c *CalibrationData) NeedsRecalibration(maxAge time.Duration) bool {
-	if c == nil || c.LastUpdated == 0 {
+	if c == nil {
+		return true
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.LastUpdated == 0 {
 		return true
 	}
 	return time.Since(time.Unix(c.LastUpdated, 0)) > maxAge

@@ -430,3 +430,39 @@ func TestVacuumIDFromExport(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadServiceCalibration(t *testing.T) {
+	dir := t.TempDir()
+
+	missing := loadServiceCalibration(filepath.Join(dir, "none.json"))
+	if missing == nil || missing.Vacuums == nil {
+		t.Fatal("missing cache should give an empty, usable cache")
+	}
+
+	bad := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(bad, []byte("{not json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if c := loadServiceCalibration(bad); c == nil || c.Vacuums == nil {
+		t.Fatal("unreadable cache should give an empty, usable cache")
+	}
+
+	good := filepath.Join(dir, "good.json")
+	saved := &mesh.CalibrationData{ReferenceVacuum: "ref", Vacuums: map[string]mesh.VacuumCalibration{
+		"v": {Transform: mesh.Translation(3, 4)},
+	}}
+	if err := mesh.SaveCalibration(good, saved); err != nil {
+		t.Fatal(err)
+	}
+	loaded := loadServiceCalibration(good)
+	if loaded.Reference() != "ref" || loaded.GetTransform("v").Tx != 3 {
+		t.Errorf("loaded cache = %+v", loaded.Transforms())
+	}
+
+	// Updates made through the shared pointer (as the auto-calibrator does)
+	// are visible to readers holding the same pointer (HTTP, MQTT handlers).
+	missing.UpdateVacuumCalibration("w", mesh.VacuumCalibration{Transform: mesh.Translation(7, 0)})
+	if missing.GetTransform("w").Tx != 7 {
+		t.Error("update not visible through shared cache")
+	}
+}

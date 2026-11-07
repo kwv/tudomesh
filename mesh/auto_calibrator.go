@@ -26,8 +26,12 @@ type AutoCalibrator struct {
 	dataDir      string
 	stateTracker *StateTracker
 
+	// mu guards lastCalibrated, inFlight and cache-file writes. It is never
+	// held during network fetches or alignment, so one slow robot does not
+	// delay the others. cache has its own lock.
 	mu             sync.Mutex
 	lastCalibrated map[string]time.Time
+	inFlight       map[string]bool
 }
 
 // NewAutoCalibrator creates an AutoCalibrator ready to handle docking events.
@@ -44,46 +48,21 @@ func NewAutoCalibrator(config *Config, cache *CalibrationData, cachePath string,
 		dataDir:        dataDir,
 		stateTracker:   st,
 		lastCalibrated: make(map[string]time.Time),
+		inFlight:       make(map[string]bool),
 	}
 }
 
 // OnDockingEvent is the DockingHandler callback registered with the MQTT client.
 // It is safe to call from any goroutine.
 func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
-	ac.mu.Lock()
-	defer ac.mu.Unlock()
-
 	log.Printf("[AUTO-CAL] Docking event received for %s", vacuumID)
-
-	// --- Step 1: Debounce ---
-	if last, ok := ac.lastCalibrated[vacuumID]; ok {
-		if time.Since(last) < DefaultMinCalibrationInterval {
-			log.Printf("[AUTO-CAL] %s: skipping, last calibrated %s ago (min interval %s)",
-				vacuumID, time.Since(last).Round(time.Second), DefaultMinCalibrationInterval)
-			return
-		}
-	}
-
-	// Also check the cache-level debounce (covers restarts).
-	// We pass 0 for newMapArea here because we haven't fetched the map yet;
-	// ShouldRecalibrate will still fire on time-based expiry or missing entry.
-	if !ac.cache.ShouldRecalibrate(vacuumID, ac.cachedMapArea(vacuumID), DefaultMinCalibrationInterval) {
-		log.Printf("[AUTO-CAL] %s: skipping, cache says recalibration not needed", vacuumID)
+	vc, ok := ac.begin(vacuumID)
+	if !ok {
 		return
 	}
+	defer ac.finish(vacuumID)
 
-	// --- Step 2: Look up vacuum config for API URL ---
-	vc := ac.config.GetVacuumByID(vacuumID)
-	if vc == nil {
-		log.Printf("[AUTO-CAL] %s: vacuum not found in config, skipping", vacuumID)
-		return
-	}
-	if vc.ApiURL == nil || *vc.ApiURL == "" {
-		log.Printf("[AUTO-CAL] %s: no apiUrl configured, skipping auto-calibration", vacuumID)
-		return
-	}
-
-	// --- Step 3: Fetch fresh map from the robot's HTTP API ---
+	// --- Fetch fresh map from the robot's HTTP API ---
 	log.Printf("[AUTO-CAL] %s: fetching map from %s", vacuumID, *vc.ApiURL)
 	freshMap, err := FetchMapFromAPI(*vc.ApiURL)
 	if err != nil {
@@ -104,7 +83,7 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 		}
 	}
 
-	// --- Step 4: Validate map completeness ---
+	// --- Validate map completeness ---
 	if err := ValidateMapForCalibration(freshMap); err != nil {
 		log.Printf("[AUTO-CAL] %s: map validation failed: %v (preserving existing calibration)", vacuumID, err)
 		return
@@ -115,7 +94,7 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 	// Update the state tracker with the fresh map so it is available for rendering.
 	ac.stateTracker.UpdateMap(vacuumID, freshMap)
 
-	// --- Step 5: Determine reference vacuum ---
+	// --- Determine reference vacuum ---
 	referenceID := ac.resolveReference()
 	if referenceID == "" {
 		log.Printf("[AUTO-CAL] %s: no reference vacuum available, skipping", vacuumID)
@@ -134,7 +113,7 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 		return
 	}
 
-	// --- Step 6: Get reference map ---
+	// --- Get reference map ---
 	allMaps := ac.stateTracker.GetMaps()
 	refMap, ok := allMaps[referenceID]
 	if !ok {
@@ -142,7 +121,7 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 		return
 	}
 
-	// --- Step 7: Align against the reference ---
+	// --- Align against the reference ---
 	var result Alignment
 	var aligned bool
 	if vc.Rotation != nil {
@@ -166,8 +145,8 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 			vacuumID, vc.Translation.X, vc.Translation.Y)
 	}
 
-	// --- Step 8: Update cache ---
-	ac.cache.ReferenceVacuum = referenceID
+	// --- Update cache ---
+	ac.cache.SetReference(referenceID)
 	ac.cache.UpdateVacuumCalibration(vacuumID, VacuumCalibration{
 		Transform:            transform,
 		LastUpdated:          time.Now().Unix(),
@@ -177,10 +156,48 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 	ac.persistAndRecord(vacuumID)
 }
 
-// GetCache returns the current calibration data (for use by the app layer).
-func (ac *AutoCalibrator) GetCache() *CalibrationData {
+// begin runs the cheap checks under the lock (debounce, already running,
+// config) and marks the vacuum in flight. ok is false if it should be skipped.
+func (ac *AutoCalibrator) begin(vacuumID string) (*VacuumConfig, bool) {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
+
+	if ac.inFlight[vacuumID] {
+		log.Printf("[AUTO-CAL] %s: calibration already in progress, skipping", vacuumID)
+		return nil, false
+	}
+	if last, ok := ac.lastCalibrated[vacuumID]; ok && time.Since(last) < DefaultMinCalibrationInterval {
+		log.Printf("[AUTO-CAL] %s: skipping, last calibrated %s ago (min interval %s)",
+			vacuumID, time.Since(last).Round(time.Second), DefaultMinCalibrationInterval)
+		return nil, false
+	}
+	// Cache-level debounce covers restarts. The map area is not known until
+	// the map is fetched, so this fires on time-based expiry or a missing entry.
+	if !ac.cache.ShouldRecalibrate(vacuumID, ac.cachedMapArea(vacuumID), DefaultMinCalibrationInterval) {
+		log.Printf("[AUTO-CAL] %s: skipping, cache says recalibration not needed", vacuumID)
+		return nil, false
+	}
+	vc := ac.config.GetVacuumByID(vacuumID)
+	if vc == nil {
+		log.Printf("[AUTO-CAL] %s: vacuum not found in config, skipping", vacuumID)
+		return nil, false
+	}
+	if vc.ApiURL == nil || *vc.ApiURL == "" {
+		log.Printf("[AUTO-CAL] %s: no apiUrl configured, skipping auto-calibration", vacuumID)
+		return nil, false
+	}
+	ac.inFlight[vacuumID] = true
+	return vc, true
+}
+
+func (ac *AutoCalibrator) finish(vacuumID string) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	delete(ac.inFlight, vacuumID)
+}
+
+// GetCache returns the shared calibration data.
+func (ac *AutoCalibrator) GetCache() *CalibrationData {
 	return ac.cache
 }
 
@@ -191,8 +208,8 @@ func (ac *AutoCalibrator) resolveReference() string {
 		return ref
 	}
 	// Priority 2: cache
-	if ac.cache != nil && ac.cache.ReferenceVacuum != "" {
-		return ac.cache.ReferenceVacuum
+	if ref := ac.cache.Reference(); ref != "" {
+		return ref
 	}
 	// Priority 3: auto-select from available maps
 	maps := ac.stateTracker.GetMaps()
@@ -215,6 +232,8 @@ func (ac *AutoCalibrator) cachedMapArea(vacuumID string) int {
 // persistAndRecord saves the calibration cache to disk and updates the in-memory
 // debounce timestamp.
 func (ac *AutoCalibrator) persistAndRecord(vacuumID string) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
 	if err := SaveCalibration(ac.cachePath, ac.cache); err != nil {
 		log.Printf("[AUTO-CAL] %s: failed to save calibration cache: %v", vacuumID, err)
 	} else {
@@ -229,5 +248,5 @@ func (ac *AutoCalibrator) String() string {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
 	return fmt.Sprintf("AutoCalibrator{cachePath=%s, vacuums=%d, lastCalibrated=%d}",
-		ac.cachePath, len(ac.cache.Vacuums), len(ac.lastCalibrated))
+		ac.cachePath, len(ac.cache.Transforms()), len(ac.lastCalibrated))
 }

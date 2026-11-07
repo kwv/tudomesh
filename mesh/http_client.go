@@ -11,7 +11,7 @@ import (
 
 const (
 	// DefaultFetchTimeout is the default HTTP request timeout for map fetches.
-	DefaultFetchTimeout = 30 * time.Second
+	DefaultFetchTimeout = 10 * time.Second
 
 	// DefaultMaxRetries is the default number of retry attempts.
 	DefaultMaxRetries = 3
