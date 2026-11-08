@@ -25,7 +25,6 @@ type App struct {
 	Calibration    *mesh.CalibrationData
 	StateTracker   *mesh.StateTracker
 	MQTTClient     *mesh.MQTTClient
-	Publisher      *mesh.Publisher
 	AutoCalibrator *mesh.AutoCalibrator
 
 	// CLI Flags (effectively dependencies)
@@ -218,6 +217,7 @@ func (a *App) RunRender() {
 			log.Printf("Warning: Failed to load config file %s: %v", a.ConfigFile, err)
 		} else {
 			log.Printf("Loaded config from %s", a.ConfigFile)
+			mesh.ResolveVacuums(config, filepath.Join(a.DataDir, vacuumIdentityCache), discoveryTimeout)
 		}
 	}
 
@@ -616,8 +616,9 @@ func (a *App) RunService() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v (looked at %s)", err, resolvedConfig)
 	}
-	a.Config = config
 	log.Printf("Loaded config from %s", resolvedConfig)
+	mesh.ResolveVacuums(config, filepath.Join(a.DataDir, vacuumIdentityCache), discoveryTimeout)
+	a.Config = config
 
 	// Check if data directory is writable (for cache and map persistence)
 	if err := a.checkWritability(a.DataDir); err != nil {
@@ -782,13 +783,6 @@ func (a *App) RunService() {
 			log.Printf("%s: pos(%.0f,%.0f) / pixelSize=%d -> grid(%.1f,%.1f) -> world(%.1f,%.1f,%.0f°)",
 				vacuumID, robotPos.X, robotPos.Y, mapData.PixelSize,
 				gridPos.X, gridPos.Y, gridX, gridY, worldAngle)
-
-			// Publish transformed position
-			if a.Publisher != nil {
-				if err := a.Publisher.PublishPosition(vacuumID, gridX, gridY, worldAngle); err != nil {
-					log.Printf("Error publishing position for %s: %v", vacuumID, err)
-				}
-			}
 		}
 
 		// Initialize MQTT client
@@ -801,10 +795,6 @@ func (a *App) RunService() {
 		if mqttClient == nil {
 			log.Fatal("MQTT broker not configured in config.yaml")
 		}
-
-		// Initialize publisher now that we have MQTT client
-		a.Publisher = mesh.NewPublisher(mqttClient.GetClient())
-		fmt.Println("MQTT position publisher initialized")
 
 		// Initialize auto-calibrator and register docking handler
 		a.AutoCalibrator = mesh.NewAutoCalibrator(config, cache, resolvedCache, a.DataDir, a.StateTracker)
@@ -837,12 +827,6 @@ func (a *App) RunService() {
 		for _, vc := range config.Vacuums {
 			fmt.Printf("    - %s (%s)\n", vc.Topic, vc.ID)
 		}
-		publishPrefix := config.MQTT.PublishPrefix
-		if publishPrefix == "" {
-			publishPrefix = "tudomesh"
-		}
-		fmt.Printf("  Publishing to: %s/{vacuumID}\n", publishPrefix)
-		fmt.Printf("  Combined positions: %s/positions\n", publishPrefix)
 	}
 
 	if a.HttpMode {
@@ -870,6 +854,13 @@ func (a *App) RunService() {
 	}
 	fmt.Println("Service stopped")
 }
+
+// vacuumIdentityCache (in the data dir) remembers what each robot's
+// Valetudo API reported, for robots that are offline at startup.
+const vacuumIdentityCache = ".vacuums.json"
+
+// discoveryTimeout bounds each robot's Valetudo API lookup at startup.
+const discoveryTimeout = 5 * time.Second
 
 // loadInitialMaps loads map JSON exports from the data directory
 func (a *App) loadInitialMaps(dataDir string) map[string]*mesh.ValetudoMap {

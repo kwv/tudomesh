@@ -82,7 +82,9 @@ func InitMQTT(config *Config, handler MessageHandler) (*MQTTClient, error) {
 		clientID = config.MQTT.ClientID
 	}
 	if clientID == "" {
-		clientID = "tudomesh"
+		// Unique per host/container so several instances can share a broker.
+		host, _ := os.Hostname()
+		clientID = "tudomesh-" + host
 	}
 	opts.SetClientID(clientID)
 

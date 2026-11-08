@@ -104,6 +104,7 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 	// If the docked vacuum IS the reference, we just need to update its entry.
 	if vacuumID == referenceID {
 		log.Printf("[AUTO-CAL] %s: is the reference vacuum, updating identity entry", vacuumID)
+		ac.cache.SetReference(vacuumID)
 		ac.cache.UpdateVacuumCalibration(vacuumID, VacuumCalibration{
 			Transform:            Identity(),
 			LastUpdated:          time.Now().Unix(),

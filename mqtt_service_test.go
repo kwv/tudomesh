@@ -22,7 +22,6 @@ func TestMQTTServiceConfigLoading(t *testing.T) {
 			name: "valid config",
 			configYAML: `mqtt:
   broker: "mqtt://localhost:1883"
-  publishPrefix: "tudomesh"
   clientId: "test-client"
 
 reference: TestVacuum1
@@ -38,23 +37,16 @@ vacuums:
 			shouldError: false,
 		},
 		{
-			name: "missing broker",
-			configYAML: `mqtt:
-  publishPrefix: "tudomesh"
-
-vacuums:
-  - id: TestVacuum1
-    topic: "test/vacuum1"
-    color: "#FF0000"
+			name: "url only (broker and ids discovered)",
+			configYAML: `vacuums:
+  - url: http://rocky.home
 `,
-			shouldError: true,
-			errorMsg:    "mqtt.broker is required",
+			shouldError: false,
 		},
 		{
 			name: "no vacuums defined",
 			configYAML: `mqtt:
   broker: "mqtt://localhost:1883"
-  publishPrefix: "tudomesh"
 
 vacuums: []
 `,
@@ -71,7 +63,7 @@ vacuums:
     color: "#FF0000"
 `,
 			shouldError: true,
-			errorMsg:    "id is required",
+			errorMsg:    "needs a url (or id and topic)",
 		},
 		{
 			name: "vacuum missing topic",
@@ -83,7 +75,7 @@ vacuums:
     color: "#FF0000"
 `,
 			shouldError: true,
-			errorMsg:    "topic is required",
+			errorMsg:    "needs a url (or id and topic)",
 		},
 	}
 

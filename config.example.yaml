@@ -1,111 +1,32 @@
-# TudoMesh Configuration - Example
-# Copy this file to config.yaml and customize for your setup
+# TudoMesh configuration - example
+# Copy to config.yaml in your data directory.
 
-mqtt:
-  broker: "mqtt://localhost:1883"
-  publishPrefix: "tudomesh"
-  clientId: "tudomesh"
-  # username: "mqtt_user"      # Optional MQTT authentication
-  # password: "mqtt_password"
-
-# Reference vacuum (optional)
-# - If not specified: auto-selected by largest totalLayerArea
-# - If specified: used as world coordinate origin
-# - Auto-computed transforms are cached in .calibration-cache.json
-reference: vacuum1  # Use vacuum1 as the reference coordinate system
-
-# Vector rendering options (optional)
-# gridSpacing: Grid line spacing in millimeters (default: 1000mm = 1m)
-# vectorResolution: DPI for vector-to-PNG rasterization (default: 300)
-# gridSpacing: 1000.0
-# vectorResolution: 300.0
-
-# Vacuum definitions
-# Each vacuum requires: id, topic, color
-# Optional fields:
-# - rotation: Rotation hint in degrees
-#   * Alignment searches only within ±20° of this angle
-#   * Only needed when --calibrate reports an ambiguous result (e.g. very
-#     symmetric layouts); otherwise the full search finds it on its own
-# - translation: Extra offset in map pixels {x, y}, applied after alignment
-#   * Rarely needed - for nudging a result by hand
-# - apiUrl: REST API URL for fetching the vacuum's full map data (optional)
-#   * Required for auto-calibration on docking
-#   * Format: http://<vacuum-ip>/api/v2/robot/state/map
-#   * TudoMesh fetches the map via this URL when the vacuum docks
+# Each vacuum only needs its Valetudo URL. Its id (Valetudo systemId), MQTT
+# topics and map API are read from the robot at startup and remembered in
+# .vacuums.json for robots that are offline later.
 vacuums:
-  # Reference vacuum - no rotation or translation needed
-  - id: vacuum1
-    topic: valetudo/YourVacuumID/MapData/map-data
-    color: "#FF6B6B"
-    apiUrl: "http://192.168.1.100/api/v2/robot/state/map"
+  - url: http://vacuum1.local
+    color: "#43b0f1"            # optional; used by the composite views
+  - url: http://vacuum2.local
+    color: "#057dcd"
+  - url: http://192.168.1.102   # IPs work too
 
-  # Vacuum with rotation hint (recommended approach)
-  - id: vacuum2
-    topic: valetudo/AnotherVacuumID/MapData/map-data
-    color: "#4ECDC4"
-    rotation: 180  # search near 180°
-    apiUrl: "http://192.168.1.101/api/v2/robot/state/map"
+# Everything below is optional.
 
-  # Vacuum with full manual calibration (advanced/rare)
-  - id: vacuum3
-    topic: valetudo/ThirdVacuumID/MapData/map-data
-    color: "#45B7D1"
-    rotation: 270
-    translation:
-      x: 50
-      y: -100
-    apiUrl: "http://192.168.1.102/api/v2/robot/state/map"
+# mqtt:
+#   broker: mqtt://localhost:1883   # default: the broker the first robot uses
+#   clientId: tudomesh              # default: tudomesh-<hostname>
+#   username: mqtt_user
+#   password: mqtt_password
 
-# Calibration workflow:
-# 1. Each map is aligned to the reference by searching rotations and offsets
-#    for the best floor-on-floor / wall-on-wall overlap (no room names needed)
-# 2. Rotation hints in config narrow that search to ±20°
-# 3. Transforms are cached in .calibration-cache.json
-# 4. Config hints take precedence over the cache
-# 5. CLI --force-rotation fixes the rotation exactly and overrides everything
-#
-# Common patterns:
-#
-# 1. Auto-calibration (recommended):
-#    - Don't set rotation hints
-#    - Run: ./tudomesh --calibrate
-#    - Each vacuum reports method, rotation and confidence;
-#      confidence >= 1.25 means the orientation is unambiguous
-#
-# 2. With rotation hints (only if --calibrate reports "grid-ambiguous"):
-#    - Set the rotation hint in config.yaml
-#    - Alignment then searches near that angle only
-#
-# 3. CLI override (testing/troubleshooting):
-#    - ./tudomesh --render --force-rotation="vacuum2=180,vacuum3=270"
-#    - Overrides both config and cache
-#
-# 4. Manual nudge (rare):
-#    - Set rotation and translation in config.yaml
-#    - The translation is added on top of the aligned result
+# reference: FrugalLameLion   # vacuum id used as the world origin;
+#                             # default: the robot with the largest map
 
-# Auto-calibration on docking:
-#
-# When a vacuum docks (returns to charger), TudoMesh can automatically
-# recalibrate its coordinate transform. This keeps alignment accurate
-# as the vacuum's map evolves over time.
-#
-# Requirements:
-#   - apiUrl must be set for each vacuum you want auto-calibrated
-#   - The vacuum must publish state updates to its StatusStateAttribute topic
-#     (auto-derived from the MapData topic)
-#
-# How it works:
-#   1. TudoMesh subscribes to valetudo/{name}/StatusStateAttribute/status
-#      (derived automatically from the MapData topic)
-#   2. When a "docked" state is received, the docking handler fires
-#   3. TudoMesh checks if recalibration is needed (30-minute debounce)
-#   4. If needed, it fetches the full map via the vacuum's apiUrl
-#   5. The map is aligned against the reference vacuum
-#   6. The updated transform is saved to .calibration-cache.json
-#
-# State topic derivation:
-#   MapData topic:  valetudo/rocky7/MapData/map-data
-#   State topic:    valetudo/rocky7/StatusStateAttribute/status
-#   (The last two path segments are replaced automatically)
+# gridSpacing: 1000           # grid line spacing in map units
+
+# Per-vacuum overrides (rarely needed):
+#   id: name        # instead of the Valetudo systemId
+#   topic: ...      # instead of <topicPrefix>/<identifier>/MapData/map-data
+#   rotation: 180   # only if `tudomesh --calibrate` reports "grid-ambiguous";
+#                   # alignment then searches within ±20° of this angle
+#   translation: {x: 50, y: -100}   # extra offset in map pixels after alignment

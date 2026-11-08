@@ -23,7 +23,6 @@ func TestMQTTServiceStartupShutdown(t *testing.T) {
 	// Create test config
 	configYAML := `mqtt:
   broker: "mqtt://localhost:1883"
-  publishPrefix: "tudomesh-test"
   clientId: "tudomesh-test"
 
 reference: TestVacuum1
@@ -138,7 +137,6 @@ func TestMQTTServiceSignalHandling(t *testing.T) {
 	tmpDir := t.TempDir()
 	configYAML := `mqtt:
   broker: "mqtt://localhost:1883"
-  publishPrefix: "tudomesh-test"
 
 vacuums:
   - id: TestVacuum

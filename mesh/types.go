@@ -108,11 +108,14 @@ type TranslationOffset struct {
 	Y float64 `yaml:"y" json:"y"`
 }
 
-// VacuumConfig defines a vacuum from config file
+// VacuumConfig defines a vacuum from config file. Usually only URL (and
+// optionally Color) is set; ResolveVacuums fills ID, Topic and ApiURL from
+// the robot's Valetudo API.
 type VacuumConfig struct {
-	ID          string             `yaml:"id" json:"id"`
-	Topic       string             `yaml:"topic" json:"topic"`
-	Color       string             `yaml:"color" json:"color"`
+	URL         string             `yaml:"url,omitempty" json:"url,omitempty"` // Valetudo base URL, e.g. http://rocky.home
+	ID          string             `yaml:"id,omitempty" json:"id,omitempty"`   // default: Valetudo systemId
+	Topic       string             `yaml:"topic,omitempty" json:"topic,omitempty"`
+	Color       string             `yaml:"color,omitempty" json:"color,omitempty"`
 	Rotation    *float64           `yaml:"rotation,omitempty" json:"rotation,omitempty"`       // Optional rotation hint/override (0, 90, 180, 270)
 	Translation *TranslationOffset `yaml:"translation,omitempty" json:"translation,omitempty"` // Optional manual translation override
 	ApiURL      *string            `yaml:"apiUrl,omitempty" json:"apiUrl,omitempty"`           // Optional API URL for fetching map data
@@ -120,20 +123,18 @@ type VacuumConfig struct {
 
 // Config represents the full configuration file
 type Config struct {
-	MQTT             MQTTConfig     `yaml:"mqtt" json:"mqtt"`
-	Reference        string         `yaml:"reference,omitempty" json:"reference,omitempty"` // Optional reference vacuum ID
-	Vacuums          []VacuumConfig `yaml:"vacuums" json:"vacuums"`
-	GridSpacing      float64        `yaml:"gridSpacing,omitempty" json:"gridSpacing,omitempty"`           // Grid line spacing in mm (default 1000)
-	VectorResolution float64        `yaml:"vectorResolution,omitempty" json:"vectorResolution,omitempty"` // Vector PNG DPI (default 300)
+	MQTT        MQTTConfig     `yaml:"mqtt" json:"mqtt"`
+	Reference   string         `yaml:"reference,omitempty" json:"reference,omitempty"` // Optional reference vacuum ID
+	Vacuums     []VacuumConfig `yaml:"vacuums" json:"vacuums"`
+	GridSpacing float64        `yaml:"gridSpacing,omitempty" json:"gridSpacing,omitempty"` // Grid line spacing in mm (default 1000)
 }
 
 // MQTTConfig holds MQTT connection settings
 type MQTTConfig struct {
-	Broker        string `yaml:"broker" json:"broker"`
-	PublishPrefix string `yaml:"publishPrefix" json:"publishPrefix"`
-	ClientID      string `yaml:"clientId" json:"clientId"`
-	Username      string `yaml:"username,omitempty" json:"username,omitempty"`
-	Password      string `yaml:"password,omitempty" json:"password,omitempty"`
+	Broker   string `yaml:"broker,omitempty" json:"broker,omitempty"`     // default: the broker the robots use
+	ClientID string `yaml:"clientId,omitempty" json:"clientId,omitempty"` // default: tudomesh-<hostname>
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
 }
 
 // GetVacuumByID returns the vacuum config for the given ID
