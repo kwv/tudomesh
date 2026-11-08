@@ -4,7 +4,6 @@ go 1.26.0
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
-	github.com/paulmach/orb v0.14.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/image v0.47.0
 	gopkg.in/yaml.v3 v3.0.1

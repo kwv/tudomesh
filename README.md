@@ -1,62 +1,80 @@
 # TudoMesh
 
-Combines multiple Valetudo vacuum robot maps into a single unified coordinate system and serves the result over HTTP, including per-robot endpoints for "where is my stuck vacuum?" alerts. Supports both CLI batch processing and real-time MQTT integration.
+Combines the maps of several Valetudo vacuum robots into one coordinate system and serves the result over HTTP: a live map with every robot's position, color-coded composite maps for checking alignment, and per-robot endpoints for "where is my stuck vacuum?" alerts. Runs as a live MQTT service or as a one-shot CLI over exported map files.
 
 ## Features
 
-- **Automatic Map Alignment**: Searches every rotation and offset for the placement where floor lands on floor and wall on wall. Uses map geometry only (no room names needed), gives the same answer every run, and reports a confidence score. Same-named rooms break ties for very symmetric layouts; a `rotation` hint in config narrows the search.
-- **Stuck-Vacuum Alerts**: `/vacuum/{id}` reports which room a robot is in and its last status; `/vacuum/{id}.png` returns the map with that robot circled. See [Alerts with Node-RED](#alerts-with-node-red).
-- **Smart Persistence**:
-  - **Auto-Cache**: Automatically saves full maps received via MQTT to disk.
-  - **Transform Cache**: Stores alignment results in `.calibration-cache.json` for instant startups.
-- **Real-time MQTT**: Follows each robot's map and status topics and transforms positions as they arrive.
-- **Minimal Config**: List each robot's Valetudo URL; its id, MQTT topics and broker are read from the robot.
-- **Live Visualization**: Serves a live SVG map with real-time vacuum positions via HTTP. The homepage auto-refreshes to show current robot locations on a unified floorplan.
-- **Unified Map**: Builds a consensus map by clustering and merging wall, floor, and segment observations from all vacuums. Features observed by multiple robots receive higher confidence scores, producing a more accurate and complete floorplan than any single vacuum could provide.
-- **Auto-Calibration on Docking**: Automatically recalibrates vacuum alignment when a robot returns to its charger.
+- **Automatic map alignment**: Searches every rotation and offset for the placement where floor lands on floor and wall on wall. Uses map geometry only (no room names needed), gives the same answer every run, and reports a confidence score. Same-named rooms break ties for very symmetric layouts; a `rotation` hint in config narrows the search.
+- **Stuck-vacuum alerts**: `/vacuum/{id}` reports which room a robot is in and its last status; `/vacuum/{id}.png` returns the map with that robot circled. See [Alerts with Node-RED](#alerts-with-node-red).
+- **Live positions over MQTT**: Follows each robot's map and status topics and places it on the shared map as it moves.
+- **Auto-calibration on docking**: When a robot docks, TudoMesh fetches its full map, realigns it, and saves both the map and the transform. See [Auto-Calibration](#auto-calibration).
+- **Fast restarts**: Alignment results are cached in `.calibration-cache.json`, and maps fetched from the robots are saved to the data directory, so the floorplan is back as soon as the service starts.
+- **Minimal config**: List each robot's Valetudo URL; its id, MQTT topics and broker are read from the robot.
+- **Structured SVG**: Every room and robot in the SVG maps is its own element with stable ids, so maps can be restyled with CSS or scripted. See [SVG Structure](#svg-structure).
 
-## Auto-Calibration
+## Installation
 
-TudoMesh can automatically keep vacuum alignment up to date without manual intervention. When a vacuum finishes cleaning and docks at its charger, TudoMesh detects the state change and recalibrates the coordinate transform.
+### Docker (recommended)
 
-### How It Works
+```bash
+docker run -d -p 8080:8080 -v /your/local/path:/data kwv4/tudomesh
+```
 
-1. **Docking Detection**: TudoMesh subscribes to each vacuum's `StatusStateAttribute/status` MQTT topic (derived automatically from the MapData topic). When the state changes to `docked`, the calibration handler fires.
+The image runs `--http --mqtt --data-dir=/data` by default and listens on port 8080. Put your `config.yaml` in the mounted directory (see [Configuration](#configuration)). The container runs as UID `65532`, which needs write access to that directory:
 
-2. **Debounce (30 minutes)**: To avoid excessive recalibration, TudoMesh skips recalibration if the last calibration for that vacuum was less than 30 minutes ago and the map area has not changed.
+```bash
+sudo chown -R 65532:65532 /your/local/path
+```
 
-3. **Map Fetch**: TudoMesh fetches the vacuum's full map via its REST API (`<url>/api/v2/robot/state/map`). This provides a complete, high-quality map for alignment.
+[`docker-compose.yml`](docker-compose.yml) starts TudoMesh together with a Mosquitto broker.
 
-4. **Alignment**: The fetched map is aligned against the reference vacuum using the same grid search used in batch calibration. The resulting affine transform is stored.
+### Build from source
 
-5. **Cache Update**: The updated transform is written to `.calibration-cache.json` so it persists across restarts.
+Requires Go 1.26 or later.
 
-### Configuration
+```bash
+git clone https://github.com/kwv/tudomesh.git
+cd tudomesh
+make build   # builds ./tudomesh
+make test
+```
 
-Set the MQTT broker, and list each vacuum by its Valetudo URL:
+### Requirements
+
+- Valetudo robots with MQTT enabled
+- An MQTT broker the robots publish to (see [Setting up Mosquitto](#setting-up-mosquitto) if you don't have one)
+
+## Configuration
+
+TudoMesh reads `config.yaml` from its data directory (`--data-dir`). Set the MQTT broker and list each robot by its Valetudo URL:
 
 ```yaml
 mqtt:
   broker: mqtt://mqtt.home:1883
 vacuums:
   - url: http://rockette.home
-    color: "#43b0f1"   # optional
+    color: "#43b0f1"   # optional; used by the composite views
   - url: http://rocky7.home
 ```
 
 At startup TudoMesh asks each robot's Valetudo API for the rest:
 
-| Value | Source | Override in config |
+| Value | Source | Override |
 |---|---|---|
-| Vacuum id | `systemId` from `/api/v2/valetudo` | `id` |
-| MQTT map topic | `<topicPrefix>/<identifier>/MapData/map-data` from the robot's MQTT settings | `topic` |
-| Map API for auto-calibration | `<url>/api/v2/robot/state/map` | `apiUrl` |
-| MQTT broker | `mqtt.broker`; if unset, the broker the first reachable robot uses | `MQTT_BROKER` |
+| Vacuum id | `systemId` from `/api/v2/valetudo` | `id` in config |
+| MQTT map topic | `<topicPrefix>/<identifier>/MapData/map-data` from the robot's MQTT settings | `topic` in config |
+| Map API for auto-calibration | `<url>/api/v2/robot/state/map` | `apiUrl` in config |
+| MQTT broker | `mqtt.broker`; if unset, the broker the first reachable robot uses | `MQTT_BROKER` env var |
 | MQTT client id | `tudomesh-<hostname>` | `mqtt.clientId` or `MQTT_CLIENT_ID` |
+| MQTT credentials | none | `mqtt.username` / `mqtt.password` or `MQTT_USERNAME` / `MQTT_PASSWORD` |
+
+Environment variables take precedence over `config.yaml`.
 
 What each robot reports is saved to `.vacuums.json` in the data directory, so a robot that is offline at startup still resolves. With nothing saved, the URL's host name is used as the robot's name and id (`http://rocky6.home` → `rocky6`); once the robot answers, the id becomes its `systemId`, so delete any `ValetudoMapExport-rocky6.json` saved under the guessed id. Older configs that set `id`, `topic` and `apiUrl` keep working.
 
-### One Instance per Floor
+[`config.example.yaml`](config.example.yaml) lists the remaining options: `reference` (the robot used as the world origin; default is the one with the largest map), `gridSpacing`, and per-vacuum `rotation` and `translation` overrides.
+
+### One instance per floor
 
 Robots on different floors share no map, so run one TudoMesh per floor, each with its own data directory and port. A robot alone on a floor works fine on its own: it becomes its own reference and every endpoint serves its map.
 
@@ -69,437 +87,81 @@ vacuums:
 ```
 
 ```bash
-docker run -d -p 4041:8080 -v /srv/tudomesh-basement:/data kwv4/tudomesh --mqtt --http --data-dir /data
+docker run -d -p 4041:8080 -v /srv/tudomesh-basement:/data kwv4/tudomesh
 ```
 
 Each instance gets a unique MQTT client id from its container's host name, and the instances know nothing about each other. To find a robot, call `/vacuum/{id}` on each instance until one answers.
 
-### State Topic Derivation
-
-The state topic is derived automatically from the MapData topic by replacing the last two path segments:
-
-| MapData topic | State topic |
-|---|---|
-| `valetudo/vacuum1/MapData/map-data` | `valetudo/vacuum1/StatusStateAttribute/status` |
-| `home/floor1/valetudo/dusty/MapData/map-data` | `home/floor1/valetudo/dusty/StatusStateAttribute/status` |
-
-Topics with fewer than 4 path segments cannot derive a state topic and will not support docking detection.
-
-## Installation
-
-### Prerequisites
-
-- Go 1.22 or later
-- MQTT broker (Mosquitto recommended)
-- Valetudo-enabled vacuum robots
-
-### Build from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/kwv/tudomesh.git
-cd tudomesh
-
-# Build binary
-make build
-
-# Run tests
-make test
-```
-
-### Docker (Recommended)
-
-
-```bash
-docker pull kwv4/tudomesh:latest
-
-# Run with a unified data directory
-docker run -v /your/local/path:/data \
-  kwv4/tudomesh \
-  --mqtt --http --data-dir /data
-```
-
-## Local Setup
-
-### Install MQTT Broker (Mosquitto)
-
-TudoMesh requires an MQTT broker to receive robot data. Mosquitto is recommended for local setups.
-
-**Ubuntu/Debian:**
-
-```bash
-sudo apt-get update
-sudo apt-get install mosquitto mosquitto-clients
-sudo systemctl start mosquitto
-sudo systemctl enable mosquitto
-```
-
-**macOS:**
-
-```bash
-brew install mosquitto
-brew services start mosquitto
-```
-
-**Docker:**
-
-```bash
-docker run -d --name mosquitto -p 1883:1883 eclipse-mosquitto:latest
-```
-
-### Configure Mosquitto (Optional)
-
-Default config allows anonymous connections to localhost. To enable authentication or configure listeners, edit `/etc/mosquitto/mosquitto.conf` (Linux) or `/opt/homebrew/etc/mosquitto/mosquitto.conf` (macOS).
-
-Basic config for local development (allows all connections on port 1883):
-
-```
-listener 1883
-protocol mqtt
-allow_anonymous true
-```
-
-Then restart:
-
-```bash
-# Linux
-sudo systemctl restart mosquitto
-
-# macOS
-brew services restart mosquitto
-```
-
-### Test MQTT Connection
-
-Verify your broker is accessible:
-
-```bash
-# Subscribe to test topic (in one terminal)
-mosquitto_sub -h localhost -p 1883 -t 'test/topic'
-
-# Publish a message (in another terminal)
-mosquitto_pub -h localhost -p 1883 -t 'test/topic' -m 'Hello'
-
-# You should see "Hello" appear in the first terminal
-```
-
-### Verify Vacuum Topics
-
-Check that your robots are publishing to the expected topics:
-
-```bash
-# Listen to all vacuum topics
-mosquitto_sub -h localhost -p 1883 -t 'valetudo/+/MapData/map-data'
-
-# Run a clean on your robot and watch for incoming messages
-```
-
 ## Quick Start
 
-### 1. Unified Data Directory
-
-TudoMesh works best when you give it a single "workspace" directory. Place your `config.yaml` here.
-
-```bash
-mkdir -p ./tudomesh-data
-cp config.example.yaml ./tudomesh-data/config.yaml
-```
-
-### 2. Configure Your Robots
-
-Edit `config.yaml`: set the MQTT broker and list each robot's Valetudo URL (see [Configuration](#configuration)):
-
-```yaml
-mqtt:
-  broker: mqtt://localhost:1883
-vacuums:
-  - url: http://vacuum1.local
-    color: "#43b0f1"
-  - url: http://vacuum2.local
-    color: "#057dcd"
-```
-
-### 3. Generate Composite Map (CLI Mode)
-
-If you have exported Valetudo JSON files, place them in your data directory.
-
-```bash
-# Process files and generate composite-map.png
-./tudomesh --data-dir ./tudomesh-data --render
-
-# Compare all 4 rotation options visually if alignment looks off
-./tudomesh --data-dir ./tudomesh-data --compare-rotation=vacuum2
-```
-
-### 4. Run MQTT Service
-
-```bash
-# Start the live transformation service
-./tudomesh --data-dir ./tudomesh-data --mqtt --http --http-port 4040
-```
-
-## Validation Workflow
-
-Follow these steps to validate your setup is working end-to-end:
-
-### 1. Start MQTT Broker
-
-```bash
-# Verify Mosquitto is running (check port 1883)
-netstat -an | grep 1883
-
-# Or use Docker
-docker run -d --name mosquitto -p 1883:1883 eclipse-mosquitto:latest
-```
-
-### 2. Configure TudoMesh
-
-Create `tudomesh-data/config.yaml`:
-
-```yaml
-mqtt:
-  broker: mqtt://localhost:1883
-vacuums:
-  - url: http://vacuum1.local
-  - url: http://vacuum2.local
-```
-
-### 3. Build TudoMesh
-
-```bash
-cd tudomesh
-make build
-```
-
-### 4. Run Service
-
-```bash
-./tudomesh --data-dir ./tudomesh-data --mqtt --http --http-port 4040
-```
-
-You should see output like:
-
-```
-tudomesh version: dev
-Starting tudomesh service...
-
-Service Running
-===============
-
-MQTT:
-  Subscribed topics:
-    - valetudo/vacuum1/MapData/map-data (vacuum1)
-    - valetudo/vacuum2/MapData/map-data (vacuum2)
-
-HTTP endpoints (port 4040):
-  GET /                - Homepage (embeds live SVG map)
-  GET /health          - Health check
-  GET /live.svg        - Live greyscale map with vacuum positions (SVG)
-  GET /composite-map.png - Color-coded composite map
-  GET /live.png        - Greyscale floor plan with live positions
-  GET /composite-map.svg - Color-coded composite map (SVG)
-  GET /floorplan.svg   - Greyscale floor plan (SVG)
-
-Press Ctrl+C to stop
-```
-
-### 5. View Live Map
-
-Open `http://localhost:4040/` in a browser. The homepage embeds the live SVG map, which shows the unified floorplan with real-time vacuum positions. Each vacuum appears as a colored circle with its ID label.
-
-### 6. Test Endpoints (SVG)
-
-```bash
-# Live SVG with vacuum positions (primary live view)
-curl http://localhost:4040/live.svg > live.svg
-
-# Composite SVG (color-coded by vacuum)
-curl http://localhost:4040/composite-map.svg > composite.svg
-
-# Floorplan SVG (greyscale, no positions)
-curl http://localhost:4040/floorplan.svg > floorplan.svg
-
-# View in browser
-open live.svg
-```
-
-### 7. Test Endpoints (PNG)
-
-```bash
-# Health check
-curl http://localhost:4040/health
-
-# Composite PNG (color-coded)
-curl http://localhost:4040/composite-map.png > composite.png
-
-# Live PNG with robot positions
-curl http://localhost:4040/live.png > live.png
-```
-
-### 8. Verify Calibration Cache
-
-After the first render or when robots send data, check the cache:
-
-```bash
-cat tudomesh-data/.calibration-cache.json
-```
-
-Expected output (example):
-
-```json
-{
-  "reference_vacuum": "vacuum1",
-  "vacuums": {
-    "vacuum1": {
-      "a": 1.0,
-      "b": 0.0,
-      "c": 0.0,
-      "d": 1.0,
-      "tx": 0.0,
-      "ty": 0.0
-    },
-    "vacuum2": {
-      "a": 0.999,
-      "b": -0.045,
-      "c": 0.045,
-      "d": 0.999,
-      "tx": -150.5,
-      "ty": 200.3
-    }
-  }
-}
-```
-
-### 9. Verify MQTT Subscriptions
-
-Monitor incoming position updates:
-
-```bash
-mosquitto_sub -h localhost -p 1883 -t 'tudomesh/+' | head -20
-```
-
-You should see JSON messages like:
-
-```json
-{"vacuum_id": "vacuum1", "x": 1234.5, "y": 5678.9, "angle": 45.0}
-```
-
-### Troubleshooting
-
-**No maps available error:**
-- Ensure robots are publishing to the configured MQTT topics
-- Check that maps are saved to the data directory
-- Verify MQTT broker is running: `netstat -an | grep 1883`
-
-**Cache not updating:**
-- Run `./tudomesh --data-dir ./tudomesh-data --calibrate` to force recalibration
-- Check file permissions on the data directory
-
-**Live SVG shows "No maps available":**
-- Ensure at least one vacuum has sent a full map via MQTT
-- Check that maps are cached in the data directory (they persist across restarts)
-- The `/live.svg` endpoint requires map data before it can render
-
-**Vector SVG endpoints 404:**
-- Use `GET /live.svg`, `GET /composite-map.svg`, or `GET /floorplan.svg` (`.svg` suffix required)
-
-**Auto-calibration not triggering:**
-- Verify the vacuum has a `url` in `config.yaml` (look for `Discovered <url>` in the startup logs)
-- Check that the vacuum's MapData topic has at least 4 path segments (e.g., `valetudo/name/MapData/map-data`) so the state topic can be derived
-- Look for `Subscribing to ... StatusStateAttribute/status` in the startup logs to confirm state topic subscription
-- Check that the vacuum actually reports `{"value":"docked"}` on its state topic: `mosquitto_sub -t 'valetudo/+/StatusStateAttribute/status'`
-
-**Auto-calibration triggers but transform is not changing:**
-- The 30-minute debounce prevents recalibration if the last run was recent and the map area has not changed
-- If the map area is identical, the debounce must expire before recalibration runs again
-- Force immediate recalibration with: `./tudomesh --data-dir ./tudomesh-data --calibrate`
-
-**API fetch failing during auto-calibration:**
-- Verify the map API is reachable from the TudoMesh host: `curl -H 'Accept: application/json' http://192.168.1.100/api/v2/robot/state/map`
-- Check for network/firewall issues between TudoMesh and the vacuum
-- TudoMesh retries failed fetches with exponential backoff (up to 3 attempts)
-
-### Docker Permission Denied
-If you see `failed to save calibration cache: ... permission denied` in the logs when running in Docker:
-
-The TudoMesh Docker image runs as a `nonroot` user (UID `65532`). If you mount a host directory to `/data`, you must ensure this user has write permissions on the host:
-
-```bash
-# On the host machine:
-sudo chown -R 65532:65532 /your/local/path
-```
-
-Without this, TudoMesh can read your `config.yaml` but cannot save the calibration cache or MQTT-received maps.
-
-## Service Features
-
-### Auto-Caching
-TudoMesh includes a "Lazy Persistence" system. If you start the service without local map files, it will use a grey background. As soon as a robot sends a "Full Map" via MQTT (e.g., when it finishes a clean or docks), TudoMesh will **automatically save that map** to your `--data-dir`. On next restart, your floorplan will load instantly from disk.
-
-### Robust Position Tracking
-Robots often send "Lightweight" position updates via MQTT (small packets without pixel data). TudoMesh intelligently merges these: it keeps your rich floorplan from the cache but updates the robot icon using the live lightweight movements.
-
-## Vector Rendering (SVG + PNG)
-
-TudoMesh supports vector rendering for scalable, resolution-independent maps. Render as SVG for web use, or convert to PNG with high DPI.
-
-### Render Formats
-
-Use `--format` to control output:
-
-```bash
-# Raster PNG only (default)
-./tudomesh --data-dir ./tudomesh-data --render --format=raster
-
-# Vector SVG only
-./tudomesh --data-dir ./tudomesh-data --render --format=vector
-
-# Both formats (generates .png and .svg)
-./tudomesh --data-dir ./tudomesh-data --render --format=both
-```
-
-### Vector Output
-
-`--format=vector` (or `both`) writes the composite as a structured SVG: every vacuum's map in its own colored group, aligned, with grid and chargers (same output as `/composite-map.svg`). SVG is the only vector format.
-
-### Grid Spacing
-
-Control the distance between grid lines (default: 1000mm = 1 meter):
-
-```bash
-# Render with 500mm grid spacing
-./tudomesh --data-dir ./tudomesh-data --render --grid-spacing=500
-
-# Render with 2000mm grid spacing
-./tudomesh --data-dir ./tudomesh-data --render --grid-spacing=2000
-```
+1. Create a data directory and config:
+
+   ```bash
+   mkdir -p ./tudomesh-data
+   cp config.example.yaml ./tudomesh-data/config.yaml
+   # edit: set mqtt.broker and your robots' URLs
+   ```
+
+2. Start the service:
+
+   ```bash
+   ./tudomesh --data-dir ./tudomesh-data --mqtt --http --http-port 4040
+   ```
+
+   You should see output like:
+
+   ```
+   tudomesh version: dev
+   Starting tudomesh service...
+   ...
+   Service Running
+   ===============
+
+   MQTT:
+     Subscribed topics:
+       - valetudo/rocky7/MapData/map-data (TrickyZanyPartridge)
+       - valetudo/rockette/MapData/map-data (FrugalLameLion)
+
+   HTTP endpoints (port 4040):
+     GET /                - Homepage (live SVG map)
+     GET /health          - Health check
+     GET /live.svg        - Live map with vacuum positions (SVG)
+     GET /live.png        - Live map with vacuum positions (PNG)
+     GET /composite-map.png - Color-coded composite map
+     GET /composite-map.svg - Color-coded composite map (SVG)
+     GET /floorplan.svg   - Greyscale floor plan (SVG)
+
+   Press Ctrl+C to stop
+   ```
+
+3. Open `http://localhost:4040/`. The homepage shows the live map; each robot appears as a colored circle with its name. Reload to update positions.
+
+4. Check alignment on `http://localhost:4040/composite-map.svg`, where each robot's map is drawn in its own color. If one is rotated wrongly, see [Troubleshooting](#troubleshooting).
+
+The map stays empty until each robot's full map is known: either from a `ValetudoMapExport-*.json` in the data directory or after the robot docks once (see [Auto-Calibration](#auto-calibration)).
 
 ## HTTP Endpoints
 
-### Homepage
+### Maps
 
-- `/` - HTML page embedding the live SVG map with auto-refresh
-
-### Live View
-
-- `/live.svg` - Greyscale unified floorplan with live vacuum positions (SVG). This is the primary live endpoint, used by the homepage. Structured for styling and scripting: each room and each vacuum is its own element with stable ids and `data-` attributes (see [Live SVG Structure](#live-svg-structure)).
-- `/live.png` - Greyscale floor plan with live position icons and legend (PNG)
-
-### Static Maps
-
-- `/health` - Service health check
-- `/composite-map.png` - Color-coded vacuum maps (PNG)
-- `/composite-map.svg` - Every vacuum's map overlaid in its own color, with chargers (SVG); use it to check alignment. Structured like the live SVG (see [Live SVG Structure](#live-svg-structure)).
+- `/` - HTML page showing the live SVG map
+- `/health` - Health check
+- `/live.svg` - Greyscale unified floorplan with live vacuum positions. The primary live view, structured for styling and scripting (see [SVG Structure](#svg-structure)).
+- `/live.png` - Greyscale floorplan with live position icons and legend
 - `/floorplan.svg` - The live SVG without vacuums
+- `/composite-map.svg` - Every vacuum's map overlaid in its own color, with chargers; use it to check alignment
+- `/composite-map.png` - The composite map as PNG
 
-### Per-Vacuum (Alerts)
+The map endpoints return `503 No maps available` until at least one map is loaded.
 
-`{id}` is the vacuum `id` from config (case-insensitive) or the identifier in its MQTT topic, e.g. `rocky7` for `valetudo/rocky7/MapData/map-data`.
+### Per-vacuum (alerts)
+
+`{id}` is the vacuum id (its Valetudo `systemId`, or `id` from config) or the identifier in its MQTT topic, e.g. `rocky7` for `valetudo/rocky7/MapData/map-data`. Matching is case-insensitive.
 
 - `/vacuums` - JSON list of every vacuum (same fields as below)
 - `/vacuum/{id}` - JSON: room, last Valetudo status, position on the shared map
 - `/vacuum/{id}.png` - Live map with the vacuum circled and a caption (`rocky7 | Kitchen | error`). `?scale=1..8` sets the size (default 3).
-- `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and its room tinted, when the base map has a room of the same name.
+- `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and its room tinted, when the base map has a room of the same name
 
 ```json
 {
@@ -515,7 +177,9 @@ Control the distance between grid lines (default: 1000mm = 1 meter):
 
 `room` comes from the robot's own map (the segment it is in, or the nearest one within ~50cm), so it is correct even before maps are aligned. Unnamed segments are reported as `segment <id>`. `state` requires `--mqtt`.
 
-### Live SVG Structure
+### SVG Structure
+
+`/live.svg`, `/floorplan.svg` and `/vacuum/{id}.svg`:
 
 ```text
 <svg>
@@ -538,7 +202,7 @@ Control the distance between grid lines (default: 1000mm = 1 meter):
 </svg>
 ```
 
-Example: embed `/live.svg` inline and flag any vacuum in an error state, or hide one robot:
+Example: embed `/live.svg` inline and flag any vacuum in an error state, hide one robot, or tint a room:
 
 ```css
 .vacuum.state-error .body { fill: #e61e1e; }
@@ -570,24 +234,156 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, or hide
 
 To use it: import the flow, set the `TUDOMESH_URL` environment variable on the flow (default `http://tudomesh:8080`), point the MQTT node at your broker, and replace the debug node with your notifier (Telegram, Pushover, Home Assistant, ...).
 
-## CLI Flags
+## Auto-Calibration
+
+TudoMesh keeps alignment up to date without manual work. When a robot finishes cleaning and docks, TudoMesh recalibrates its transform:
+
+1. **Docking detection**: TudoMesh subscribes to each robot's `StatusStateAttribute/status` topic (derived from its map topic, see below). When the state changes to `docked`, recalibration starts.
+2. **Debounce**: Skipped if that robot was calibrated less than 30 minutes ago and its map area has not changed.
+3. **Map fetch**: The full map is fetched from the robot's REST API (`<url>/api/v2/robot/state/map`), retried up to 3 times with backoff, and saved as `ValetudoMapExport-<id>.json` in the data directory.
+4. **Alignment**: The map is aligned against the reference robot with the same grid search as `--calibrate`.
+5. **Cache update**: The new transform is written to `.calibration-cache.json`.
+
+### State topic derivation
+
+The state topic replaces the last two segments of the map topic:
+
+| MapData topic | State topic |
+|---|---|
+| `valetudo/vacuum1/MapData/map-data` | `valetudo/vacuum1/StatusStateAttribute/status` |
+| `home/floor1/valetudo/dusty/MapData/map-data` | `home/floor1/valetudo/dusty/StatusStateAttribute/status` |
+
+Topics with fewer than 4 segments have no state topic, so those robots get no docking detection.
+
+### Calibration cache
+
+```bash
+cat tudomesh-data/.calibration-cache.json
+```
+
+```json
+{
+  "referenceVacuum": "FrugalLameLion",
+  "vacuums": {
+    "FrugalLameLion": {
+      "transform": { "a": 1, "b": 0, "tx": 0, "c": 0, "d": 1, "ty": 0 },
+      "lastUpdated": 1771094662,
+      "mapAreaAtCalibration": 912400
+    },
+    "AppropriateMinorAntelope": {
+      "transform": { "a": 0.9997, "b": -0.026, "tx": -1165.1, "c": 0.026, "d": 0.9997, "ty": -706.1 },
+      "lastUpdated": 1771094662,
+      "mapAreaAtCalibration": 850900
+    }
+  }
+}
+```
+
+Delete the file (or run `--calibrate`) to realign from scratch.
+
+## CLI Mode
+
+Without `--mqtt` or `--http`, TudoMesh works on the `ValetudoMapExport-*.json` files in the data directory and exits.
+
+```bash
+# Align the maps, print rotation and confidence per vacuum, write the calibration cache
+./tudomesh --data-dir ./tudomesh-data --calibrate
+
+# Render composite-map.png
+./tudomesh --data-dir ./tudomesh-data --render
+
+# Render SVG instead, or both (composite-map.png + composite-map.svg)
+./tudomesh --data-dir ./tudomesh-data --render --format=vector
+./tudomesh --data-dir ./tudomesh-data --render --format=both
+
+# Grid lines every 500mm instead of 1m
+./tudomesh --data-dir ./tudomesh-data --render --grid-spacing=500
+
+# Alignment looks wrong for one robot: render all 4 rotations to compare
+./tudomesh --data-dir ./tudomesh-data --compare-rotation=TrickyZanyPartridge
+```
+
+The vector output is the same structured SVG as `/composite-map.svg`.
+
+### Flags
 
 | Flag | Description |
 |------|-------------|
-| `--mqtt` | Enable MQTT service mode (live tracking) |
-| `--http` | Enable HTTP server for map visualization |
-| `--data-dir=DIR` | Base directory for config, maps, and cache (Recommended) |
-| `--config=FILE` | Configuration file path (default: config.yaml inside --data-dir) |
-| `--calibration-cache=FILE` | Calibration cache path (relative to --data-dir) |
-| `--render` | Batch mode: Render composite PNG from local files |
-| `--calibrate` | Batch mode: Align local files, report rotation/confidence per vacuum, write the calibration cache |
-| `--compare-rotation=ID` | Debug: Generate 4 rotation options for a vacuum |
-| `--force-rotation=ID=DEG` | Override: Manual rotation (0, 90, 180, 270) |
-| `--format=[raster\|vector\|both]` | Render format: raster PNG, vector SVG, or both (default: raster) |
-| `--vector-format=svg` | Vector output format (only svg) |
-| `--grid-spacing=MM` | Grid line spacing in millimeters (default: 1000mm) |
+| `--data-dir=DIR` | Directory for config, map exports and caches (default: current directory) |
+| `--config=FILE` | Config file (default: `config.yaml` in `--data-dir`) |
+| `--calibration-cache=FILE` | Calibration cache (default: `.calibration-cache.json` in `--data-dir`) |
+| `--mqtt` | Service mode: follow robots over MQTT |
+| `--http` | Service mode: serve the HTTP endpoints |
+| `--http-port=PORT` | HTTP port (default 8080) |
+| `--calibrate` | Align map exports, report rotation/confidence per vacuum, write the calibration cache |
+| `--render` | Render the composite map from map exports |
+| `--output=FILE` | Output file for `--render` (default `composite-map.png`) |
+| `--format=raster\|vector\|both` | Render format: PNG, SVG, or both (default `raster`) |
+| `--vector-format=svg` | Vector output format (only `svg`) |
+| `--grid-spacing=MM` | Grid line spacing in millimeters (default 1000) |
+| `--render-individual` | Render each vacuum's map as a separate PNG |
+| `--individual-rotation=ID=DEG` | Rotation for `--render-individual` |
+| `--compare-rotation=ID` | Render 4 rotation options for one vacuum |
+| `--force-rotation=ID=DEG` | Force a vacuum's rotation (0, 90, 180, 270) |
+| `--reference=ID` | Override the reference vacuum |
+| `--rotate-all=DEG` | Rotate the whole composite (0, 90, 180, 270) |
+| `--parse-only` | Print a summary of each map export and exit |
 
+## Setting up Mosquitto
 
+Skip this if your robots already publish to a broker.
+
+```bash
+# Docker
+docker run -d --name mosquitto -p 1883:1883 eclipse-mosquitto:latest
+
+# Ubuntu/Debian
+sudo apt-get install mosquitto mosquitto-clients
+sudo systemctl enable --now mosquitto
+
+# macOS
+brew install mosquitto
+brew services start mosquitto
+```
+
+Recent Mosquitto versions only accept local connections by default. To accept robots on your network without authentication, add to `/etc/mosquitto/mosquitto.conf` (Linux) or `/opt/homebrew/etc/mosquitto/mosquitto.conf` (macOS) and restart:
+
+```
+listener 1883
+allow_anonymous true
+```
+
+Check that your robots are publishing:
+
+```bash
+mosquitto_sub -h localhost -t 'valetudo/+/MapData/map-data' -C 1 | head -c 200
+mosquitto_sub -h localhost -t 'valetudo/+/StatusStateAttribute/status' -v
+```
+
+## Troubleshooting
+
+**"No MQTT broker configured" at startup:**
+- Set `mqtt.broker` in `config.yaml` or the `MQTT_BROKER` environment variable. Without either, TudoMesh can only learn the broker from a robot that answers at startup.
+
+**"No maps available" (503):**
+- No robot's full map is known yet. Wait for a robot to dock (see [Auto-Calibration](#auto-calibration)), or copy a Valetudo map export (`ValetudoMapExport-*.json`) into the data directory and restart.
+
+**A robot is misaligned:**
+- Run `./tudomesh --data-dir ./tudomesh-data --calibrate` and check its confidence. If it reports `grid-ambiguous`, set a `rotation` hint for that vacuum in `config.yaml` (see `--compare-rotation` to pick one).
+
+**Auto-calibration not triggering:**
+- Look for `Discovered <url>` in the startup logs to confirm the robot was reached
+- Look for `Subscribing to ... StatusStateAttribute/status`; if missing, the map topic has fewer than 4 segments
+- Check that the robot reports `docked`: `mosquitto_sub -t 'valetudo/+/StatusStateAttribute/status'`
+
+**Auto-calibration runs but the transform does not change:**
+- The 30-minute debounce skips recalibration while the map area is unchanged. Force it with `--calibrate`.
+
+**Map fetch failing during auto-calibration:**
+- Check the map API is reachable from the TudoMesh host: `curl -H 'Accept: application/json' http://<robot>/api/v2/robot/state/map`
+
+**`permission denied` saving the calibration cache (Docker):**
+- The container runs as UID `65532`. Run `sudo chown -R 65532:65532 /your/local/path` on the mounted directory. Without it TudoMesh can read `config.yaml` but cannot save caches or maps.
 
 ## License
 
