@@ -176,8 +176,8 @@ vacuums:
 	}()
 
 	select {
-	case <-done:
-		t.Log("Service shut down gracefully")
+	case err := <-done:
+		t.Logf("Service shut down gracefully (exit: %v)", err)
 	case <-time.After(5 * time.Second):
 		t.Error("Service did not shut down within timeout")
 		if err := cmd.Process.Kill(); err != nil {
