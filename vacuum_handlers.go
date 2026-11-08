@@ -162,20 +162,11 @@ func vacuumCaption(info vacuumInfo) string {
 // labelling every vacuum with its name, room and state. highlight is a
 // vacuum id or "".
 func writeLiveSVG(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.CalibrationData, config *mesh.Config, refID string, rotateAll float64, highlight string) {
-	maps := st.GetMaps()
-	if len(maps) == 0 {
-		http.Error(w, "No maps available", http.StatusServiceUnavailable)
+	vr, ok := newSVGRenderer(w, st, cache, config, refID, rotateAll)
+	if !ok {
 		return
 	}
-	effectiveRef := refID
-	if effectiveRef == "" {
-		effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
-	}
-	vr := mesh.NewVectorRenderer(maps, buildTransforms(maps, cache), effectiveRef)
-	vr.GlobalRotation = rotateAll
-	if config != nil && config.GridSpacing > 0 {
-		vr.Padding = config.GridSpacing / 2
-	}
+	maps := vr.Maps
 
 	positions := st.GetPositions()
 	vr.Meta = make(map[string]mesh.VacuumMeta, len(positions))

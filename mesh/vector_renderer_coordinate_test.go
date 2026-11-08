@@ -47,10 +47,12 @@ func TestVectorRendererCoordinateScale(t *testing.T) {
 		"map2": transform,
 	}
 
-	renderer := NewVectorRenderer(maps, transforms, "map1")
-
-	// Calculate world bounds - this should apply transform at pixel scale first
-	minX, minY, maxX, maxY, _, _ := renderer.calculateWorldBounds()
+	// Bounds must apply the transform in grid units, then scale by pixel size.
+	f := newSVGFrame(0, 0)
+	for id, m := range maps {
+		f.growMap(m, transforms[id])
+	}
+	minX, minY, maxX, maxY := f.minX, f.minY, f.maxX, f.maxY
 
 	// After transform:
 	// map1 pixels (10,20) -> (10,20) -> world (50,100)

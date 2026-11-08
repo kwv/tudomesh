@@ -125,71 +125,28 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		}
 	})
 
-	// Vector SVG endpoints
-	// Composite map SVG endpoint
+	// Composite map SVG: every vacuum's map overlaid in its color (alignment check)
 	mux.HandleFunc("/composite-map.svg", func(w http.ResponseWriter, r *http.Request) {
-		maps := stateTracker.GetMaps()
-		if len(maps) == 0 {
-			http.Error(w, "No maps available", http.StatusServiceUnavailable)
+		vr, ok := newSVGRenderer(w, stateTracker, cache, config, refID, rotateAll)
+		if !ok {
 			return
 		}
-
-		// Build transforms from cache
-		transforms := buildTransforms(maps, cache)
-
-		// Determine effective reference
-		effectiveRef := refID
-		if effectiveRef == "" {
-			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
-		}
-
-		// Create vector renderer
-		vectorRenderer := mesh.NewVectorRenderer(maps, transforms, effectiveRef)
-		vectorRenderer.GlobalRotation = rotateAll
-
-		// Apply grid spacing from config if available
-		if config != nil && config.GridSpacing > 0 {
-			vectorRenderer.Padding = config.GridSpacing / 2
-		}
-
-		// Render SVG
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.Header().Set("Cache-Control", "no-cache")
-		if err := vectorRenderer.RenderToSVG(w); err != nil {
+		if err := vr.RenderCompositeToSVG(w); err != nil {
 			log.Printf("Error encoding composite map SVG: %v", err)
 		}
 	})
 
-	// Floorplan SVG endpoint
+	// Floorplan SVG: the live view without vacuums
 	mux.HandleFunc("/floorplan.svg", func(w http.ResponseWriter, r *http.Request) {
-		maps := stateTracker.GetMaps()
-		if len(maps) == 0 {
-			http.Error(w, "No maps available", http.StatusServiceUnavailable)
+		vr, ok := newSVGRenderer(w, stateTracker, cache, config, refID, rotateAll)
+		if !ok {
 			return
 		}
-
-		// Build transforms from cache
-		transforms := buildTransforms(maps, cache)
-
-		// Determine effective reference
-		effectiveRef := refID
-		if effectiveRef == "" {
-			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
-		}
-
-		// Create vector renderer
-		vectorRenderer := mesh.NewVectorRenderer(maps, transforms, effectiveRef)
-		vectorRenderer.GlobalRotation = rotateAll
-
-		// Apply grid spacing from config if available
-		if config != nil && config.GridSpacing > 0 {
-			vectorRenderer.Padding = config.GridSpacing / 2
-		}
-
-		// Render SVG
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.Header().Set("Cache-Control", "no-cache")
-		if err := vectorRenderer.RenderToSVG(w); err != nil {
+		if err := vr.RenderLiveToSVG(w, nil); err != nil {
 			log.Printf("Error encoding floorplan SVG: %v", err)
 		}
 	})
@@ -251,38 +208,59 @@ func buildTransforms(maps map[string]*mesh.ValetudoMap, cache *mesh.CalibrationD
 
 // applyConfigColors applies vacuum colors from config to the renderer
 func applyConfigColors(renderer *mesh.CompositeRenderer, config *mesh.Config) {
-	if config == nil {
-		return
+	for id, c := range configColors(config) {
+		renderer.Colors[id] = c
 	}
+}
 
+// configColors returns the colors set in config (hex "#rrggbb"), by vacuum id.
+func configColors(config *mesh.Config) map[string]mesh.VacuumColor {
+	colors := map[string]mesh.VacuumColor{}
+	if config == nil {
+		return colors
+	}
 	for _, vc := range config.Vacuums {
-		if vc.Color == "" {
-			continue
-		}
-
-		// Parse hex color
-		hexColor := vc.Color
-		if len(hexColor) > 0 && hexColor[0] == '#' {
-			hexColor = hexColor[1:]
-		}
-
+		hexColor := strings.TrimPrefix(vc.Color, "#")
 		if len(hexColor) != 6 {
 			continue
 		}
-
 		var r, g, b uint8
 		if _, err := fmt.Sscanf(hexColor, "%02x%02x%02x", &r, &g, &b); err != nil {
 			continue
 		}
-
-		// Create VacuumColor from the hex color
 		baseColor := color.NRGBA{r, g, b, 255}
-		renderer.Colors[vc.ID] = mesh.VacuumColor{
-			Floor: color.NRGBA{r, g, b, 150}, // Semi-transparent for floor
-			Wall:  darkenColor(baseColor),    // Darker version for walls
-			Robot: baseColor,                 // Full color for robot
+		colors[vc.ID] = mesh.VacuumColor{
+			Floor: color.NRGBA{r, g, b, 150}, // semi-transparent so overlaps show
+			Wall:  darkenColor(baseColor),
+			Robot: baseColor,
 		}
 	}
+	return colors
+}
+
+// newSVGRenderer builds a vector renderer over the current maps with
+// calibration, colors, grid spacing and rotation applied. It writes a 503
+// and returns false when no maps are available.
+func newSVGRenderer(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.CalibrationData, config *mesh.Config, refID string, rotateAll float64) (*mesh.VectorRenderer, bool) {
+	maps := st.GetMaps()
+	if len(maps) == 0 {
+		http.Error(w, "No maps available", http.StatusServiceUnavailable)
+		return nil, false
+	}
+	effectiveRef := refID
+	if effectiveRef == "" {
+		effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
+	}
+	vr := mesh.NewVectorRenderer(maps, buildTransforms(maps, cache), effectiveRef)
+	vr.GlobalRotation = rotateAll
+	for id, c := range configColors(config) {
+		vr.Colors[id] = c
+	}
+	if config != nil && config.GridSpacing > 0 {
+		vr.GridSpacing = config.GridSpacing
+		vr.Padding = config.GridSpacing / 2
+	}
+	return vr, true
 }
 
 // darkenColor creates a darker version of a color for walls
