@@ -15,7 +15,6 @@ func floatPtr(v float64) *float64 { return &v }
 func validConfigYAML() string {
 	return `mqtt:
   broker: tcp://localhost:1883
-  publishPrefix: tudomesh
   clientId: tudomesh-test
 vacuums:
   - id: vac-a
@@ -75,15 +74,6 @@ func TestLoadConfig_Validation(t *testing.T) {
 		yaml string
 	}{
 		{
-			name: "missing broker",
-			yaml: `mqtt:
-  broker: ""
-vacuums:
-  - id: v1
-    topic: t/v1
-`,
-		},
-		{
 			name: "empty vacuums list",
 			yaml: `mqtt:
   broker: tcp://localhost:1883
@@ -130,9 +120,8 @@ func TestSaveConfig(t *testing.T) {
 
 	original := &Config{
 		MQTT: MQTTConfig{
-			Broker:        "tcp://localhost:1883",
-			PublishPrefix: "tudomesh",
-			ClientID:      "test-client",
+			Broker:   "tcp://localhost:1883",
+			ClientID: "test-client",
 		},
 		Vacuums: []VacuumConfig{
 			{ID: "vac-a", Topic: "valetudo/vac-a", Color: "#FF0000"},

@@ -235,19 +235,6 @@ func TestMQTTClient_GetClient(t *testing.T) {
 	}
 }
 
-// TestPublisherCreation tests publisher initialization
-func TestPublisherCreation(t *testing.T) {
-	// Test with nil client (disabled mode)
-	publisher := NewPublisher(nil)
-	if publisher == nil {
-		t.Fatalf("NewPublisher() should not return nil even with nil client")
-		return
-	}
-	if publisher.publishPrefix != "tudomesh" {
-		t.Errorf("Default prefix = %s, want tudomesh", publisher.publishPrefix)
-	}
-}
-
 // TestMQTTDisconnect tests graceful disconnect
 func TestMQTTDisconnect(t *testing.T) {
 	client := &MQTTClient{

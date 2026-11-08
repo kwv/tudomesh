@@ -22,21 +22,12 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config YAML: %w", err)
 	}
 
-	// Validate required fields
-	if config.MQTT.Broker == "" {
-		return nil, fmt.Errorf("mqtt.broker is required")
-	}
 	if len(config.Vacuums) == 0 {
 		return nil, fmt.Errorf("at least one vacuum must be defined")
 	}
-
-	// Validate vacuum configs
 	for i, vc := range config.Vacuums {
-		if vc.ID == "" {
-			return nil, fmt.Errorf("vacuum[%d].id is required", i)
-		}
-		if vc.Topic == "" {
-			return nil, fmt.Errorf("vacuum[%d].topic is required for %s", i, vc.ID)
+		if vc.BaseURL() == "" && (vc.ID == "" || vc.Topic == "") {
+			return nil, fmt.Errorf("vacuum[%d] needs a url (or id and topic)", i)
 		}
 	}
 
