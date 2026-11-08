@@ -31,6 +31,7 @@ type AppOptions struct {
 	RenderFormat       string
 	VectorFormat       string
 	GridSpacing        float64
+	Floorplan          bool
 }
 
 // MainApp defines the interface for the application logic
@@ -77,6 +78,7 @@ func run(args []string, out io.Writer, app MainApp) error {
 	fs.IntVar(&opts.HttpPort, "http-port", 8080, "HTTP server port (default 8080)")
 	fs.StringVar(&opts.RenderFormat, "format", "raster", "Render format: raster, vector, or both")
 	fs.StringVar(&opts.VectorFormat, "vector-format", "svg", "Vector output format (only svg)")
+	fs.BoolVar(&opts.Floorplan, "floorplan", false, "With --render, also write the consensus floorplan (<output>-floorplan.png/.svg)")
 	fs.Float64Var(&opts.GridSpacing, "grid-spacing", 1000.0, "Grid line spacing in millimeters (default 1000mm = 1m)")
 
 	if err := fs.Parse(args); err != nil {

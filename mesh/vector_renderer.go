@@ -14,6 +14,10 @@ type VectorRenderer struct {
 	GridSpacing    float64               // 0 disables the grid
 	Meta           map[string]VacuumMeta // optional per-vacuum labels/state for live SVG
 	Highlight      string                // vacuum id to highlight in live SVG
+	// Floorplan, when set, is the base map of the live view: a map already in
+	// the reference grid (see StateTracker.Floorplan). Otherwise the live view
+	// draws the largest of Maps.
+	Floorplan *ValetudoMap
 }
 
 // NewVectorRenderer creates a vector renderer with default settings.

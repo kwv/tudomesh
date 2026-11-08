@@ -22,6 +22,10 @@ type StateTracker struct {
 	maps      map[string]*ValetudoMap
 	colors    map[string]string // vacuum ID -> hex color
 	status    map[string]VacuumStatus
+
+	fpMu      sync.Mutex // serializes floorplan builds; see Floorplan
+	floorplan *ValetudoMap
+	fpKey     string
 }
 
 // NewStateTracker creates a new state tracker

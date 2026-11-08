@@ -233,3 +233,28 @@ func TestRenderLiveToSVG_NoPositionsIsFloorplan(t *testing.T) {
 		t.Errorf("floorplan should have no vacuums, got %d", n)
 	}
 }
+
+func TestRenderLiveToSVG_HighlightsRoomByPosition(t *testing.T) {
+	r := liveTestRenderer()
+	// The vacuum calls its room something else; the room under it is highlighted.
+	r.Meta = map[string]VacuumMeta{"rocky7": {Room: "Cuisine"}}
+	r.Highlight = "rocky7"
+	root := renderLive(t, r, map[string]*LivePosition{"rocky7": {X: 5, Y: 15}})
+	if c := root.find(byID("room-17"))[0].attr("class"); c != "room alert-room" {
+		t.Errorf("room under the vacuum: class %q", c)
+	}
+	if c := root.find(byID("room-16"))[0].attr("class"); c != "room" {
+		t.Errorf("other room: class %q", c)
+	}
+}
+
+func TestRenderLiveToSVG_DrawsFloorplan(t *testing.T) {
+	r := liveTestRenderer()
+	r.Floorplan = &ValetudoMap{PixelSize: 5, Layers: []MapLayer{
+		{Type: "segment", MetaData: LayerMetaData{SegmentID: "40", Name: "Hall"}, Pixels: cells(0, 0, 4, 4)},
+	}}
+	root := renderLive(t, r, nil)
+	if len(root.find(byID("room-40"))) != 1 || len(root.find(byID("room-16"))) != 0 {
+		t.Error("live view should draw the floorplan instead of the maps")
+	}
+}

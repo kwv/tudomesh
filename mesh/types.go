@@ -192,7 +192,8 @@ type CalibrationData struct {
 	Vacuums         map[string]VacuumCalibration `json:"vacuums"`
 	LastUpdated     int64                        `json:"lastUpdated"`
 
-	mu sync.RWMutex
+	mu      sync.RWMutex
+	version uint64 // bumped by every in-memory change; see Version
 }
 
 // UnmarshalJSON provides backward compatibility with old cache files where

@@ -38,6 +38,7 @@ type App struct {
 	RenderFormat     string
 	VectorFormat     string
 	GridSpacing      float64
+	Floorplan        bool
 	HttpPort         int
 	MqttMode         bool
 	HttpMode         bool
@@ -62,6 +63,7 @@ func (a *App) ApplyOptions(opts AppOptions) {
 	a.RenderFormat = opts.RenderFormat
 	a.VectorFormat = opts.VectorFormat
 	a.GridSpacing = opts.GridSpacing
+	a.Floorplan = opts.Floorplan
 	a.HttpPort = opts.HttpPort
 	a.MqttMode = opts.MqttMode
 	a.HttpMode = opts.HttpMode
@@ -401,6 +403,10 @@ func (a *App) RunRender() {
 		fmt.Printf("Created vector SVG: %s\n", outputPath)
 	}
 
+	if a.Floorplan {
+		a.writeFloorplan(maps, transforms, effectiveRef, config, format)
+	}
+
 	fmt.Println("Done!")
 }
 
@@ -583,6 +589,8 @@ func (a *App) RunCalibration() {
 	fmt.Printf("  Robot: (%.0f, %.0f) angle=%.0f°\n", refPos.X, refPos.Y, refAngle)
 	fmt.Printf("  Charger: (%.0f, %.0f)\n", refCharger.X, refCharger.Y)
 
+	printConsensus(maps, cache.Transforms(), refID)
+
 	// Save to cache file
 	fmt.Printf("\nSaving calibration cache to %s\n", a.CalibrationCache)
 	if err := mesh.SaveCalibration(a.CalibrationCache, &cache); err != nil {
@@ -688,6 +696,7 @@ func (a *App) RunService() {
 	}
 	if len(initialMaps) > 0 {
 		fmt.Printf("Loaded %d initial maps from JSON exports\n", len(initialMaps))
+		a.StateTracker.Floorplan(cache, refID)
 	}
 
 	// 7. Start MQTT if enabled
@@ -801,6 +810,7 @@ func (a *App) RunService() {
 
 		// Initialize auto-calibrator and register docking handler
 		a.AutoCalibrator = mesh.NewAutoCalibrator(config, cache, resolvedCache, a.DataDir, a.StateTracker)
+		a.AutoCalibrator.OnCalibrated = func(ref string) { a.StateTracker.Floorplan(cache, ref) }
 		mqttClient.SetDockingHandler(a.AutoCalibrator.OnDockingEvent)
 		mqttClient.SetStateHandler(a.StateTracker.UpdateStatus)
 		fmt.Println("Auto-calibrator initialized (triggers on docking events)")

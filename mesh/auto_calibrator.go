@@ -26,6 +26,10 @@ type AutoCalibrator struct {
 	dataDir      string
 	stateTracker *StateTracker
 
+	// OnCalibrated, if set, runs after a calibration is saved, with the
+	// reference id (the service rebuilds the floorplan here).
+	OnCalibrated func(referenceID string)
+
 	// mu guards lastCalibrated, inFlight and cache-file writes. It is never
 	// held during network fetches or alignment, so one slow robot does not
 	// delay the others. cache has its own lock.
@@ -111,6 +115,7 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 			MapAreaAtCalibration: freshMap.MetaData.TotalLayerArea,
 		})
 		ac.persistAndRecord(vacuumID)
+		ac.calibrated(referenceID)
 		return
 	}
 
@@ -155,6 +160,13 @@ func (ac *AutoCalibrator) OnDockingEvent(vacuumID string) {
 	})
 
 	ac.persistAndRecord(vacuumID)
+	ac.calibrated(referenceID)
+}
+
+func (ac *AutoCalibrator) calibrated(referenceID string) {
+	if ac.OnCalibrated != nil {
+		ac.OnCalibrated(referenceID)
+	}
 }
 
 // begin runs the cheap checks under the lock (debounce, already running,

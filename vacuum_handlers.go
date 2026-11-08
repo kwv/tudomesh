@@ -167,6 +167,7 @@ func writeLiveSVG(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.Cali
 		return
 	}
 	maps := vr.Maps
+	vr.Floorplan = st.Floorplan(cache, refID)
 
 	positions := st.GetPositions()
 	vr.Meta = make(map[string]mesh.VacuumMeta, len(positions))
@@ -256,14 +257,8 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 			http.Error(w, "No maps available", http.StatusServiceUnavailable)
 			return
 		}
-		effectiveRef := refID
-		if effectiveRef == "" {
-			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
-		}
-		renderer := mesh.NewCompositeRenderer(maps, buildTransforms(maps, cache), effectiveRef)
-		renderer.GlobalRotation = rotateAll
+		renderer := newLiveRenderer(st, cache, refID, rotateAll)
 		renderer.Scale = alertImageScale(r.URL.Query().Get("scale"))
-		applyConfigColors(renderer, config)
 
 		positions := st.GetPositions()
 		highlight := id

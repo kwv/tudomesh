@@ -21,7 +21,8 @@ type VacuumMeta struct {
 
 // SVG structure (stable ids/classes for CSS and scripts).
 //
-// Live / floorplan view (RenderLiveToSVG): the largest map, greyscale.
+// Live / floorplan view (RenderLiveToSVG): the consensus floorplan (or the
+// largest map when none is set), greyscale.
 //
 //	<style>                       default colors; override freely
 //	<g id="map" transform=...>    map geometry in grid cells (1 unit = 1 Valetudo pixel)
@@ -34,7 +35,7 @@ type VacuumMeta struct {
 //	                                <circle class="ring"> (highlight only) <circle class="body">
 //	                                <line class="heading"> <text class="label">
 //
-// A room whose name matches the highlighted vacuum's room also gets class "alert-room".
+// The room under the highlighted vacuum's position also gets class "alert-room".
 //
 // Composite view (RenderCompositeToSVG): every map overlaid in its own color.
 //
@@ -182,8 +183,9 @@ func writeSVGOpen(out *bytes.Buffer, f *svgFrame, ps float64, css string) {
 
 // writeMapLayers writes room/floor and wall paths for one map. single gives
 // the single-map ids (rooms, walls, room-<seg>); otherwise groups use classes
-// so several maps can share a document.
-func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightRoom string) {
+// so several maps can share a document. The segment with id highlightSeg
+// gets class "alert-room".
+func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightSeg string) {
 	groupAttr := func(name string) string {
 		if single {
 			return fmt.Sprintf(`id="%s"`, name)
@@ -204,7 +206,7 @@ func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightRoo
 			continue
 		}
 		class := "room"
-		if highlightRoom != "" && NormalizeRoomName(layer.MetaData.Name) == highlightRoom {
+		if highlightSeg != "" && layer.MetaData.SegmentID == highlightSeg {
 			class += " alert-room"
 		}
 		id := ""
@@ -247,18 +249,19 @@ func gridCSS(s svgSizes) string {
 		s.stroke, s.radius, s.radius)
 }
 
-// RenderLiveToSVG writes the live view: the largest map as a greyscale base
-// (rooms, walls, grid) and every vacuum position as its own labelled group.
-// Positions outside the base map expand the viewport. With no positions it
-// is the plain floorplan.
+// RenderLiveToSVG writes the live view: r.Floorplan (else the largest map) as
+// a greyscale base (rooms, walls, grid) and every vacuum position as its own
+// labelled group. Positions outside the base map expand the viewport. With no
+// positions it is the plain floorplan.
 func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*LivePosition) error {
-	if len(r.Maps) == 0 {
-		return fmt.Errorf("no maps available for live rendering")
+	baseMap, baseTransform := r.Floorplan, Identity()
+	if baseMap == nil {
+		if len(r.Maps) == 0 {
+			return fmt.Errorf("no maps available for live rendering")
+		}
+		baseID := SelectReferenceVacuum(r.Maps, nil)
+		baseMap, baseTransform = r.Maps[baseID], r.Transforms[baseID]
 	}
-
-	baseID := SelectReferenceVacuum(r.Maps, nil)
-	baseMap := r.Maps[baseID]
-	baseTransform := r.Transforms[baseID]
 	ps := pixelSizeOf(baseMap)
 
 	f := newSVGFrame(r.Padding, r.GlobalRotation)
@@ -269,9 +272,14 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 	f.finish()
 	s := f.sizes()
 
-	highlightRoom := ""
-	if m, ok := r.Meta[r.Highlight]; ok && m.Room != "" {
-		highlightRoom = NormalizeRoomName(m.Room)
+	// Positions are reference-grid cells; RoomAt wants the base map's own
+	// entity units.
+	highlightSeg := ""
+	if pos, ok := positions[r.Highlight]; ok {
+		local := TransformPoint(Point{X: pos.X, Y: pos.Y}, InvertMatrix(baseTransform))
+		if room, ok := RoomAt(baseMap, Point{X: local.X * ps, Y: local.Y * ps}, 0); ok {
+			highlightSeg = room.SegmentID
+		}
 	}
 
 	out := &bytes.Buffer{}
@@ -289,7 +297,7 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 `, gridCSS(s), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
 
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(baseMap, baseTransform))
-	writeMapLayers(out, baseMap, true, highlightRoom)
+	writeMapLayers(out, baseMap, true, highlightSeg)
 	out.WriteString("</g>\n")
 
 	r.writeGrid(out, f)

@@ -159,4 +159,4 @@ endef
 render: build
 	@echo "Rendering composite map..."
 	@cd tudomesh-data && rm -f .calibration-cache.json && \
-		../tudomesh --config config.yaml --render --format both --output test.png --vector-format svg
+		../tudomesh --config config.yaml --render --format both --output test.png --vector-format svg --floorplan

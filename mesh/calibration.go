@@ -153,6 +153,7 @@ func (c *CalibrationData) GetVacuumCalibration(vacuumID string) *VacuumCalibrati
 func (c *CalibrationData) UpdateVacuumCalibration(vacuumID string, cal VacuumCalibration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.version++
 	if c.Vacuums == nil {
 		c.Vacuums = make(map[string]VacuumCalibration)
 	}
@@ -200,7 +201,22 @@ func (c *CalibrationData) Reference() string {
 func (c *CalibrationData) SetReference(id string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.ReferenceVacuum != id {
+		c.version++
+	}
 	c.ReferenceVacuum = id
+}
+
+// Version changes whenever a transform or the reference is changed through
+// UpdateVacuumCalibration or SetReference, so derived data (the consensus
+// floorplan) knows to rebuild. 0 for nil.
+func (c *CalibrationData) Version() uint64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.version
 }
 
 // Transforms returns a copy of every stored transform, keyed by vacuum id.

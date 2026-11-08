@@ -83,18 +83,7 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 			return
 		}
 
-		// Build transforms from cache
-		transforms := buildTransforms(maps, cache)
-
-		// Determine effective reference
-		effectiveRef := refID
-		if effectiveRef == "" {
-			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
-		}
-
-		// Create renderer
-		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
-		renderer.GlobalRotation = rotateAll
+		renderer := newLiveRenderer(stateTracker, cache, refID, rotateAll)
 
 		// If no drawable content exists, we can still show positions on a blank map
 		if !renderer.HasDrawableContent() {
@@ -144,6 +133,7 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		if !ok {
 			return
 		}
+		vr.Floorplan = stateTracker.Floorplan(cache, refID)
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.Header().Set("Cache-Control", "no-cache")
 		if err := vr.RenderLiveToSVG(w, nil); err != nil {
@@ -236,6 +226,27 @@ func configColors(config *mesh.Config) map[string]mesh.VacuumColor {
 		}
 	}
 	return colors
+}
+
+// newLiveRenderer builds the PNG renderer for the live views: the consensus
+// floorplan (StateTracker.Floorplan) as the only map, in the reference grid
+// where live positions are. Callers check that maps exist.
+func newLiveRenderer(st *mesh.StateTracker, cache *mesh.CalibrationData, refID string, rotateAll float64) *mesh.CompositeRenderer {
+	var renderer *mesh.CompositeRenderer
+	if fp := st.Floorplan(cache, refID); fp != nil {
+		renderer = mesh.NewCompositeRenderer(
+			map[string]*mesh.ValetudoMap{consensusID: fp},
+			map[string]mesh.AffineMatrix{consensusID: mesh.Identity()}, consensusID)
+	} else {
+		maps := st.GetMaps()
+		effectiveRef := refID
+		if effectiveRef == "" {
+			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
+		}
+		renderer = mesh.NewCompositeRenderer(maps, buildTransforms(maps, cache), effectiveRef)
+	}
+	renderer.GlobalRotation = rotateAll
+	return renderer
 }
 
 // newSVGRenderer builds a vector renderer over the current maps with

@@ -5,6 +5,7 @@ Combines the maps of several Valetudo vacuum robots into one coordinate system a
 ## Features
 
 - **Automatic map alignment**: Searches every rotation and offset for the placement where floor lands on floor and wall on wall. Uses map geometry only (no room names needed), gives the same answer every run, and reports a confidence score. Same-named rooms break ties for very symmetric layouts; a `rotation` hint in config narrows the search.
+- **Consensus floorplan**: The live views draw one floorplan merged from every aligned robot. Each cell is voted on by the robots that explored it, so furniture and lidar noise one robot sees don't override the others, and a room only one robot reaches is still kept. See [Consensus floorplan](#consensus-floorplan).
 - **Stuck-vacuum alerts**: `/vacuum/{id}` reports which room a robot is in and its last status; `/vacuum/{id}.png` returns the map with that robot circled. See [Alerts with Node-RED](#alerts-with-node-red).
 - **Live positions over MQTT**: Follows each robot's map and status topics and places it on the shared map as it moves.
 - **Auto-calibration on docking**: When a robot docks, TudoMesh fetches its full map, realigns it, and saves both the map and the transform. See [Auto-Calibration](#auto-calibration).
@@ -146,10 +147,10 @@ The map stays empty until each robot's full map is known: either from a `Valetud
 
 - `/` - HTML page showing the live SVG map
 - `/health` - Health check
-- `/live.svg` - Greyscale unified floorplan with live vacuum positions. The primary live view, structured for styling and scripting (see [SVG Structure](#svg-structure)).
-- `/live.png` - Greyscale floorplan with live position icons and legend
-- `/floorplan.svg` - The live SVG without vacuums
-- `/composite-map.svg` - Every vacuum's map overlaid in its own color, with chargers; use it to check alignment
+- `/live.svg` - Greyscale [consensus floorplan](#consensus-floorplan) with live vacuum positions. The primary live view, structured for styling and scripting (see [SVG Structure](#svg-structure)).
+- `/live.png` - Greyscale consensus floorplan with live position icons and legend
+- `/floorplan.svg` - The consensus floorplan without vacuums
+- `/composite-map.svg` - Every vacuum's map overlaid in its own color, with chargers, without merging; use it to check alignment
 - `/composite-map.png` - The composite map as PNG
 
 The map endpoints return `503 No maps available` until at least one map is loaded.
@@ -161,7 +162,7 @@ The map endpoints return `503 No maps available` until at least one map is loade
 - `/vacuums` - JSON list of every vacuum (same fields as below)
 - `/vacuum/{id}` - JSON: room, last Valetudo status, position on the shared map
 - `/vacuum/{id}.png` - Live map with the vacuum circled and a caption (`rocky7 | Kitchen | error`). `?scale=1..8` sets the size (default 3).
-- `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and its room tinted, when the base map has a room of the same name
+- `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and the floorplan room under it tinted
 
 ```json
 {
@@ -210,6 +211,8 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, hide on
 .room[data-room="Kitchen"] { fill: #fff3c4; }
 ```
 
+`data-room` and `data-segment-id` on the floorplan come from the reference robot's segments where it has the room; see [Consensus floorplan](#consensus-floorplan).
+
 `/composite-map.svg` uses the same room, floor and wall paths, but one group per vacuum (reference first). Each vacuum's colors are rules in the `<style>` block (`#map-<id> .rooms`, `#map-<id> .walls`, `.charger[data-id=…]`), so restyling means editing or overriding CSS:
 
 ```text
@@ -223,6 +226,18 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, hide on
 <g id="grid">…</g>
 <g id="chargers"><circle class="charger" data-id="FrugalLameLion"/>…</g>
 ```
+
+## Consensus floorplan
+
+`/live.*`, `/floorplan.svg` and `/vacuum/{id}.png|.svg` draw one floorplan merged from every calibrated robot, in the reference robot's grid. Robots without a calibration transform are left out (they still show on `/composite-map.*`).
+
+- **Coverage**: A robot votes on a cell only if it has floor or wall within one cell of it. Areas it never explored are no vote, not a "no".
+- **Floor and walls**: A cell is kept when at least half of the robots that cover it agree, walls first. With one robot covering a cell its observation is kept; with two, either robot's floor or wall is kept, and wall wins where they disagree; with three, two of three. Walls tolerate one cell of misalignment, and parallel wall lines one cell apart are drawn once (the reference's).
+- **Rooms**: Matched by overlap, not by name. A robot's segment joins the room (the reference's first) that covers at least half of it, otherwise it becomes a new room. Each floor cell goes to the room most robots put it in, ties to the larger segment. Rooms smaller than 25 cells become plain floor. Names and ids are taken from the reference's segment where it has the room; the reference's name is only a label.
+
+The floorplan is built when the service starts and after each auto-calibration, not per request; it takes well under a second and is not saved to disk. Map updates over MQTT don't rebuild it until the robot next calibrates.
+
+`/vacuum/{id}` still reports the room from the robot's own map.
 
 ## Alerts with Node-RED
 
@@ -243,6 +258,7 @@ TudoMesh keeps alignment up to date without manual work. When a robot finishes c
 3. **Map fetch**: The full map is fetched from the robot's REST API (`<url>/api/v2/robot/state/map`), retried up to 3 times with backoff, and saved as `ValetudoMapExport-<id>.json` in the data directory.
 4. **Alignment**: The map is aligned against the reference robot with the same grid search as `--calibrate`.
 5. **Cache update**: The new transform is written to `.calibration-cache.json`.
+6. **Floorplan**: The [consensus floorplan](#consensus-floorplan) is rebuilt with the fresh map and transform.
 
 ### State topic derivation
 
@@ -296,6 +312,10 @@ Without `--mqtt` or `--http`, TudoMesh works on the `ValetudoMapExport-*.json` f
 ./tudomesh --data-dir ./tudomesh-data --render --format=vector
 ./tudomesh --data-dir ./tudomesh-data --render --format=both
 
+# Also write the consensus floorplan (composite-map-floorplan.png/.svg) and
+# print floor/wall cell counts and rooms per robot vs the floorplan
+./tudomesh --data-dir ./tudomesh-data --render --format=both --floorplan
+
 # Grid lines every 500mm instead of 1m
 ./tudomesh --data-dir ./tudomesh-data --render --grid-spacing=500
 
@@ -303,7 +323,7 @@ Without `--mqtt` or `--http`, TudoMesh works on the `ValetudoMapExport-*.json` f
 ./tudomesh --data-dir ./tudomesh-data --compare-rotation=TrickyZanyPartridge
 ```
 
-The vector output is the same structured SVG as `/composite-map.svg`.
+The vector output is the same structured SVG as `/composite-map.svg`; the `--floorplan` SVG is the same as `/floorplan.svg`. `--calibrate` also prints the floorplan counts.
 
 ### Flags
 
@@ -318,6 +338,7 @@ The vector output is the same structured SVG as `/composite-map.svg`.
 | `--calibrate` | Align map exports, report rotation/confidence per vacuum, write the calibration cache |
 | `--render` | Render the composite map from map exports |
 | `--output=FILE` | Output file for `--render` (default `composite-map.png`) |
+| `--floorplan` | With `--render`, also write the consensus floorplan as `<output>-floorplan.png/.svg` |
 | `--format=raster\|vector\|both` | Render format: PNG, SVG, or both (default `raster`) |
 | `--vector-format=svg` | Vector output format (only `svg`) |
 | `--grid-spacing=MM` | Grid line spacing in millimeters (default 1000) |
