@@ -1,6 +1,9 @@
 # TudoMesh configuration - example
 # Copy to config.yaml in your data directory.
 
+mqtt:
+  broker: mqtt://localhost:1883   # the broker your robots publish to
+
 # Each vacuum only needs its Valetudo URL. Its id (Valetudo systemId), MQTT
 # topics and map API are read from the robot at startup and remembered in
 # .vacuums.json for robots that are offline later.
@@ -14,7 +17,6 @@ vacuums:
 # Everything below is optional.
 
 # mqtt:
-#   broker: mqtt://localhost:1883   # default: the broker the first robot uses
 #   clientId: tudomesh              # default: tudomesh-<hostname>
 #   username: mqtt_user
 #   password: mqtt_password

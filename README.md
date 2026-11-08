@@ -33,9 +33,11 @@ TudoMesh can automatically keep vacuum alignment up to date without manual inter
 
 ### Configuration
 
-A vacuum only needs its Valetudo URL:
+Set the MQTT broker, and list each vacuum by its Valetudo URL:
 
 ```yaml
+mqtt:
+  broker: mqtt://mqtt.home:1883
 vacuums:
   - url: http://rockette.home
     color: "#43b0f1"   # optional
@@ -49,10 +51,10 @@ At startup TudoMesh asks each robot's Valetudo API for the rest:
 | Vacuum id | `systemId` from `/api/v2/valetudo` | `id` |
 | MQTT map topic | `<topicPrefix>/<identifier>/MapData/map-data` from the robot's MQTT settings | `topic` |
 | Map API for auto-calibration | `<url>/api/v2/robot/state/map` | `apiUrl` |
-| MQTT broker | the broker the first robot uses | `mqtt.broker` |
+| MQTT broker | `mqtt.broker`; if unset, the broker the first reachable robot uses | `MQTT_BROKER` |
 | MQTT client id | `tudomesh-<hostname>` | `mqtt.clientId` or `MQTT_CLIENT_ID` |
 
-What each robot reports is saved to `.vacuums.json` in the data directory, so a robot that is offline at startup still resolves. With nothing saved, the URL's host name is used as the robot's name (`http://rocky6.home` → `rocky6`). Older configs that set `id`, `topic` and `apiUrl` keep working.
+What each robot reports is saved to `.vacuums.json` in the data directory, so a robot that is offline at startup still resolves. With nothing saved, the URL's host name is used as the robot's name and id (`http://rocky6.home` → `rocky6`); once the robot answers, the id becomes its `systemId`, so delete any `ValetudoMapExport-rocky6.json` saved under the guessed id. Older configs that set `id`, `topic` and `apiUrl` keep working.
 
 ### One Instance per Floor
 
@@ -60,6 +62,8 @@ Robots on different floors share no map, so run one TudoMesh per floor, each wit
 
 ```yaml
 # basement/config.yaml
+mqtt:
+  broker: mqtt://mqtt.home:1883
 vacuums:
   - url: http://rocky.home
 ```
@@ -203,9 +207,11 @@ cp config.example.yaml ./tudomesh-data/config.yaml
 
 ### 2. Configure Your Robots
 
-Edit `config.yaml` and list each robot's Valetudo URL (see [Configuration](#configuration)):
+Edit `config.yaml`: set the MQTT broker and list each robot's Valetudo URL (see [Configuration](#configuration)):
 
 ```yaml
+mqtt:
+  broker: mqtt://localhost:1883
 vacuums:
   - url: http://vacuum1.local
     color: "#43b0f1"
@@ -251,6 +257,8 @@ docker run -d --name mosquitto -p 1883:1883 eclipse-mosquitto:latest
 Create `tudomesh-data/config.yaml`:
 
 ```yaml
+mqtt:
+  broker: mqtt://localhost:1883
 vacuums:
   - url: http://vacuum1.local
   - url: http://vacuum2.local
