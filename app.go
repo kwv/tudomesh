@@ -619,6 +619,9 @@ func (a *App) RunService() {
 	log.Printf("Loaded config from %s", resolvedConfig)
 	mesh.ResolveVacuums(config, filepath.Join(a.DataDir, vacuumIdentityCache), discoveryTimeout)
 	a.Config = config
+	if a.MqttMode && os.Getenv("MQTT_BROKER") == "" && config.MQTT.Broker == "" {
+		log.Fatal(errNoBroker)
+	}
 
 	// Check if data directory is writable (for cache and map persistence)
 	if err := a.checkWritability(a.DataDir); err != nil {
@@ -793,7 +796,7 @@ func (a *App) RunService() {
 		a.MQTTClient = mqttClient
 
 		if mqttClient == nil {
-			log.Fatal("MQTT broker not configured in config.yaml")
+			log.Fatal(errNoBroker)
 		}
 
 		// Initialize auto-calibrator and register docking handler
@@ -858,6 +861,15 @@ func (a *App) RunService() {
 // vacuumIdentityCache (in the data dir) remembers what each robot's
 // Valetudo API reported, for robots that are offline at startup.
 const vacuumIdentityCache = ".vacuums.json"
+
+// errNoBroker explains how to fix a missing MQTT broker.
+const errNoBroker = `No MQTT broker configured. Set it in config.yaml:
+
+  mqtt:
+    broker: mqtt://<host>:1883
+
+(or the MQTT_BROKER environment variable). Without it, tudomesh only learns
+the broker from a robot that answers at startup, and none did.`
 
 // discoveryTimeout bounds each robot's Valetudo API lookup at startup.
 const discoveryTimeout = 5 * time.Second

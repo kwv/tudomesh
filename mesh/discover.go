@@ -173,12 +173,17 @@ func ResolveVacuums(cfg *Config, cachePath string, timeout time.Duration) {
 			log.Printf("Warning: %s unreachable (%v); using cached identity %s", base, err, id.ID)
 		default:
 			guess, ok := identityFromHost(base)
-			if !ok {
+			switch {
+			case vc.ID != "" && vc.Topic != "":
+				log.Printf("Warning: %s unreachable (%v); using id and topic from config", base, err)
+				id = VacuumIdentity{}
+			case !ok:
 				log.Printf("Warning: %s unreachable (%v) and not cached; set id and topic in config", base, err)
 				continue
+			default:
+				id = guess
+				log.Printf("Warning: %s unreachable (%v); guessing name %q from the host name", base, err, id.Name)
 			}
-			id = guess
-			log.Printf("Warning: %s unreachable (%v); guessing name %q from the host name", base, err, id.Name)
 		}
 
 		if vc.ID == "" {
