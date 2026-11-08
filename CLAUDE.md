@@ -1,11 +1,12 @@
 # tudomesh
 
-Merges maps from multiple Valetudo vacuums into one coordinate system (ICP alignment), with live robot positions over MQTT and an HTTP-served SVG/PNG map. See README.md for features and config.
+Merges maps from multiple Valetudo vacuums into one coordinate system, with live robot positions over MQTT and an HTTP API (composite SVG/PNG map, per-vacuum state/room/map for alerts). See README.md for features and config.
 
 ## Layout
-- `main.go`, `app.go`, `handlers.go` — CLI entry, MQTT service, HTTP handlers
-- `mesh/` — decoding, feature extraction, ICP (`icp.go`), calibration cache, unifier, renderers
-- `.designs/` — design notes (e.g. pipeline and coordinate systems)
+- `main.go`, `app.go`, `handlers.go`, `vacuum_handlers.go` — CLI entry, MQTT service, HTTP handlers (`/vacuum/{key}` for alerts)
+- `mesh/` — decoding, alignment (`align.go`: grid occupancy search in `grid_align.go`, room-name fallback in `room_align.go`), calibration cache, unifier, renderers (`live_svg.go` structured SVG)
+- Units: layer pixels are grid indices; entity points are grid × pixelSize. Only renderers convert to image scale.
+- `.designs/` — older design notes; they predate the grid alignment and still mention ICP
 
 ## Commands
 ```bash
@@ -20,3 +21,4 @@ make render     # rebuild, clear calibration cache, render tudomesh-data/test.{p
 ## Workflow
 - Branch off `main`, open a PR on GitHub (`kwv/tudomesh`), merge after CI passes.
 - Lint and tests must pass before committing.
+- Release: push a single `vX.Y.Z` tag; `build-test-publish.yml` builds and publishes `kwv4/tudomesh:{version}` and `:latest`. GitHub sends no tag events when one push carries more than three tags, so never push tags in bulk.
