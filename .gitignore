@@ -6,8 +6,6 @@ tudomesh
 config.yaml
 *.svg
 
-# Leftover beads data (tool removed; safe to delete)
-.beads/
 .mcp.json
 
 # Agent workspace (multi-agent support)

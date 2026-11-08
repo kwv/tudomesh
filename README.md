@@ -385,8 +385,7 @@ You should see JSON messages like:
 - The `/live.svg` endpoint requires map data before it can render
 
 **Vector SVG endpoints 404:**
-- Vector rendering is only available on the HTTP server (not in batch render)
-- Use `GET /live.svg`, `GET /composite-map.svg`, or `GET /floorplan.svg` endpoints
+- Use `GET /live.svg`, `GET /composite-map.svg`, or `GET /floorplan.svg` (`.svg` suffix required)
 
 **Auto-calibration not triggering:**
 - Verify `apiUrl` is set for the vacuum in `config.yaml`
@@ -443,17 +442,9 @@ Use `--format` to control output:
 ./tudomesh --data-dir ./tudomesh-data --render --format=both
 ```
 
-### Vector Output Format
+### Vector Output
 
-Use `--vector-format` to choose SVG or PNG output (default: svg):
-
-```bash
-# Render as SVG (scalable)
-./tudomesh --data-dir ./tudomesh-data --render --format=vector --vector-format=svg
-
-# Render as high-DPI PNG
-./tudomesh --data-dir ./tudomesh-data --render --format=vector --vector-format=png
-```
+`--format=vector` (or `both`) writes the composite as a structured SVG: every vacuum's map in its own colored group, aligned, with grid and chargers (same output as `/composite-map.svg`). SVG is the only vector format.
 
 ### Grid Spacing
 
@@ -465,15 +456,6 @@ Control the distance between grid lines (default: 1000mm = 1 meter):
 
 # Render with 2000mm grid spacing
 ./tudomesh --data-dir ./tudomesh-data --render --grid-spacing=2000
-```
-
-### Vector PNG Resolution
-
-When rendering vector to PNG, set DPI (default: 300):
-
-```bash
-# High-resolution PNG at 600 DPI
-./tudomesh --data-dir ./tudomesh-data --render --format=vector --vector-format=png --vector-resolution=600
 ```
 
 ## HTTP Endpoints
@@ -491,8 +473,8 @@ When rendering vector to PNG, set DPI (default: 300):
 
 - `/health` - Service health check
 - `/composite-map.png` - Color-coded vacuum maps (PNG)
-- `/composite-map.svg` - Color-coded vacuum maps (SVG)
-- `/floorplan.svg` - Greyscale unified floor plan without positions (SVG)
+- `/composite-map.svg` - Every vacuum's map overlaid in its own color, with chargers (SVG); use it to check alignment. Structured like the live SVG (see [Live SVG Structure](#live-svg-structure)).
+- `/floorplan.svg` - The live SVG without vacuums
 
 ### Per-Vacuum (Alerts)
 
@@ -548,6 +530,20 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, or hide
 .room[data-room="Kitchen"] { fill: #fff3c4; }
 ```
 
+`/composite-map.svg` uses the same room, floor and wall paths, but one group per vacuum (reference first), colored with `fill` attributes so CSS can override them:
+
+```text
+<g id="maps">
+  <g id="map-frugallamelion" class="map" data-id="FrugalLameLion" transform="…">
+    <g class="rooms" fill="…" fill-opacity="…"><path class="room" data-room="Kitchen" …/></g>
+    <g class="walls" fill="…"><path class="wall"/></g>
+  </g>
+  …
+</g>
+<g id="grid">…</g>
+<g id="chargers"><circle class="charger" data-id="FrugalLameLion"/>…</g>
+```
+
 ## Alerts with Node-RED
 
 [`examples/node-red/stuck-vacuum-alert.json`](examples/node-red/stuck-vacuum-alert.json) is an importable flow:
@@ -572,9 +568,8 @@ To use it: import the flow, set the `TUDOMESH_URL` environment variable on the f
 | `--compare-rotation=ID` | Debug: Generate 4 rotation options for a vacuum |
 | `--force-rotation=ID=DEG` | Override: Manual rotation (0, 90, 180, 270) |
 | `--format=[raster\|vector\|both]` | Render format: raster PNG, vector SVG, or both (default: raster) |
-| `--vector-format=[svg\|png]` | Vector output format: SVG or PNG (default: svg) |
+| `--vector-format=svg` | Vector output format (only svg) |
 | `--grid-spacing=MM` | Grid line spacing in millimeters (default: 1000mm) |
-| `--vector-resolution=DPI` | Vector to PNG rasterization DPI (default: 300) |
 
 
 

@@ -76,7 +76,7 @@ func run(args []string, out io.Writer, app MainApp) error {
 	fs.BoolVar(&opts.HttpMode, "http", false, "Enable HTTP server for serving map images")
 	fs.IntVar(&opts.HttpPort, "http-port", 8080, "HTTP server port (default 8080)")
 	fs.StringVar(&opts.RenderFormat, "format", "raster", "Render format: raster, vector, or both")
-	fs.StringVar(&opts.VectorFormat, "vector-format", "svg", "Vector output format: svg or png")
+	fs.StringVar(&opts.VectorFormat, "vector-format", "svg", "Vector output format (only svg)")
 	fs.Float64Var(&opts.GridSpacing, "grid-spacing", 1000.0, "Grid line spacing in millimeters (default 1000mm = 1m)")
 
 	if err := fs.Parse(args); err != nil {

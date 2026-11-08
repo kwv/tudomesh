@@ -366,23 +366,26 @@ func (a *App) RunRender() {
 
 	// Vector rendering
 	if format == "vector" || format == "both" {
+		if a.VectorFormat != "" && a.VectorFormat != "svg" {
+			log.Fatalf("Unsupported --vector-format %q (only svg)", a.VectorFormat)
+		}
 		vectorRenderer := mesh.NewVectorRenderer(maps, transforms, effectiveRef)
 		vectorRenderer.GlobalRotation = a.RotateAll
+		for id, c := range configColors(config) {
+			vectorRenderer.Colors[id] = c
+		}
 
-		// Apply grid spacing from config or flag
+		// Grid spacing from config, else the flag
+		spacing := a.GridSpacing
 		if config != nil && config.GridSpacing > 0 {
-			vectorRenderer.Padding = config.GridSpacing
-		} else if a.GridSpacing > 0 {
-			vectorRenderer.Padding = a.GridSpacing / 2 // Padding is half the grid spacing
+			spacing = config.GridSpacing
+		}
+		if spacing > 0 {
+			vectorRenderer.GridSpacing = spacing
+			vectorRenderer.Padding = spacing / 2
 		}
 
-		outputPath := a.OutputFile
-		if format == "both" || (format == "vector" && a.VectorFormat == "svg") {
-			// When rendering both or vector SVG, change extension to .svg
-			outputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".svg"
-		}
-
-		// Create output file
+		outputPath := strings.TrimSuffix(a.OutputFile, filepath.Ext(a.OutputFile)) + ".svg"
 		outFile, err := os.Create(outputPath)
 		if err != nil {
 			log.Fatalf("Error creating output file %s: %v", outputPath, err)
@@ -392,16 +395,10 @@ func (a *App) RunRender() {
 				log.Printf("Warning: error closing output file %s: %v", outputPath, err)
 			}
 		}()
-
-		// Render based on vector format
-		if a.VectorFormat == "svg" {
-			if err := vectorRenderer.RenderToSVG(outFile); err != nil {
-				log.Fatalf("Error rendering vector SVG: %v", err)
-			}
-			fmt.Printf("Created vector SVG: %s\n", outputPath)
-		} else {
-			log.Fatalf("PNG vector format not yet implemented (use --vector-format=svg)")
+		if err := vectorRenderer.RenderCompositeToSVG(outFile); err != nil {
+			log.Fatalf("Error rendering vector SVG: %v", err)
 		}
+		fmt.Printf("Created vector SVG: %s\n", outputPath)
 	}
 
 	fmt.Println("Done!")

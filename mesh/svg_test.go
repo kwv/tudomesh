@@ -157,3 +157,72 @@ func TestCellRectsPathCoversEveryCell(t *testing.T) {
 		t.Errorf("rect area %d, want %d cells", area, len(px)/2)
 	}
 }
+
+func TestRenderCompositeToSVG_Structure(t *testing.T) {
+	ref := &ValetudoMap{PixelSize: 5, Layers: []MapLayer{
+		{Type: "segment", MetaData: LayerMetaData{SegmentID: "1", Name: "Kitchen"}, Pixels: cells(0, 0, 10, 10)},
+		{Type: "wall", Pixels: []int{10, 0, 10, 1}},
+	}, Entities: []MapEntity{{Type: "charger_location", Points: []int{25, 25}}}}
+	other := &ValetudoMap{PixelSize: 5, Layers: []MapLayer{
+		{Type: "segment", MetaData: LayerMetaData{SegmentID: "1", Name: "Kitchen"}, Pixels: cells(0, 0, 10, 10)},
+	}, Entities: []MapEntity{{Type: "charger_location", Points: []int{25, 25}}}}
+	maps := map[string]*ValetudoMap{"zref": ref, "a": other}
+	transforms := map[string]AffineMatrix{"zref": Identity(), "a": Translation(20, 0)}
+	r := NewVectorRenderer(maps, transforms, "zref")
+	r.Padding, r.GridSpacing = 0, 0
+
+	var buf bytes.Buffer
+	if err := r.RenderCompositeToSVG(&buf); err != nil {
+		t.Fatal(err)
+	}
+	var root svgNode
+	if err := xml.Unmarshal(buf.Bytes(), &root); err != nil {
+		t.Fatalf("invalid XML: %v\n%s", err, buf.String())
+	}
+
+	groups := root.find(func(n svgNode) bool { return n.attr("class") == "map" })
+	if len(groups) != 2 || groups[0].attr("data-id") != "zref" || groups[1].attr("data-id") != "a" {
+		t.Fatalf("map groups (reference first): %+v", groups)
+	}
+	// Ids stay unique when maps share segment ids.
+	if n := len(root.find(byID("room-1"))); n != 0 {
+		t.Errorf("composite should not emit per-room ids, got %d", n)
+	}
+	rooms := groups[1].find(func(n svgNode) bool { return n.attr("class") == "rooms" })
+	if len(rooms) != 1 || rooms[0].attr("fill") != svgColor(r.Colors["a"].Floor) {
+		t.Errorf("rooms group fill: %+v", rooms)
+	}
+	if groups[1].attr("transform") != "matrix(5.00000 0.00000 0.00000 5.00000 100.00 0.00)" {
+		t.Errorf("transform for shifted map = %q", groups[1].attr("transform"))
+	}
+
+	// Charger entity (25,25) = grid (5,5); the second map is shifted 20 cells.
+	chargers := root.find(func(n svgNode) bool { return n.attr("class") == "charger" })
+	want := map[string][2]string{"zref": {"25.0", "25.0"}, "a": {"125.0", "25.0"}}
+	if len(chargers) != 2 {
+		t.Fatalf("chargers = %d, want 2", len(chargers))
+	}
+	for _, c := range chargers {
+		w := want[c.attr("data-id")]
+		if c.attr("cx") != w[0] || c.attr("cy") != w[1] {
+			t.Errorf("charger %s at (%s,%s), want %v", c.attr("data-id"), c.attr("cx"), c.attr("cy"), w)
+		}
+	}
+}
+
+func TestRenderCompositeToSVG_NoMaps(t *testing.T) {
+	r := NewVectorRenderer(map[string]*ValetudoMap{}, nil, "")
+	if err := r.RenderCompositeToSVG(&bytes.Buffer{}); err == nil {
+		t.Error("expected error for no maps")
+	}
+}
+
+func TestRenderLiveToSVG_NoPositionsIsFloorplan(t *testing.T) {
+	root := renderLive(t, liveTestRenderer(), nil)
+	if len(root.find(byID("room-16"))) != 1 {
+		t.Error("floorplan should contain rooms")
+	}
+	if n := len(root.find(func(n svgNode) bool { return strings.HasPrefix(n.attr("class"), "vacuum") })); n != 0 {
+		t.Errorf("floorplan should have no vacuums, got %d", n)
+	}
+}
