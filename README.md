@@ -530,13 +530,13 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, or hide
 .room[data-room="Kitchen"] { fill: #fff3c4; }
 ```
 
-`/composite-map.svg` uses the same room, floor and wall paths, but one group per vacuum (reference first), colored with `fill` attributes so CSS can override them:
+`/composite-map.svg` uses the same room, floor and wall paths, but one group per vacuum (reference first). Each vacuum's colors are rules in the `<style>` block (`#map-<id> .rooms`, `#map-<id> .walls`, `.charger[data-id=…]`), so restyling means editing or overriding CSS:
 
 ```text
 <g id="maps">
   <g id="map-frugallamelion" class="map" data-id="FrugalLameLion" transform="…">
-    <g class="rooms" fill="…" fill-opacity="…"><path class="room" data-room="Kitchen" …/></g>
-    <g class="walls" fill="…"><path class="wall"/></g>
+    <g class="rooms"><path class="room" data-room="Kitchen" …/></g>
+    <g class="walls"><path class="wall"/></g>
   </g>
   …
 </g>

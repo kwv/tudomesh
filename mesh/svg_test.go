@@ -188,9 +188,16 @@ func TestRenderCompositeToSVG_Structure(t *testing.T) {
 	if n := len(root.find(byID("room-1"))); n != 0 {
 		t.Errorf("composite should not emit per-room ids, got %d", n)
 	}
-	rooms := groups[1].find(func(n svgNode) bool { return n.attr("class") == "rooms" })
-	if len(rooms) != 1 || rooms[0].attr("fill") != svgColor(r.Colors["a"].Floor) {
-		t.Errorf("rooms group fill: %+v", rooms)
+	if len(groups[1].find(func(n svgNode) bool { return n.attr("class") == "rooms" })) != 1 {
+		t.Error("map group should contain a rooms group")
+	}
+	// Colors are stylesheet rules, not presentation attributes.
+	style := root.find(func(n svgNode) bool { return n.XMLName.Local == "style" })[0].Text
+	if !strings.Contains(style, "#map-a .rooms{fill:"+svgColor(r.Colors["a"].Floor)) {
+		t.Errorf("missing per-map rule in style:\n%s", style)
+	}
+	if strings.Contains(buf.String(), ` fill="`) {
+		t.Error("composite should not use fill attributes")
 	}
 	if groups[1].attr("transform") != "matrix(5.00000 0.00000 0.00000 5.00000 100.00 0.00)" {
 		t.Errorf("transform for shifted map = %q", groups[1].attr("transform"))

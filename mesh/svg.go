@@ -40,7 +40,8 @@ type VacuumMeta struct {
 //
 //	<g id="maps">                 one <g id="map-<id>" class="map" data-id transform=...> per vacuum,
 //	                              reference first; each holds <g class="rooms"> and <g class="walls">
-//	                              with the same room/floor/wall paths as above, colored via fill
+//	                              with the same room/floor/wall paths as above; colors are
+//	                              per-map rules in <style> (#map-<id> .rooms / .walls)
 //	<g id="grid">
 //	<g id="chargers">             one <circle class="charger" data-id> per vacuum with a dock
 
@@ -181,16 +182,15 @@ func writeSVGOpen(out *bytes.Buffer, f *svgFrame, ps float64, css string) {
 
 // writeMapLayers writes room/floor and wall paths for one map. single gives
 // the single-map ids (rooms, walls, room-<seg>); otherwise groups use classes
-// so several maps can share a document. roomsAttr/wallsAttr are extra
-// attributes for the two groups (e.g. fill colors).
-func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightRoom string, roomsAttr, wallsAttr string) {
+// so several maps can share a document.
+func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightRoom string) {
 	groupAttr := func(name string) string {
 		if single {
 			return fmt.Sprintf(`id="%s"`, name)
 		}
 		return fmt.Sprintf(`class="%s"`, name)
 	}
-	fmt.Fprintf(out, "<g %s%s>\n", groupAttr("rooms"), roomsAttr)
+	fmt.Fprintf(out, "<g %s>\n", groupAttr("rooms"))
 	for _, layer := range m.Layers {
 		if layer.Type != "floor" && layer.Type != "segment" {
 			continue
@@ -216,7 +216,7 @@ func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightRoo
 	}
 	out.WriteString("</g>\n")
 
-	fmt.Fprintf(out, "<g %s%s>", groupAttr("walls"), wallsAttr)
+	fmt.Fprintf(out, "<g %s>", groupAttr("walls"))
 	for _, layer := range m.Layers {
 		if layer.Type == "wall" {
 			if d := cellRectsPath(layer.Pixels); d != "" {
@@ -289,7 +289,7 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 `, gridCSS(s), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
 
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(baseMap, baseTransform))
-	writeMapLayers(out, baseMap, true, highlightRoom, "", "")
+	writeMapLayers(out, baseMap, true, highlightRoom)
 	out.WriteString("</g>\n")
 
 	r.writeGrid(out, f)
@@ -351,21 +351,27 @@ func (r *VectorRenderer) RenderCompositeToSVG(w io.Writer) error {
 	f.finish()
 	s := f.sizes()
 
+	// Per-vacuum colors live in the stylesheet, one rule per selector.
+	var css strings.Builder
+	fmt.Fprintf(&css, ".background{fill:#fff}\n%s.charger{stroke:#000;stroke-width:%.1f}\n", gridCSS(s), s.stroke)
+	for _, id := range ids {
+		vc := r.Colors[id]
+		sel := "#map-" + cssToken(id)
+		fmt.Fprintf(&css, "%s .rooms{fill:%s;fill-opacity:%.2f}\n", sel, svgColor(vc.Floor), float64(vc.Floor.A)/255)
+		fmt.Fprintf(&css, "%s .walls{fill:%s}\n", sel, svgColor(vc.Wall))
+		fmt.Fprintf(&css, ".charger[data-id=\"%s\"]{fill:%s}\n", svgEscape(id), svgColor(vc.Wall))
+	}
+
 	ps := pixelSizeOf(r.Maps[ids[0]])
 	out := &bytes.Buffer{}
-	writeSVGOpen(out, f, ps, fmt.Sprintf(`.background{fill:#fff}
-%s.charger{stroke:#000;stroke-width:%.1f}
-`, gridCSS(s), s.stroke))
+	writeSVGOpen(out, f, ps, css.String())
 
 	out.WriteString(`<g id="maps">` + "\n")
 	for _, id := range ids {
 		m := r.Maps[id]
-		vc := r.Colors[id]
 		fmt.Fprintf(out, `<g id="map-%s" class="map" data-id="%s" transform="%s">`+"\n",
 			svgEscape(cssToken(id)), svgEscape(id), f.mapMatrix(m, r.Transforms[id]))
-		writeMapLayers(out, m, false, "",
-			fmt.Sprintf(` fill="%s" fill-opacity="%.2f"`, svgColor(vc.Floor), float64(vc.Floor.A)/255),
-			fmt.Sprintf(` fill="%s"`, svgColor(vc.Wall)))
+		writeMapLayers(out, m, false, "")
 		out.WriteString("</g>\n")
 	}
 	out.WriteString("</g>\n")
@@ -384,8 +390,8 @@ func (r *VectorRenderer) RenderCompositeToSVG(w io.Writer) error {
 		mps := pixelSizeOf(m)
 		tp := TransformPoint(Point{X: cp.X / mps, Y: cp.Y / mps}, r.Transforms[id])
 		c := f.toCanvas(Point{X: tp.X * mps, Y: tp.Y * mps})
-		fmt.Fprintf(out, `<circle class="charger" data-id="%s" cx="%.1f" cy="%.1f" r="%.1f" fill="%s"/>`,
-			svgEscape(id), c[0], c[1], s.radius*0.8, svgColor(r.Colors[id].Wall))
+		fmt.Fprintf(out, `<circle class="charger" data-id="%s" cx="%.1f" cy="%.1f" r="%.1f"/>`,
+			svgEscape(id), c[0], c[1], s.radius*0.8)
 	}
 	out.WriteString("</g>\n</svg>\n")
 	_, err := out.WriteTo(w)
