@@ -168,7 +168,7 @@ The map endpoints return `503 No maps available` until at least one map is loade
 
 The live, floorplan and per-vacuum maps (PNG and SVG) outline each room of the reference robot's map and print its Valetudo name inside it, at the point farthest from the room's edges. A name is left out when it doesn't fit inside its room, and unnamed segments (no name, or the segment id as name) get no label.
 
-PNG text uses the bundled Go Regular font, which covers Latin, Greek and Cyrillic (`Küche`, `Salle à manger`, `Кухня`). For other scripts such as Chinese or Japanese, point `render.fontPath` in `config.yaml` at a font that has them (`.ttf`, `.otf`, or the first font of a `.ttc`); it is tried first, with Go Regular as the fallback. SVG labels use the viewer's `sans-serif` font.
+PNG text uses the bundled Go Regular font, which covers Latin, Greek and Cyrillic (`Küche`, `Salle à manger`, `Кухня`). For other scripts such as Chinese or Japanese, point `render.fontPath` in `config.yaml` at a font that has them (`.ttf`, `.otf`, or the first font of a `.ttc`); it is tried first, with Go Regular as the fallback. In Docker, mount the font file into the container and use the path inside it. SVG labels use the viewer's `sans-serif` font.
 
 ### Per-vacuum (alerts)
 

@@ -206,7 +206,7 @@ func calibratedVacuums(maps map[string]*mesh.ValetudoMap, cache *mesh.Calibratio
 func alertImageScale(q string) float64 {
 	v, err := strconv.ParseFloat(q, 64)
 	if err != nil || v <= 0 {
-		return 3
+		return mesh.DefaultAlertScale
 	}
 	return math.Min(8, math.Max(1, v))
 }

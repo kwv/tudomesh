@@ -371,9 +371,13 @@ func edgeRuns(from, to int, edge func(int) bool, emit func(start, n int)) {
 	}
 }
 
-// svgLabelSize is the room label font size in canvas units: the PNG size
-// in grid cells, so both outputs label the same rooms.
-func svgLabelSize(ps float64) float64 { return pngLabelSize * ps }
+// DefaultAlertScale is the default PNG scale of the alert image
+// (/vacuum/{id}.png), in image pixels per grid cell.
+const DefaultAlertScale = 3
+
+// svgLabelSize is the room label font size in canvas units: the PNG label at
+// DefaultAlertScale, so the SVG and the default alert PNG label the same rooms.
+func svgLabelSize(ps float64) float64 { return pngLabelSize / DefaultAlertScale * ps }
 
 // writeRoomLabels writes <g id="room-labels"> with one
 // <text class="room-label" data-segment-id> per named segment of m whose
