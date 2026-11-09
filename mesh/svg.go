@@ -34,7 +34,8 @@ type VacuumMeta struct {
 //	                                <circle class="ring"> (highlight only) <circle class="body">
 //	                                <line class="heading"> <text class="label">
 //
-// A room whose name matches the highlighted vacuum's room also gets class "alert-room".
+// Each room has its own light fill (RoomColors). The room under the
+// highlighted vacuum's position also gets class "alert-room".
 //
 // Composite view (RenderCompositeToSVG): every map overlaid in its own color.
 //
@@ -182,8 +183,9 @@ func writeSVGOpen(out *bytes.Buffer, f *svgFrame, ps float64, css string) {
 
 // writeMapLayers writes room/floor and wall paths for one map. single gives
 // the single-map ids (rooms, walls, room-<seg>); otherwise groups use classes
-// so several maps can share a document.
-func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightRoom string) {
+// so several maps can share a document. The segment with id highlightSeg
+// gets class "alert-room".
+func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightSeg string) {
 	groupAttr := func(name string) string {
 		if single {
 			return fmt.Sprintf(`id="%s"`, name)
@@ -204,7 +206,7 @@ func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightRoo
 			continue
 		}
 		class := "room"
-		if highlightRoom != "" && NormalizeRoomName(layer.MetaData.Name) == highlightRoom {
+		if highlightSeg != "" && layer.MetaData.SegmentID == highlightSeg {
 			class += " alert-room"
 		}
 		id := ""
@@ -269,16 +271,19 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 	f.finish()
 	s := f.sizes()
 
-	highlightRoom := ""
-	if m, ok := r.Meta[r.Highlight]; ok && m.Room != "" {
-		highlightRoom = NormalizeRoomName(m.Room)
+	highlightSeg := roomUnder(baseMap, baseTransform, positions[r.Highlight])
+
+	var roomCSS strings.Builder
+	roomColors := RoomColors(baseMap)
+	for _, seg := range sortedKeys(roomColors) {
+		fmt.Fprintf(&roomCSS, "#room-%s{fill:%s}\n", cssToken(seg), svgColor(roomColors[seg]))
 	}
 
 	out := &bytes.Buffer{}
 	writeSVGOpen(out, f, ps, fmt.Sprintf(`.background{fill:#fff}
 .floor{fill:#c8c8c8}
 .room{fill:#c8c8c8}
-.room.alert-room{fill:#f6c6c6}
+%s#rooms .room.alert-room{fill:%s}
 .wall{fill:#505050}
 %s.vacuum .body{stroke:#000;stroke-width:%.1f}
 .vacuum .heading{stroke-width:%.1f;stroke-linecap:round}
@@ -286,10 +291,10 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 .vacuum .ring{fill:none;stroke:#e61e1e;stroke-width:%.1f}
 .vacuum.highlight .ring{animation:tudomesh-pulse 1.5s ease-in-out infinite}
 @keyframes tudomesh-pulse{50%%{opacity:.25}}
-`, gridCSS(s), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
+`, roomCSS.String(), svgColor(AlertRoomColor), gridCSS(s), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
 
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(baseMap, baseTransform))
-	writeMapLayers(out, baseMap, true, highlightRoom)
+	writeMapLayers(out, baseMap, true, highlightSeg)
 	out.WriteString("</g>\n")
 
 	r.writeGrid(out, f)
