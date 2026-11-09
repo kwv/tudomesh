@@ -170,8 +170,10 @@ The map endpoints return `503 No maps available` until at least one map is loade
 
 - `/vacuums` - JSON list of every vacuum (same fields as below)
 - `/vacuum/{id}` - JSON: room, last Valetudo status, position on the shared map
-- `/vacuum/{id}.png` - Live map with the vacuum circled and a caption (`rocky7 | Kitchen | error`). `?scale=1..8` sets the size (default 3).
-- `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and its room tinted, when the base map has a room of the same name
+- `/vacuum/{id}.png` - Live map with the vacuum circled, its room in red with a hatch and a dark red border, and a caption (`rocky7 | Kitchen | error`). `?scale=1..8` sets the size (default 3).
+- `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and its room filled red with a dashed outline
+
+The highlighted room is the robot's own segment under its position, mapped onto the shared map with its calibration, so it matches `room` in the JSON. If the robot is uncalibrated, is the reference, or has no segment there, the reference map's room at that position is used instead.
 
 ```json
 {
@@ -199,6 +201,8 @@ The map endpoints return `503 No maps available` until at least one map is loade
       <path id="room-16" class="room" data-room="Kitchen" data-segment-id="16"/>
       <path class="floor"/>                 unsegmented floor
     </g>
+    <path id="alert-room" class="alert-room"  /vacuum/{id}.svg only: the robot's room outline
+          data-room="Kitchen" data-segment-id="4" data-vacuum="TrickyZanyPartridge"/>
     <g id="walls"><path class="wall"/></g>
   </g>
   <g id="grid"><path class="grid-line"/></g>
@@ -211,6 +215,8 @@ The map endpoints return `503 No maps available` until at least one map is loade
   </g>
 </svg>
 ```
+
+`#alert-room` is drawn over the rooms and under the walls. Its `data-segment-id` is the segment in the map it came from (the robot's own map, or the reference map as a fallback). The default style is a red fill with a dashed dark red outline, so it does not rely on color alone; restyle it with `.alert-room { … }` (stroke widths are in grid cells).
 
 Example: embed `/live.svg` inline and flag any vacuum in an error state, hide one robot, or tint a room:
 

@@ -183,12 +183,23 @@ func writeLiveSVG(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.Cali
 		vr.Meta[key] = meta
 	}
 	vr.Highlight = highlight
+	vr.Calibrated = calibratedVacuums(maps, cache)
 
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Cache-Control", "no-cache")
 	if err := vr.RenderLiveToSVG(w, positions); err != nil {
 		log.Printf("Error encoding live SVG: %v", err)
 	}
+}
+
+// calibratedVacuums marks the vacuums in maps that have a stored calibration,
+// so the alert map only trusts their transforms. Never nil.
+func calibratedVacuums(maps map[string]*mesh.ValetudoMap, cache *mesh.CalibrationData) map[string]bool {
+	out := make(map[string]bool, len(maps))
+	for id := range maps {
+		out[id] = cache.GetVacuumCalibration(id) != nil
+	}
+	return out
 }
 
 // alertImageScale parses ?scale=, defaulting to 3 and clamping to 1..8.
@@ -264,6 +275,7 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 		renderer.GlobalRotation = rotateAll
 		renderer.Scale = alertImageScale(r.URL.Query().Get("scale"))
 		applyConfigColors(renderer, config)
+		renderer.Calibrated = calibratedVacuums(maps, cache)
 
 		positions := st.GetPositions()
 		applyLiveOptions(renderer, config, maps, positions)

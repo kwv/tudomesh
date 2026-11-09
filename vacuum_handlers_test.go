@@ -195,3 +195,38 @@ func TestVacuumEndpoint_SVG(t *testing.T) {
 		t.Errorf("unknown svg: status %d, want 404", rec.Code)
 	}
 }
+
+func TestVacuumEndpoint_SVGAlertRoom(t *testing.T) {
+	srv, _ := vacuumTestServer()
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/rocky7.svg", nil))
+	body := rec.Body.String()
+	want := `<path id="alert-room" class="alert-room" data-room="Kitchen" data-segment-id="7" data-vacuum="TrickyZanyPartridge"`
+	if !strings.Contains(body, want) {
+		t.Errorf("missing %s", want)
+	}
+	rooms, alert, walls := strings.Index(body, `id="rooms"`), strings.Index(body, `id="alert-room"`), strings.Index(body, `id="walls"`)
+	if rooms >= alert || alert >= walls {
+		t.Errorf("order rooms=%d alert-room=%d walls=%d; want rooms < alert-room < walls", rooms, alert, walls)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/live.svg", nil))
+	if strings.Contains(rec.Body.String(), `id="alert-room"`) {
+		t.Error("/live.svg should have no alert room")
+	}
+}
+
+func TestCalibratedVacuums(t *testing.T) {
+	maps := map[string]*mesh.ValetudoMap{"a": {}, "b": {}}
+	cache := &mesh.CalibrationData{}
+	cache.UpdateVacuumCalibration("a", mesh.VacuumCalibration{Transform: mesh.Translation(1, 2)})
+
+	got := calibratedVacuums(maps, cache)
+	if !got["a"] || got["b"] || len(got) != 2 {
+		t.Errorf("calibratedVacuums = %v, want a only", got)
+	}
+	if got := calibratedVacuums(maps, nil); got == nil || got["a"] || got["b"] {
+		t.Errorf("nil cache = %v, want non-nil and nothing calibrated", got)
+	}
+}

@@ -63,6 +63,9 @@ type CompositeRenderer struct {
 	// Names maps a vacuum id (LivePosition key) to the name shown in the live
 	// legend, e.g. its MQTT identifier. Missing ids show the id.
 	Names map[string]string
+	// Calibrated lists vacuums whose Transforms entry is a real calibration;
+	// only those get their own room highlighted. nil trusts every transform.
+	Calibrated map[string]bool
 }
 
 // NewCompositeRenderer creates a renderer with default settings
@@ -702,15 +705,15 @@ var (
 // RenderGreyscale creates a greyscale composite image without color coding or
 // legend, with the reference map's rooms shaded (RoomColors).
 func (r *CompositeRenderer) RenderGreyscale() *image.RGBA {
-	return r.renderBase("")
+	return r.renderBase(nil)
 }
 
 // renderBase draws the greyscale base map. Every map's floor is grey; the
-// reference map is drawn last with each room in its own light color, and the
-// room with segment id alertSeg in AlertRoomColor. Rooms in IgnoreRooms stay
-// grey. Walls come from the reference map only, so maps a cell or two apart
-// don't double them; other maps only add floor.
-func (r *CompositeRenderer) renderBase(alertSeg string) *image.RGBA {
+// reference map is drawn last with each room in its own light color. Rooms in
+// IgnoreRooms stay grey. alert, if set, is filled on top (see drawAlertRoom),
+// before the walls. Walls come from the reference map only, so maps a cell or
+// two apart don't double them; other maps only add floor.
+func (r *CompositeRenderer) renderBase(alert *alertRoom) *image.RGBA {
 	// Calculate bounds
 	minX, minY, maxX, maxY, centerX, centerY := r.CalculateBounds()
 
@@ -799,15 +802,20 @@ func (r *CompositeRenderer) renderBase(alertSeg string) *image.RGBA {
 			var c color.Color = GreyscaleFloor
 			if rc, ok := roomColors[layer.MetaData.SegmentID]; ok && layer.Type == "segment" {
 				c = rc
-				if layer.MetaData.SegmentID == alertSeg {
-					c = AlertRoomColor
-				}
 			}
 			for _, p := range PixelsToPoints(layer.Pixels) {
 				ix, iy := toImage(TransformPoint(p, transform))
 				fillCell(ix, iy, c)
 			}
 		}
+	}
+
+	if alert != nil {
+		refT, ok := r.Transforms[r.Reference]
+		if !ok {
+			refT = Identity()
+		}
+		drawAlertRoom(img, alert, refT, toImage, cell)
 	}
 
 	// Second pass: walls (dark grey), from the reference map (every map if
@@ -840,6 +848,53 @@ func (r *CompositeRenderer) renderBase(alertSeg string) *image.RGBA {
 	}
 
 	return img
+}
+
+// Second cues for the alert room, so it doesn't rely on hue alone.
+var (
+	alertBorderColor = color.RGBA{170, 30, 30, 255} // 2px inner border
+	alertHatchColor  = color.RGBA{214, 96, 96, 255} // 1px diagonal hatch
+	alertBorderWidth = 2                            // image pixels
+	alertHatchPeriod = 6                            // image pixels between hatch lines
+)
+
+// drawAlertRoom fills alert's cells (reference-map grid, placed with refT and
+// toImage) in AlertRoomColor with a diagonal hatch and a darker inner border.
+// cell is the image size of one grid cell.
+func drawAlertRoom(img *image.RGBA, alert *alertRoom, refT AffineMatrix, toImage func(Point) (int, int), cell int) {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	mask := make([]bool, w*h)
+	for _, p := range PixelsToPoints(alert.Pixels) {
+		ix, iy := toImage(TransformPoint(p, refT))
+		for py := max(iy, 0); py < min(iy+cell, h); py++ {
+			for px := max(ix, 0); px < min(ix+cell, w); px++ {
+				mask[py*w+px] = true
+			}
+		}
+	}
+	inside := func(x, y int) bool { return x >= 0 && x < w && y >= 0 && y < h && mask[y*w+x] }
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if !mask[y*w+x] {
+				continue
+			}
+			c := color.RGBA(AlertRoomColor)
+			if (x+y)%alertHatchPeriod == 0 {
+				c = alertHatchColor
+			}
+		border:
+			for dy := -alertBorderWidth; dy <= alertBorderWidth; dy++ {
+				for dx := -alertBorderWidth; dx <= alertBorderWidth; dx++ {
+					if !inside(x+dx, y+dy) {
+						c = alertBorderColor
+						break border
+					}
+				}
+			}
+			img.SetRGBA(x, y, c)
+		}
+	}
 }
 
 // drawVacuumIcon draws a stylized vacuum robot icon
@@ -949,11 +1004,11 @@ func drawVacuumIcon(img *image.RGBA, cx, cy, size int, angleDeg float64, c color
 
 // RenderLive creates a greyscale map with live position triangles
 func (r *CompositeRenderer) RenderLive(positions map[string]*LivePosition) *image.RGBA {
-	return r.renderLive(positions, "")
+	return r.renderLive(positions, nil)
 }
 
-func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alertSeg string) *image.RGBA {
-	img := r.renderBase(alertSeg)
+func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert *alertRoom) *image.RGBA {
+	img := r.renderBase(alert)
 
 	if len(positions) == 0 {
 		return img
@@ -996,15 +1051,11 @@ func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert
 
 // RenderLiveHighlight renders the live map like RenderLive, then draws a ring
 // around highlightID's position and adds a caption strip above the map. If the
-// vacuum has no position, only the caption is added. The reference map's room
-// under the vacuum's position is filled in AlertRoomColor.
+// vacuum has no position, only the caption is added. The vacuum's room (see
+// alertShape) is filled in AlertRoomColor with a hatch and darker border.
 func (r *CompositeRenderer) RenderLiveHighlight(positions map[string]*LivePosition, highlightID, caption string) *image.RGBA {
-	refTransform, ok := r.Transforms[r.Reference]
-	if !ok {
-		refTransform = Identity()
-	}
-	alertSeg := roomUnder(r.Maps[r.Reference], refTransform, positions[highlightID], r.IgnoreRooms...)
-	img := r.renderLive(positions, alertSeg)
+	alert := alertShape(r.Maps, r.Transforms, r.Calibrated, r.Reference, highlightID, positions[highlightID], r.IgnoreRooms...)
+	img := r.renderLive(positions, alert)
 
 	if pos, ok := positions[highlightID]; ok {
 		minX, minY, _, _, centerX, centerY := r.CalculateBounds()

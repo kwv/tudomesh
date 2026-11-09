@@ -27,6 +27,8 @@ type VacuumMeta struct {
 //	<g id="map" transform=...>    map geometry in grid cells (1 unit = 1 Valetudo pixel)
 //	  <g id="rooms">              one <path class="room" data-room data-segment-id> per segment,
 //	                              plus <path class="floor"> for unsegmented floor
+//	  <path id="alert-room">      highlighted vacuum's room (class "alert-room", data-room
+//	                              data-segment-id data-vacuum); only with a highlight
 //	  <g id="walls">              one <path class="wall"> (filled cells)
 //	<g id="grid">                 one dashed <path class="grid-line">
 //	<g id="vacuums">              one <g id="vacuum-<id>" class="vacuum state-<state> [highlight]"
@@ -34,8 +36,11 @@ type VacuumMeta struct {
 //	                                <circle class="ring"> (highlight only) <circle class="body">
 //	                                <line class="heading"> <text class="label">
 //
-// Each room has its own light fill (RoomColors). The room under the
-// highlighted vacuum's position also gets class "alert-room".
+// Each room has its own light fill (RoomColors). The alert room is the
+// highlighted vacuum's own segment under its position, mapped into the base
+// map's grid, or the base map's room there when the vacuum is the base map,
+// uncalibrated, or has no segment there (see alertShape). Its outline traces
+// the room's boundary, so CSS strokes show the shape, not the cell runs.
 //
 // Composite view (RenderCompositeToSVG): every map overlaid in its own color.
 //
@@ -183,9 +188,9 @@ func writeSVGOpen(out *bytes.Buffer, f *svgFrame, ps float64, css string) {
 
 // writeMapLayers writes room/floor and wall paths for one map. single gives
 // the single-map ids (rooms, walls, room-<seg>); otherwise groups use classes
-// so several maps can share a document. The segment with id highlightSeg
-// gets class "alert-room".
-func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightSeg string) {
+// so several maps can share a document. alert, if set, is written as
+// <path id="alert-room"> between the rooms and the walls (cells in m's grid).
+func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, alert *alertRoom) {
 	groupAttr := func(name string) string {
 		if single {
 			return fmt.Sprintf(`id="%s"`, name)
@@ -206,9 +211,6 @@ func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightSeg
 			continue
 		}
 		class := "room"
-		if highlightSeg != "" && layer.MetaData.SegmentID == highlightSeg {
-			class += " alert-room"
-		}
 		id := ""
 		if single {
 			id = fmt.Sprintf(`id="room-%s" `, svgEscape(cssToken(layer.MetaData.SegmentID)))
@@ -217,6 +219,13 @@ func writeMapLayers(out *bytes.Buffer, m *ValetudoMap, single bool, highlightSeg
 			id, class, svgEscape(layer.MetaData.Name), svgEscape(layer.MetaData.SegmentID), d)
 	}
 	out.WriteString("</g>\n")
+
+	if alert != nil {
+		if d := cellOutlinePath(alert.Pixels); d != "" {
+			fmt.Fprintf(out, `<path id="alert-room" class="alert-room" data-room="%s" data-segment-id="%s" data-vacuum="%s" d="%s"/>`+"\n",
+				svgEscape(alert.Name), svgEscape(alert.SegmentID), svgEscape(alert.Vacuum), d)
+		}
+	}
 
 	fmt.Fprintf(out, "<g %s>", groupAttr("walls"))
 	for _, layer := range m.Layers {
@@ -271,7 +280,7 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 	f.finish()
 	s := f.sizes()
 
-	highlightSeg := roomUnder(baseMap, baseTransform, positions[r.Highlight], r.IgnoreRooms...)
+	alert := alertShape(r.Maps, r.Transforms, r.Calibrated, baseID, r.Highlight, positions[r.Highlight], r.IgnoreRooms...)
 
 	var roomCSS strings.Builder
 	roomColors := RoomColors(baseMap, r.IgnoreRooms...)
@@ -283,7 +292,7 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 	writeSVGOpen(out, f, ps, fmt.Sprintf(`.background{fill:#fff}
 .floor{fill:#c8c8c8}
 .room{fill:#c8c8c8}
-%s#rooms .room.alert-room{fill:%s}
+%s.alert-room{fill:%s;stroke:%s;stroke-width:1.2;stroke-dasharray:2.4 1.2}
 .wall{fill:#505050}
 %s.vacuum .body{stroke:#000;stroke-width:%.1f}
 .vacuum .heading{stroke-width:%.1f;stroke-linecap:round}
@@ -291,10 +300,10 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 .vacuum .ring{fill:none;stroke:#e61e1e;stroke-width:%.1f}
 .vacuum.highlight .ring{animation:tudomesh-pulse 1.5s ease-in-out infinite}
 @keyframes tudomesh-pulse{50%%{opacity:.25}}
-`, roomCSS.String(), svgColor(AlertRoomColor), gridCSS(s), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
+`, roomCSS.String(), svgColor(AlertRoomColor), svgColor(color.NRGBA(alertBorderColor)), gridCSS(s), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
 
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(baseMap, baseTransform))
-	writeMapLayers(out, baseMap, true, highlightSeg)
+	writeMapLayers(out, baseMap, true, alert)
 	out.WriteString("</g>\n")
 
 	r.writeGrid(out, f)
@@ -376,7 +385,7 @@ func (r *VectorRenderer) RenderCompositeToSVG(w io.Writer) error {
 		m := r.Maps[id]
 		fmt.Fprintf(out, `<g id="map-%s" class="map" data-id="%s" transform="%s">`+"\n",
 			svgEscape(cssToken(id)), svgEscape(id), f.mapMatrix(m, r.Transforms[id]))
-		writeMapLayers(out, m, false, "")
+		writeMapLayers(out, m, false, nil)
 		out.WriteString("</g>\n")
 	}
 	out.WriteString("</g>\n")
@@ -465,6 +474,103 @@ func cellRectsPath(pixels []int) string {
 	var b strings.Builder
 	for _, rc := range done {
 		fmt.Fprintf(&b, "M%d %dh%dv%dh-%dz", rc.x, rc.y, rc.w, rc.h, rc.w)
+	}
+	return b.String()
+}
+
+// cellOutlinePath turns grid pixels [x1,y1,...] into an SVG path tracing the
+// boundary of the cell set: one closed loop per outline (holes included),
+// corners only. Outer loops run clockwise and holes counter-clockwise, so the
+// default nonzero fill matches the cells and a stroke follows only the edge.
+func cellOutlinePath(pixels []int) string {
+	type pt struct{ x, y int }
+	in := map[pt]bool{}
+	var cs []pt
+	for i := 0; i+1 < len(pixels); i += 2 {
+		c := pt{pixels[i], pixels[i+1]}
+		if !in[c] {
+			in[c] = true
+			cs = append(cs, c)
+		}
+	}
+	sort.Slice(cs, func(i, j int) bool {
+		if cs[i].y != cs[j].y {
+			return cs[i].y < cs[j].y
+		}
+		return cs[i].x < cs[j].x
+	})
+
+	// Directed boundary edges, clockwise around each cell (y down).
+	next := map[pt][]pt{}
+	var starts []pt
+	add := func(a, b pt) {
+		if len(next[a]) == 0 {
+			starts = append(starts, a)
+		}
+		next[a] = append(next[a], b)
+	}
+	for _, c := range cs {
+		x, y := c.x, c.y
+		if !in[pt{x, y - 1}] {
+			add(pt{x, y}, pt{x + 1, y})
+		}
+		if !in[pt{x + 1, y}] {
+			add(pt{x + 1, y}, pt{x + 1, y + 1})
+		}
+		if !in[pt{x, y + 1}] {
+			add(pt{x + 1, y + 1}, pt{x, y + 1})
+		}
+		if !in[pt{x - 1, y}] {
+			add(pt{x, y + 1}, pt{x, y})
+		}
+	}
+
+	var b strings.Builder
+	for _, start := range starts {
+		for len(next[start]) > 0 {
+			// Walk one loop; in-degree equals out-degree at every vertex,
+			// so the walk closes at start.
+			loop := []pt{start}
+			for v := start; ; {
+				w := next[v][0]
+				next[v] = next[v][1:]
+				if w == start {
+					break
+				}
+				loop = append(loop, w)
+				v = w
+			}
+			n := len(loop)
+			corner := func(i int) bool {
+				p, c, q := loop[(i+n-1)%n], loop[i], loop[(i+1)%n]
+				return (c.x-p.x)*(q.y-c.y)-(c.y-p.y)*(q.x-c.x) != 0
+			}
+			first := -1
+			for i := range loop {
+				if corner(i) {
+					first = i
+					break
+				}
+			}
+			if first < 0 {
+				continue
+			}
+			c := loop[first]
+			fmt.Fprintf(&b, "M%d %d", c.x, c.y)
+			for k := 1; k < n; k++ {
+				p := loop[(first+k)%n]
+				if !corner((first + k) % n) {
+					continue
+				}
+				if p.x != c.x {
+					fmt.Fprintf(&b, "H%d", p.x)
+				} else {
+					fmt.Fprintf(&b, "V%d", p.y)
+				}
+				c = p
+			}
+			b.WriteString("z")
+		}
 	}
 	return b.String()
 }
