@@ -693,8 +693,16 @@ var (
 	GreyscaleBG    = color.NRGBA{240, 240, 240, 255} // Background
 )
 
-// RenderGreyscale creates a greyscale composite image without color coding or legend
+// RenderGreyscale creates a greyscale composite image without color coding or
+// legend, with the reference map's rooms shaded (RoomColors).
 func (r *CompositeRenderer) RenderGreyscale() *image.RGBA {
+	return r.renderBase("")
+}
+
+// renderBase draws the greyscale base map. Every map's floor is grey; the
+// reference map is drawn last with each room in its own light color, and the
+// room with segment id alertSeg in AlertRoomColor.
+func (r *CompositeRenderer) renderBase(alertSeg string) *image.RGBA {
 	// Calculate bounds
 	minX, minY, maxX, maxY, centerX, centerY := r.CalculateBounds()
 
@@ -745,20 +753,51 @@ func (r *CompositeRenderer) RenderGreyscale() *image.RGBA {
 		return x, y
 	}
 
-	// First pass: floors/segments (greyscale)
-	for id, m := range r.Maps {
+	// Fill whole cells so floors and rooms read as solid areas.
+	cell := max(1, int(math.Ceil(r.Scale)))
+	fillCell := func(ix, iy int, c color.Color) {
+		for dy := 0; dy < cell; dy++ {
+			for dx := 0; dx < cell; dx++ {
+				if px, py := ix+dx, iy+dy; px >= 0 && px < width && py >= 0 && py < height {
+					img.Set(px, py, c)
+				}
+			}
+		}
+	}
+
+	// First pass: floors/segments. Other maps first, then the reference map
+	// with its rooms shaded.
+	order := make([]string, 0, len(r.Maps))
+	for _, id := range sortedKeys(r.Maps) {
+		if id != r.Reference {
+			order = append(order, id)
+		}
+	}
+	if _, ok := r.Maps[r.Reference]; ok {
+		order = append(order, r.Reference)
+	}
+	for _, id := range order {
+		m := r.Maps[id]
 		transform := r.Transforms[id]
+		var roomColors map[string]color.NRGBA
+		if id == r.Reference {
+			roomColors = RoomColors(m)
+		}
 
 		for _, layer := range m.Layers {
-			if layer.Type == "floor" || layer.Type == "segment" {
-				points := PixelsToPoints(layer.Pixels)
-				for _, p := range points {
-					tp := TransformPoint(p, transform)
-					ix, iy := toImage(tp)
-					if ix >= 0 && ix < width && iy >= 0 && iy < height {
-						img.Set(ix, iy, GreyscaleFloor)
-					}
+			if layer.Type != "floor" && layer.Type != "segment" {
+				continue
+			}
+			var c color.Color = GreyscaleFloor
+			if rc, ok := roomColors[layer.MetaData.SegmentID]; ok && layer.Type == "segment" {
+				c = rc
+				if layer.MetaData.SegmentID == alertSeg {
+					c = AlertRoomColor
 				}
+			}
+			for _, p := range PixelsToPoints(layer.Pixels) {
+				ix, iy := toImage(TransformPoint(p, transform))
+				fillCell(ix, iy, c)
 			}
 		}
 	}
@@ -897,8 +936,11 @@ func drawVacuumIcon(img *image.RGBA, cx, cy, size int, angleDeg float64, c color
 
 // RenderLive creates a greyscale map with live position triangles
 func (r *CompositeRenderer) RenderLive(positions map[string]*LivePosition) *image.RGBA {
-	// Start with greyscale base
-	img := r.RenderGreyscale()
+	return r.renderLive(positions, "")
+}
+
+func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alertSeg string) *image.RGBA {
+	img := r.renderBase(alertSeg)
 
 	if len(positions) == 0 {
 		return img
@@ -941,9 +983,15 @@ func (r *CompositeRenderer) RenderLive(positions map[string]*LivePosition) *imag
 
 // RenderLiveHighlight renders the live map like RenderLive, then draws a ring
 // around highlightID's position and adds a caption strip above the map. If the
-// vacuum has no position, only the caption is added.
+// vacuum has no position, only the caption is added. The reference map's room
+// under the vacuum's position is filled in AlertRoomColor.
 func (r *CompositeRenderer) RenderLiveHighlight(positions map[string]*LivePosition, highlightID, caption string) *image.RGBA {
-	img := r.RenderLive(positions)
+	refTransform, ok := r.Transforms[r.Reference]
+	if !ok {
+		refTransform = Identity()
+	}
+	alertSeg := roomUnder(r.Maps[r.Reference], refTransform, positions[highlightID])
+	img := r.renderLive(positions, alertSeg)
 
 	if pos, ok := positions[highlightID]; ok {
 		minX, minY, _, _, centerX, centerY := r.CalculateBounds()
