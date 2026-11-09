@@ -271,10 +271,10 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 	f.finish()
 	s := f.sizes()
 
-	highlightSeg := roomUnder(baseMap, baseTransform, positions[r.Highlight])
+	highlightSeg := roomUnder(baseMap, baseTransform, positions[r.Highlight], r.IgnoreRooms...)
 
 	var roomCSS strings.Builder
-	roomColors := RoomColors(baseMap)
+	roomColors := RoomColors(baseMap, r.IgnoreRooms...)
 	for _, seg := range sortedKeys(roomColors) {
 		fmt.Fprintf(&roomCSS, "#room-%s{fill:%s}\n", cssToken(seg), svgColor(roomColors[seg]))
 	}
