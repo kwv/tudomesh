@@ -28,7 +28,10 @@ type VacuumMeta struct {
 //	  <g id="rooms">              one <path class="room" data-room data-segment-id> per segment,
 //	                              plus <path class="floor"> for unsegmented floor
 //	  <g id="walls">              one <path class="wall"> (filled cells)
+//	  <g id="room-outlines">      one <path class="room-outline" data-segment-id> per segment
 //	<g id="grid">                 one dashed <path class="grid-line">
+//	<g id="room-labels">          one <text class="room-label" data-segment-id> per named
+//	                              room whose name fits inside it, in canvas coordinates
 //	<g id="vacuums">              one <g id="vacuum-<id>" class="vacuum state-<state> [highlight]"
 //	                              data-id data-name data-room data-state transform="translate(x y)">
 //	                                <circle class="ring"> (highlight only) <circle class="body">
@@ -285,19 +288,21 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 .room{fill:#c8c8c8}
 %s#rooms .room.alert-room{fill:%s}
 .wall{fill:#505050}
-%s.vacuum .body{stroke:#000;stroke-width:%.1f}
+%s%s.vacuum .body{stroke:#000;stroke-width:%.1f}
 .vacuum .heading{stroke-width:%.1f;stroke-linecap:round}
 .vacuum .label{font:bold %.1fpx sans-serif;text-anchor:middle;fill:#222;paint-order:stroke;stroke:#fff;stroke-width:%.1f}
 .vacuum .ring{fill:none;stroke:#e61e1e;stroke-width:%.1f}
 .vacuum.highlight .ring{animation:tudomesh-pulse 1.5s ease-in-out infinite}
 @keyframes tudomesh-pulse{50%%{opacity:.25}}
-`, roomCSS.String(), svgColor(AlertRoomColor), gridCSS(s), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
+`, roomCSS.String(), svgColor(AlertRoomColor), gridCSS(s), roomLabelCSS(s, ps), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
 
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(baseMap, baseTransform))
 	writeMapLayers(out, baseMap, true, highlightSeg)
+	writeRoomOutlines(out, baseMap)
 	out.WriteString("</g>\n")
 
 	r.writeGrid(out, f)
+	writeRoomLabels(out, f, baseMap, baseTransform, svgLabelSize(ps))
 
 	out.WriteString(`<g id="vacuums">` + "\n")
 	for _, id := range sortedKeys(positions) {

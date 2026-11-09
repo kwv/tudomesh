@@ -218,6 +218,7 @@ func (a *App) RunRender() {
 		} else {
 			log.Printf("Loaded config from %s", a.ConfigFile)
 			mesh.ResolveVacuums(config, filepath.Join(a.DataDir, vacuumIdentityCache), discoveryTimeout)
+			applyRenderConfig(config)
 		}
 	}
 
@@ -618,6 +619,7 @@ func (a *App) RunService() {
 	}
 	log.Printf("Loaded config from %s", resolvedConfig)
 	mesh.ResolveVacuums(config, filepath.Join(a.DataDir, vacuumIdentityCache), discoveryTimeout)
+	applyRenderConfig(config)
 	a.Config = config
 	if a.MqttMode && os.Getenv("MQTT_BROKER") == "" && config.MQTT.Broker == "" {
 		log.Fatal(errNoBroker)
@@ -934,4 +936,17 @@ func (a *App) checkWritability(dir string) error {
 		return err
 	}
 	return os.Remove(tmpFile)
+}
+
+// applyRenderConfig loads the optional PNG font (render.fontPath). On error
+// the bundled font is kept.
+func applyRenderConfig(config *mesh.Config) {
+	if config == nil || config.Render.FontPath == "" {
+		return
+	}
+	if err := mesh.SetFontFile(config.Render.FontPath); err != nil {
+		log.Printf("WARNING: %v; using the bundled font", err)
+		return
+	}
+	log.Printf("PNG font: %s", config.Render.FontPath)
 }

@@ -11,7 +11,6 @@ import (
 	"sort"
 
 	"golang.org/x/image/font"
-	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
 )
 
@@ -553,9 +552,13 @@ func (r *CompositeRenderer) drawLegend(img *image.RGBA, width, height int) {
 	}
 }
 
-// drawText renders text onto an image at the specified position
+// textSize is the caption and legend font size in pixels.
+const textSize = 13
+
+// drawText renders text onto an image with its baseline starting at (x, y).
 func drawText(img *image.RGBA, x, y int, text string, c color.RGBA) {
-	face := basicfont.Face7x13
+	face := newTextFace(textSize)
+	defer func() { _ = face.Close() }()
 	d := &font.Drawer{
 		Dst:  img,
 		Src:  image.NewUniform(c),
@@ -694,9 +697,12 @@ var (
 )
 
 // RenderGreyscale creates a greyscale composite image without color coding or
-// legend, with the reference map's rooms shaded (RoomColors).
+// legend, with the reference map's rooms shaded (RoomColors), outlined and
+// labelled.
 func (r *CompositeRenderer) RenderGreyscale() *image.RGBA {
-	return r.renderBase("")
+	img := r.renderBase("")
+	r.drawRoomOverlay(img)
+	return img
 }
 
 // renderBase draws the greyscale base map. Every map's floor is grey; the
@@ -941,6 +947,7 @@ func (r *CompositeRenderer) RenderLive(positions map[string]*LivePosition) *imag
 
 func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alertSeg string) *image.RGBA {
 	img := r.renderBase(alertSeg)
+	r.drawRoomOverlay(img)
 
 	if len(positions) == 0 {
 		return img
