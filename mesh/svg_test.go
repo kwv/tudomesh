@@ -82,15 +82,19 @@ func TestRenderLiveToSVG_Structure(t *testing.T) {
 		"other":  {X: 15, Y: 15, Color: "#43b0f1"},
 	})
 
-	for _, id := range []string{"map", "rooms", "walls", "grid", "vacuums", "room-16", "room-17", "vacuum-rocky7", "vacuum-other"} {
+	for _, id := range []string{"map", "rooms", "alert-room", "walls", "grid", "vacuums", "room-16", "room-17", "vacuum-rocky7", "vacuum-other"} {
 		if len(root.find(byID(id))) != 1 {
 			t.Errorf("expected exactly one element with id %q", id)
 		}
 	}
 
 	kitchen := root.find(byID("room-16"))[0]
-	if kitchen.attr("data-room") != "Kitchen" || kitchen.attr("class") != "room alert-room" {
+	if kitchen.attr("data-room") != "Kitchen" || kitchen.attr("class") != "room" {
 		t.Errorf("kitchen attrs: class=%q room=%q", kitchen.attr("class"), kitchen.attr("data-room"))
+	}
+	// rocky7 has no map of its own, so the alert room is the base map's Kitchen.
+	if a := root.find(byID("alert-room"))[0]; a.attr("data-room") != "Kitchen" || a.attr("data-segment-id") != "16" || a.attr("data-vacuum") != "rocky7" {
+		t.Errorf("alert-room attrs: %+v", a.Attrs)
 	}
 	other := root.find(byID("room-17"))[0]
 	if other.attr("data-room") != `Kid's "Room" <2>` || other.attr("class") != "room" {
