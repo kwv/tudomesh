@@ -72,8 +72,8 @@ type cell struct{ x, y int }
 // roomSyncState is the robot's segments as a cell -> segment id labelling,
 // plus each cell's reference room.
 type roomSyncState struct {
-	label map[cell]string // robot cell -> robot segment id
-	ref   map[cell]string // robot cell -> reference segment id ("" if none)
+	label    map[cell]string // robot cell -> robot segment id
+	ref      map[cell]string // robot cell -> reference segment id ("" if none)
 	names    map[string]string
 	refNames map[string]string
 	ps       float64
