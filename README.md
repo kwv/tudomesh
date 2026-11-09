@@ -72,7 +72,7 @@ Environment variables take precedence over `config.yaml`.
 
 What each robot reports is saved to `.vacuums.json` in the data directory, so a robot that is offline at startup still resolves. With nothing saved, the URL's host name is used as the robot's name and id (`http://rocky6.home` → `rocky6`); once the robot answers, the id becomes its `systemId`, so delete any `ValetudoMapExport-rocky6.json` saved under the guessed id. Older configs that set `id`, `topic` and `apiUrl` keep working.
 
-[`config.example.yaml`](config.example.yaml) lists the remaining options: `reference` (the robot used as the world origin; default is the one with the largest map), `gridSpacing`, `ignoreRooms` (see [Maps](#maps)), and per-vacuum `rotation` and `translation` overrides.
+[`config.example.yaml`](config.example.yaml) lists the remaining options: `reference` (the robot used as the world origin; default is the one with the largest map), `gridSpacing`, `ignoreRooms` (see [Maps](#maps)), per-vacuum `rotation` and `translation` overrides, and `render.fontPath` (see [Room labels](#room-labels)).
 
 ### One instance per floor
 
@@ -164,6 +164,12 @@ Names match ignoring case and anything but letters and digits, so `Front Porch`,
 
 The map endpoints return `503 No maps available` until at least one map is loaded.
 
+### Room labels
+
+The live, floorplan and per-vacuum maps (PNG and SVG) outline each room of the reference robot's map and print its Valetudo name inside it, at the point farthest from the room's edges. A name is left out when it doesn't fit inside its room, and unnamed segments (no name, or the segment id as name) get no label.
+
+PNG text uses the bundled Go Regular font, which covers Latin, Greek and Cyrillic (`Küche`, `Salle à manger`, `Кухня`). For other scripts such as Chinese or Japanese, point `render.fontPath` in `config.yaml` at a font that has them (`.ttf`, `.otf`, or the first font of a `.ttc`); it is tried first, with Go Regular as the fallback. SVG labels use the viewer's `sans-serif` font.
+
 ### Per-vacuum (alerts)
 
 `{id}` is the vacuum id (its Valetudo `systemId`, or `id` from config) or the identifier in its MQTT topic, e.g. `rocky7` for `valetudo/rocky7/MapData/map-data`. Matching is case-insensitive.
@@ -204,8 +210,14 @@ The highlighted room is the robot's own segment under its position, mapped onto 
     <path id="alert-room" class="alert-room"  /vacuum/{id}.svg only: the robot's room outline
           data-room="Kitchen" data-segment-id="4" data-vacuum="TrickyZanyPartridge"/>
     <g id="walls"><path class="wall"/></g>
+    <g id="room-outlines">
+      <path class="room-outline" data-segment-id="16"/>
+    </g>
   </g>
   <g id="grid"><path class="grid-line"/></g>
+  <g id="room-labels">                     upright text, only for named rooms it fits in
+    <text class="room-label" data-segment-id="16">Kitchen</text>
+  </g>
   <g id="vacuums">
     <g id="vacuum-trickyzanypartridge" class="vacuum state-error highlight"
        data-id="TrickyZanyPartridge" data-name="rocky7" data-room="Kitchen" data-state="error">
@@ -224,6 +236,9 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, hide on
 .vacuum.state-error .body { fill: #e61e1e; }
 #vacuum-frugallamelion { display: none; }
 .room[data-room="Kitchen"] { fill: #fff3c4; }
+.room-outline { stroke: #446; stroke-opacity: 1; }
+.room-label { font-family: "Noto Sans", sans-serif; fill: #124; }
+#room-labels { display: none; }
 ```
 
 `/composite-map.svg` uses the same room, floor and wall paths, but one group per vacuum (reference first). Each vacuum's colors are rules in the `<style>` block (`#map-<id> .rooms`, `#map-<id> .walls`, `.charger[data-id=…]`), so restyling means editing or overriding CSS:

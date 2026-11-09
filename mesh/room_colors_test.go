@@ -225,8 +225,8 @@ func TestRenderLiveToSVG_AlertRoomIsRobotSegment(t *testing.T) {
 	for _, c := range mapGroup[0].Children {
 		order = append(order, c.attr("id"))
 	}
-	if strings.Join(order, ",") != "rooms,alert-room,walls" {
-		t.Errorf("#map children = %v, want rooms, alert-room, walls", order)
+	if strings.Join(order, ",") != "rooms,alert-room,walls,room-outlines" {
+		t.Errorf("#map children = %v, want rooms, alert-room, walls, room-outlines", order)
 	}
 
 	a := root.find(byID("alert-room"))[0]
@@ -342,6 +342,10 @@ func TestRenderLiveHighlight_PNGRoomFills(t *testing.T) {
 // rely on hue alone.
 func TestRenderLiveHighlight_PNGSecondCue(t *testing.T) {
 	maps, tr := alertTestMaps()
+	// Unnamed rooms get no labels, so the pixel checks only see fills.
+	for i := range maps["ref"].Layers {
+		maps["ref"].Layers[i].MetaData.Name = ""
+	}
 	r := alertPNGRenderer(maps, tr)
 	r.Scale = 8
 	r.Calibrated = map[string]bool{"rob": true}

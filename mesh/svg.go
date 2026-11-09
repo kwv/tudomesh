@@ -30,7 +30,10 @@ type VacuumMeta struct {
 //	  <path id="alert-room">      highlighted vacuum's room (class "alert-room", data-room
 //	                              data-segment-id data-vacuum); only with a highlight
 //	  <g id="walls">              one <path class="wall"> (filled cells)
+//	  <g id="room-outlines">      one <path class="room-outline" data-segment-id> per segment
 //	<g id="grid">                 one dashed <path class="grid-line">
+//	<g id="room-labels">          one <text class="room-label" data-segment-id> per named
+//	                              room whose name fits inside it, in canvas coordinates
 //	<g id="vacuums">              one <g id="vacuum-<id>" class="vacuum state-<state> [highlight]"
 //	                              data-id data-name data-room data-state transform="translate(x y)">
 //	                                <circle class="ring"> (highlight only) <circle class="body">
@@ -258,8 +261,9 @@ func gridCSS(s svgSizes) string {
 		s.stroke, s.radius, s.radius)
 }
 
-// RenderLiveToSVG writes the live view: the largest map as a greyscale base
-// (rooms, walls, grid) and every vacuum position as its own labelled group.
+// RenderLiveToSVG writes the live view: the reference map (the largest map
+// when Reference has none) as a greyscale base (rooms, walls, grid) and every
+// vacuum position as its own labelled group, matching the PNG live view.
 // Positions outside the base map expand the viewport. With no positions it
 // is the plain floorplan.
 func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*LivePosition) error {
@@ -267,7 +271,10 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 		return fmt.Errorf("no maps available for live rendering")
 	}
 
-	baseID := SelectReferenceVacuum(r.Maps, nil)
+	baseID := r.Reference
+	if r.Maps[baseID] == nil {
+		baseID = SelectReferenceVacuum(r.Maps, nil)
+	}
 	baseMap := r.Maps[baseID]
 	baseTransform := r.Transforms[baseID]
 	ps := pixelSizeOf(baseMap)
@@ -294,19 +301,21 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 .room{fill:#c8c8c8}
 %s.alert-room{fill:%s;stroke:%s;stroke-width:1.2;stroke-dasharray:2.4 1.2}
 .wall{fill:#505050}
-%s.vacuum .body{stroke:#000;stroke-width:%.1f}
+%s%s.vacuum .body{stroke:#000;stroke-width:%.1f}
 .vacuum .heading{stroke-width:%.1f;stroke-linecap:round}
 .vacuum .label{font:bold %.1fpx sans-serif;text-anchor:middle;fill:#222;paint-order:stroke;stroke:#fff;stroke-width:%.1f}
 .vacuum .ring{fill:none;stroke:#e61e1e;stroke-width:%.1f}
 .vacuum.highlight .ring{animation:tudomesh-pulse 1.5s ease-in-out infinite}
 @keyframes tudomesh-pulse{50%%{opacity:.25}}
-`, roomCSS.String(), svgColor(AlertRoomColor), svgColor(color.NRGBA(alertBorderColor)), gridCSS(s), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
+`, roomCSS.String(), svgColor(AlertRoomColor), svgColor(color.NRGBA(alertBorderColor)), gridCSS(s), roomLabelCSS(s, ps), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
 
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(baseMap, baseTransform))
 	writeMapLayers(out, baseMap, true, alert)
+	writeRoomOutlines(out, baseMap, r.IgnoreRooms...)
 	out.WriteString("</g>\n")
 
 	r.writeGrid(out, f)
+	writeRoomLabels(out, f, baseMap, baseTransform, svgLabelSize(ps), r.IgnoreRooms...)
 
 	out.WriteString(`<g id="vacuums">` + "\n")
 	for _, id := range sortedKeys(positions) {
