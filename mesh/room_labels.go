@@ -310,7 +310,7 @@ func toRGBA(c color.NRGBA) color.RGBA {
 // --- SVG ---
 
 // writeRoomOutlines writes <g id="room-outlines"> with one
-// <path class="room-outline" data-segment-id> per segment of m: the cell
+// <path class="room-outline" data-room data-segment-id> per segment of m: the cell
 // edges where the room borders anything else, in grid units. Rooms in ignore
 // get no outline.
 func writeRoomOutlines(out *bytes.Buffer, m *ValetudoMap, ignore ...string) {
@@ -320,8 +320,8 @@ func writeRoomOutlines(out *bytes.Buffer, m *ValetudoMap, ignore ...string) {
 			continue
 		}
 		if d := cellEdgePath(newCellMask(layer.Pixels)); d != "" {
-			fmt.Fprintf(out, `<path class="room-outline" data-segment-id="%s" d="%s"/>`,
-				svgEscape(layer.MetaData.SegmentID), d)
+			fmt.Fprintf(out, `<path class="room-outline" data-room="%s" data-segment-id="%s" d="%s"/>`,
+				svgEscape(layer.MetaData.Name), svgEscape(layer.MetaData.SegmentID), d)
 		}
 	}
 	out.WriteString("</g>\n")
@@ -380,7 +380,7 @@ const DefaultAlertScale = 3
 func svgLabelSize(ps float64) float64 { return pngLabelSize / DefaultAlertScale * ps }
 
 // writeRoomLabels writes <g id="room-labels"> with one
-// <text class="room-label" data-segment-id> per named segment of m whose
+// <text class="room-label" data-room data-segment-id> per named segment of m whose
 // label fits inside the room. Labels are in canvas coordinates, so they stay
 // upright under the global rotation.
 func writeRoomLabels(out *bytes.Buffer, f *svgFrame, m *ValetudoMap, t AffineMatrix, size float64, ignore ...string) {
@@ -448,8 +448,8 @@ func writeRoomLabels(out *bytes.Buffer, f *svgFrame, m *ValetudoMap, t AffineMat
 		if !rectInside(center[0], center[1], w+size*0.4, h, step, inside) {
 			continue
 		}
-		fmt.Fprintf(out, `<text class="room-label" data-segment-id="%s" x="%.1f" y="%.1f">%s</text>`,
-			svgEscape(layer.MetaData.SegmentID), center[0], center[1]+size*0.35, svgEscape(name))
+		fmt.Fprintf(out, `<text class="room-label" data-room="%s" data-segment-id="%s" x="%.1f" y="%.1f">%s</text>`,
+			svgEscape(name), svgEscape(layer.MetaData.SegmentID), center[0], center[1]+size*0.35, svgEscape(name))
 	}
 	out.WriteString("</g>\n")
 }

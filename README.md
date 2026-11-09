@@ -211,12 +211,12 @@ The highlighted room is the robot's own segment under its position, mapped onto 
           data-room="Kitchen" data-segment-id="4" data-vacuum="TrickyZanyPartridge"/>
     <g id="walls"><path class="wall"/></g>
     <g id="room-outlines">
-      <path class="room-outline" data-segment-id="16"/>
+      <path class="room-outline" data-room="Kitchen" data-segment-id="16"/>
     </g>
   </g>
   <g id="grid"><path class="grid-line"/></g>
   <g id="room-labels">                     upright text, only for named rooms it fits in
-    <text class="room-label" data-segment-id="16">Kitchen</text>
+    <text class="room-label" data-room="Kitchen" data-segment-id="16">Kitchen</text>
   </g>
   <g id="vacuums">
     <g id="vacuum-trickyzanypartridge" class="vacuum state-error highlight"
@@ -238,7 +238,9 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, hide on
 .room[data-room="Kitchen"] { fill: #fff3c4; }
 .room-outline { stroke: #446; stroke-opacity: 1; }
 .room-label { font-family: "Noto Sans", sans-serif; fill: #124; }
-#room-labels { display: none; }
+#room-labels { display: none; }                      /* hide all room names */
+#room-outlines { display: none; }                    /* hide all outlines */
+.room-label[data-room="UtilityCloset"] { display: none; }  /* hide one room's name */
 ```
 
 `/composite-map.svg` uses the same room, floor and wall paths, but one group per vacuum (reference first). Each vacuum's colors are rules in the `<style>` block (`#map-<id> .rooms`, `#map-<id> .walls`, `.charger[data-id=…]`), so restyling means editing or overriding CSS:

@@ -325,3 +325,14 @@ func TestRenderLiveToSVG_UsesReference(t *testing.T) {
 		t.Error("live SVG should draw the reference map's rooms")
 	}
 }
+
+// Labels and outlines carry the room name, so CSS can target a room by name.
+func TestRenderLiveToSVG_LabelsHaveRoomName(t *testing.T) {
+	root := renderLive(t, liveTestRenderer(), nil)
+	for _, class := range []string{"room-label", "room-outline"} {
+		nodes := root.find(func(n svgNode) bool { return n.attr("class") == class && n.attr("data-segment-id") == "16" })
+		if len(nodes) != 1 || nodes[0].attr("data-room") != "Kitchen" {
+			t.Errorf("%s for segment 16: want one with data-room=Kitchen, got %d", class, len(nodes))
+		}
+	}
+}
