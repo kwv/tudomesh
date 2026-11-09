@@ -72,7 +72,7 @@ Environment variables take precedence over `config.yaml`.
 
 What each robot reports is saved to `.vacuums.json` in the data directory, so a robot that is offline at startup still resolves. With nothing saved, the URL's host name is used as the robot's name and id (`http://rocky6.home` → `rocky6`); once the robot answers, the id becomes its `systemId`, so delete any `ValetudoMapExport-rocky6.json` saved under the guessed id. Older configs that set `id`, `topic` and `apiUrl` keep working.
 
-[`config.example.yaml`](config.example.yaml) lists the remaining options: `reference` (the robot used as the world origin; default is the one with the largest map), `gridSpacing`, and per-vacuum `rotation` and `translation` overrides.
+[`config.example.yaml`](config.example.yaml) lists the remaining options: `reference` (the robot used as the world origin; default is the one with the largest map), `gridSpacing`, `ignoreRooms` (see [Maps](#maps)), and per-vacuum `rotation` and `translation` overrides.
 
 ### One instance per floor
 
@@ -147,8 +147,18 @@ The map stays empty until each robot's full map is known: either from a `Valetud
 - `/` - HTML page showing the live SVG map
 - `/health` - Health check
 - `/live.svg` - Greyscale unified floorplan with live vacuum positions. The primary live view, structured for styling and scripting (see [SVG Structure](#svg-structure)).
-- `/live.png` - Greyscale floorplan with live position icons and legend
+- `/live.png` - Greyscale floorplan with live position icons and a legend of robot names (the MQTT identifier, e.g. `rocky7`; the id if unknown)
 - `/floorplan.svg` - The live SVG without vacuums
+
+The live views (`/live.*`, `/floorplan.svg`, `/vacuum/{id}.png|.svg`) draw the reference robot's rooms and walls; other robots only add grey floor where the reference has none. The composite views draw every robot's walls.
+
+`ignoreRooms` in config lists rooms drawn as plain floor on the live views, with no fill, label or alert highlight, for areas such as a porch seen through glass:
+
+```yaml
+ignoreRooms: [Porch, Deck]
+```
+
+Names match ignoring case and anything but letters and digits, so `Front Porch`, `front-porch` and `FrontPorch` are the same. A robot standing in an ignored room still reports it in `/vacuum/{id}` JSON and the caption.
 - `/composite-map.svg` - Every vacuum's map overlaid in its own color, with chargers; use it to check alignment
 - `/composite-map.png` - The composite map as PNG
 

@@ -57,6 +57,12 @@ type CompositeRenderer struct {
 	Scale          float64 // Pixels per map unit (default 0.1 = 10 map units per pixel)
 	Padding        int     // Padding around the image
 	GlobalRotation float64 // Rotate entire output (0, 90, 180, 270 degrees CCW)
+	// IgnoreRooms lists reference room names drawn as plain floor in the live
+	// views (see IsIgnoredRoom).
+	IgnoreRooms []string
+	// Names maps a vacuum id (LivePosition key) to the name shown in the live
+	// legend, e.g. its MQTT identifier. Missing ids show the id.
+	Names map[string]string
 }
 
 // NewCompositeRenderer creates a renderer with default settings
@@ -701,7 +707,9 @@ func (r *CompositeRenderer) RenderGreyscale() *image.RGBA {
 
 // renderBase draws the greyscale base map. Every map's floor is grey; the
 // reference map is drawn last with each room in its own light color, and the
-// room with segment id alertSeg in AlertRoomColor.
+// room with segment id alertSeg in AlertRoomColor. Rooms in IgnoreRooms stay
+// grey. Walls come from the reference map only, so maps a cell or two apart
+// don't double them; other maps only add floor.
 func (r *CompositeRenderer) renderBase(alertSeg string) *image.RGBA {
 	// Calculate bounds
 	minX, minY, maxX, maxY, centerX, centerY := r.CalculateBounds()
@@ -781,7 +789,7 @@ func (r *CompositeRenderer) renderBase(alertSeg string) *image.RGBA {
 		transform := r.Transforms[id]
 		var roomColors map[string]color.NRGBA
 		if id == r.Reference {
-			roomColors = RoomColors(m)
+			roomColors = RoomColors(m, r.IgnoreRooms...)
 		}
 
 		for _, layer := range m.Layers {
@@ -802,8 +810,13 @@ func (r *CompositeRenderer) renderBase(alertSeg string) *image.RGBA {
 		}
 	}
 
-	// Second pass: walls (dark grey)
-	for id, m := range r.Maps {
+	// Second pass: walls (dark grey), from the reference map (every map if
+	// the reference has none).
+	wallMaps := r.Maps
+	if m, ok := r.Maps[r.Reference]; ok {
+		wallMaps = map[string]*ValetudoMap{r.Reference: m}
+	}
+	for id, m := range wallMaps {
 		transform := r.Transforms[id]
 
 		for _, layer := range m.Layers {
@@ -975,8 +988,8 @@ func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert
 		drawVacuumIcon(img, ix, iy, 22, displayAngle, robotColor)
 	}
 
-	// Add legend with vacuum IDs and colors
-	drawLiveLegend(img, positions)
+	// Add legend with vacuum names and colors
+	drawLiveLegend(img, positions, r.Names)
 
 	return img
 }
@@ -990,7 +1003,7 @@ func (r *CompositeRenderer) RenderLiveHighlight(positions map[string]*LivePositi
 	if !ok {
 		refTransform = Identity()
 	}
-	alertSeg := roomUnder(r.Maps[r.Reference], refTransform, positions[highlightID])
+	alertSeg := roomUnder(r.Maps[r.Reference], refTransform, positions[highlightID], r.IgnoreRooms...)
 	img := r.renderLive(positions, alertSeg)
 
 	if pos, ok := positions[highlightID]; ok {
@@ -1029,8 +1042,9 @@ func drawRing(img *image.RGBA, cx, cy, radius, thickness int, c color.RGBA) {
 	}
 }
 
-// drawLiveLegend adds a legend with vacuum IDs and colors to the live position image
-func drawLiveLegend(img *image.RGBA, positions map[string]*LivePosition) {
+// drawLiveLegend adds a legend with each vacuum's color and name (names[id],
+// else the id) to the live position image.
+func drawLiveLegend(img *image.RGBA, positions map[string]*LivePosition, names map[string]string) {
 	if len(positions) == 0 {
 		return
 	}
@@ -1055,7 +1069,11 @@ func drawLiveLegend(img *image.RGBA, positions map[string]*LivePosition) {
 			}
 		}
 
-		drawText(img, 28, y, id, color.RGBA{0, 0, 0, 255})
+		label := id
+		if n := names[id]; n != "" {
+			label = n
+		}
+		drawText(img, 28, y, label, color.RGBA{0, 0, 0, 255})
 
 		y += 18
 	}

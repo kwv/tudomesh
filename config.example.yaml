@@ -26,6 +26,11 @@ vacuums:
 
 # gridSpacing: 1000           # grid line spacing in map units
 
+# ignoreRooms: [Porch, Deck]  # rooms drawn as plain floor on the live maps:
+#                             # no fill, label or alert highlight. Matched
+#                             # ignoring case, spaces and punctuation.
+#                             # /vacuum/{id} still reports the room's name.
+
 # Per-vacuum overrides (rarely needed):
 #   id: name        # instead of the Valetudo systemId
 #   topic: ...      # instead of <topicPrefix>/<identifier>/MapData/map-data

@@ -104,6 +104,38 @@ func TestVacuumEndpoint_PNG(t *testing.T) {
 	}
 }
 
+func TestVacuumNames(t *testing.T) {
+	cfg := &mesh.Config{Vacuums: []mesh.VacuumConfig{
+		{ID: "TrickyZanyPartridge", Topic: "valetudo/rocky7/MapData/map-data"},
+	}}
+	maps := map[string]*mesh.ValetudoMap{"TrickyZanyPartridge.json": {}, "Other.json": {}}
+	positions := map[string]*mesh.LivePosition{"TrickyZanyPartridge.json": {}, "Other.json": {}}
+	got := vacuumNames(cfg, maps, positions)
+	if len(got) != 1 || got["TrickyZanyPartridge.json"] != "rocky7" {
+		t.Errorf("vacuumNames = %v, want only TrickyZanyPartridge.json: rocky7", got)
+	}
+}
+
+// A robot in an ignored room still reports that room in JSON.
+func TestVacuumEndpoint_IgnoredRoomStillReported(t *testing.T) {
+	st := mesh.NewStateTracker()
+	st.UpdateMap("TrickyZanyPartridge", roomMapWithRobot())
+	cfg := &mesh.Config{
+		IgnoreRooms: []string{"kitchen"},
+		Vacuums:     []mesh.VacuumConfig{{ID: "TrickyZanyPartridge", Topic: "valetudo/rocky7/MapData/map-data"}},
+	}
+	srv := newHTTPServer(st, nil, cfg, "TrickyZanyPartridge", 0)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/rocky7", nil))
+	var info vacuumInfo
+	if err := json.Unmarshal(rec.Body.Bytes(), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Room == nil || info.Room.Name != "Kitchen" {
+		t.Errorf("room = %+v, want Kitchen", info.Room)
+	}
+}
+
 func TestVacuumEndpoint_Unknown(t *testing.T) {
 	srv, _ := vacuumTestServer()
 	for _, path := range []string{"/vacuum/nope", "/vacuum/nope.png"} {

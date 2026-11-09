@@ -266,6 +266,7 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 		applyConfigColors(renderer, config)
 
 		positions := st.GetPositions()
+		applyLiveOptions(renderer, config, maps, positions)
 		highlight := id
 		if _, ok := positions[highlight]; !ok {
 			if k, _ := mapFor(maps, id); k != "" {

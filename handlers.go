@@ -92,9 +92,13 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
 		}
 
+		// Get live positions
+		positions := stateTracker.GetPositions()
+
 		// Create renderer
 		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
 		renderer.GlobalRotation = rotateAll
+		applyLiveOptions(renderer, config, maps, positions)
 
 		// If no drawable content exists, we can still show positions on a blank map
 		if !renderer.HasDrawableContent() {
@@ -112,9 +116,6 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 			}
 			log.Printf("[DEBUG] renderer: no drawable content for /live.png, rendering positions only")
 		}
-
-		// Get live positions
-		positions := stateTracker.GetPositions()
 
 		// Render with positions and send
 		img := renderer.RenderLive(positions)
@@ -260,7 +261,32 @@ func newSVGRenderer(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.Ca
 		vr.GridSpacing = config.GridSpacing
 		vr.Padding = config.GridSpacing / 2
 	}
+	if config != nil {
+		vr.IgnoreRooms = config.IgnoreRooms
+	}
 	return vr, true
+}
+
+// applyLiveOptions sets the live-view options of a PNG renderer: ignored
+// rooms from config and legend names for positions (vacuumNames).
+func applyLiveOptions(renderer *mesh.CompositeRenderer, config *mesh.Config, maps map[string]*mesh.ValetudoMap, positions map[string]*mesh.LivePosition) {
+	if config != nil {
+		renderer.IgnoreRooms = config.IgnoreRooms
+	}
+	renderer.Names = vacuumNames(config, maps, positions)
+}
+
+// vacuumNames maps each position key to its vacuum's MQTT identifier (from
+// the configured or discovered topic, see resolveVacuum). Keys without one
+// are left out, so renderers fall back to the id.
+func vacuumNames(config *mesh.Config, maps map[string]*mesh.ValetudoMap, positions map[string]*mesh.LivePosition) map[string]string {
+	names := make(map[string]string, len(positions))
+	for key := range positions {
+		if _, name, ok := resolveVacuum(strings.TrimSuffix(key, ".json"), config, maps); ok && name != "" {
+			names[key] = name
+		}
+	}
+	return names
 }
 
 // darkenColor creates a darker version of a color for walls
