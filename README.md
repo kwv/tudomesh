@@ -72,7 +72,7 @@ Environment variables take precedence over `config.yaml`.
 
 What each robot reports is saved to `.vacuums.json` in the data directory, so a robot that is offline at startup still resolves. With nothing saved, the URL's host name is used as the robot's name and id (`http://rocky6.home` → `rocky6`); once the robot answers, the id becomes its `systemId`, so delete any `ValetudoMapExport-rocky6.json` saved under the guessed id. Older configs that set `id`, `topic` and `apiUrl` keep working.
 
-[`config.example.yaml`](config.example.yaml) lists the remaining options: `reference` (the robot used as the world origin; default is the one with the largest map), `gridSpacing`, and per-vacuum `rotation` and `translation` overrides.
+[`config.example.yaml`](config.example.yaml) lists the remaining options: `reference` (the robot used as the world origin; default is the one with the largest map), `gridSpacing`, `ignoreRooms` (see [Maps](#maps)), per-vacuum `rotation` and `translation` overrides, and `render.fontPath` (see [Room labels](#room-labels)).
 
 ### One instance per floor
 
@@ -147,12 +147,28 @@ The map stays empty until each robot's full map is known: either from a `Valetud
 - `/` - HTML page showing the live SVG map
 - `/health` - Health check
 - `/live.svg` - Greyscale unified floorplan with live vacuum positions. The primary live view, structured for styling and scripting (see [SVG Structure](#svg-structure)).
-- `/live.png` - Greyscale floorplan with live position icons and legend
+- `/live.png` - Greyscale floorplan with live position icons and a legend of robot names (the MQTT identifier, e.g. `rocky7`; the id if unknown)
 - `/floorplan.svg` - The live SVG without vacuums
+
+The live views (`/live.*`, `/floorplan.svg`, `/vacuum/{id}.png|.svg`) draw the reference robot's rooms and walls; other robots only add grey floor where the reference has none. The composite views draw every robot's walls.
+
+`ignoreRooms` in config lists rooms drawn as plain floor on the live views, with no fill, label or alert highlight, for areas such as a porch seen through glass:
+
+```yaml
+ignoreRooms: [Porch, Deck]
+```
+
+Names match ignoring case and anything but letters and digits, so `Front Porch`, `front-porch` and `FrontPorch` are the same. A robot standing in an ignored room still reports it in `/vacuum/{id}` JSON and the caption.
 - `/composite-map.svg` - Every vacuum's map overlaid in its own color, with chargers; use it to check alignment
 - `/composite-map.png` - The composite map as PNG
 
 The map endpoints return `503 No maps available` until at least one map is loaded.
+
+### Room labels
+
+The live, floorplan and per-vacuum maps (PNG and SVG) outline each room of the reference robot's map and print its Valetudo name inside it, at the point farthest from the room's edges. A name is left out when it doesn't fit inside its room, and unnamed segments (no name, or the segment id as name) get no label.
+
+PNG text uses the bundled Go Regular font, which covers Latin, Greek and Cyrillic (`Küche`, `Salle à manger`, `Кухня`). For other scripts such as Chinese or Japanese, point `render.fontPath` in `config.yaml` at a font that has them (`.ttf`, `.otf`, or the first font of a `.ttc`); it is tried first, with Go Regular as the fallback. In Docker, mount the font file into the container and use the path inside it. SVG labels use the viewer's `sans-serif` font.
 
 ### Per-vacuum (alerts)
 
@@ -160,8 +176,10 @@ The map endpoints return `503 No maps available` until at least one map is loade
 
 - `/vacuums` - JSON list of every vacuum (same fields as below)
 - `/vacuum/{id}` - JSON: room, last Valetudo status, position on the shared map
-- `/vacuum/{id}.png` - Live map with the vacuum circled and a caption (`rocky7 | Kitchen | error`). `?scale=1..8` sets the size (default 3).
-- `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and its room tinted, when the base map has a room of the same name
+- `/vacuum/{id}.png` - Live map with the vacuum circled, its room in red with a hatch and a dark red border, and a caption (`rocky7 | Kitchen | error`). `?scale=1..8` sets the size (default 3).
+- `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and its room filled red with a dashed outline
+
+The highlighted room is the robot's own segment under its position, mapped onto the shared map with its calibration, so it matches `room` in the JSON. If the robot is uncalibrated, is the reference, or has no segment there, the reference map's room at that position is used instead.
 
 ```json
 {
@@ -189,9 +207,17 @@ The map endpoints return `503 No maps available` until at least one map is loade
       <path id="room-16" class="room" data-room="Kitchen" data-segment-id="16"/>
       <path class="floor"/>                 unsegmented floor
     </g>
+    <path id="alert-room" class="alert-room"  /vacuum/{id}.svg only: the robot's room outline
+          data-room="Kitchen" data-segment-id="4" data-vacuum="TrickyZanyPartridge"/>
     <g id="walls"><path class="wall"/></g>
+    <g id="room-outlines">
+      <path class="room-outline" data-room="Kitchen" data-segment-id="16"/>
+    </g>
   </g>
   <g id="grid"><path class="grid-line"/></g>
+  <g id="room-labels">                     upright text, only for named rooms it fits in
+    <text class="room-label" data-room="Kitchen" data-segment-id="16">Kitchen</text>
+  </g>
   <g id="vacuums">
     <g id="vacuum-trickyzanypartridge" class="vacuum state-error highlight"
        data-id="TrickyZanyPartridge" data-name="rocky7" data-room="Kitchen" data-state="error">
@@ -202,12 +228,19 @@ The map endpoints return `503 No maps available` until at least one map is loade
 </svg>
 ```
 
+`#alert-room` is drawn over the rooms and under the walls. Its `data-segment-id` is the segment in the map it came from (the robot's own map, or the reference map as a fallback). The default style is a red fill with a dashed dark red outline, so it does not rely on color alone; restyle it with `.alert-room { … }` (stroke widths are in grid cells).
+
 Example: embed `/live.svg` inline and flag any vacuum in an error state, hide one robot, or tint a room:
 
 ```css
 .vacuum.state-error .body { fill: #e61e1e; }
 #vacuum-frugallamelion { display: none; }
 .room[data-room="Kitchen"] { fill: #fff3c4; }
+.room-outline { stroke: #446; stroke-opacity: 1; }
+.room-label { font-family: "Noto Sans", sans-serif; fill: #124; }
+#room-labels { display: none; }                      /* hide all room names */
+#room-outlines { display: none; }                    /* hide all outlines */
+.room-label[data-room="UtilityCloset"] { display: none; }  /* hide one room's name */
 ```
 
 `/composite-map.svg` uses the same room, floor and wall paths, but one group per vacuum (reference first). Each vacuum's colors are rules in the `<style>` block (`#map-<id> .rooms`, `#map-<id> .walls`, `.charger[data-id=…]`), so restyling means editing or overriding CSS:

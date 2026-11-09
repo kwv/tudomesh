@@ -14,6 +14,12 @@ type VectorRenderer struct {
 	GridSpacing    float64               // 0 disables the grid
 	Meta           map[string]VacuumMeta // optional per-vacuum labels/state for live SVG
 	Highlight      string                // vacuum id to highlight in live SVG
+	// IgnoreRooms lists base-map room names drawn as plain floor in the live
+	// SVG (see IsIgnoredRoom).
+	IgnoreRooms []string
+	// Calibrated lists vacuums whose Transforms entry is a real calibration;
+	// only those get their own room highlighted. nil trusts every transform.
+	Calibrated map[string]bool
 }
 
 // NewVectorRenderer creates a vector renderer with default settings.

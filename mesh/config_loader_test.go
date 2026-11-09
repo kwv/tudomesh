@@ -324,3 +324,13 @@ func TestGetEffectiveReference(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadConfig_RenderFontPath(t *testing.T) {
+	cfg, err := LoadConfig(writeConfig(t, validConfigYAML()+"render:\n  fontPath: /fonts/NotoSansCJK.ttc\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Render.FontPath != "/fonts/NotoSansCJK.ttc" {
+		t.Errorf("Render.FontPath = %q", cfg.Render.FontPath)
+	}
+}

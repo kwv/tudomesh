@@ -104,6 +104,38 @@ func TestVacuumEndpoint_PNG(t *testing.T) {
 	}
 }
 
+func TestVacuumNames(t *testing.T) {
+	cfg := &mesh.Config{Vacuums: []mesh.VacuumConfig{
+		{ID: "TrickyZanyPartridge", Topic: "valetudo/rocky7/MapData/map-data"},
+	}}
+	maps := map[string]*mesh.ValetudoMap{"TrickyZanyPartridge.json": {}, "Other.json": {}}
+	positions := map[string]*mesh.LivePosition{"TrickyZanyPartridge.json": {}, "Other.json": {}}
+	got := vacuumNames(cfg, maps, positions)
+	if len(got) != 1 || got["TrickyZanyPartridge.json"] != "rocky7" {
+		t.Errorf("vacuumNames = %v, want only TrickyZanyPartridge.json: rocky7", got)
+	}
+}
+
+// A robot in an ignored room still reports that room in JSON.
+func TestVacuumEndpoint_IgnoredRoomStillReported(t *testing.T) {
+	st := mesh.NewStateTracker()
+	st.UpdateMap("TrickyZanyPartridge", roomMapWithRobot())
+	cfg := &mesh.Config{
+		IgnoreRooms: []string{"kitchen"},
+		Vacuums:     []mesh.VacuumConfig{{ID: "TrickyZanyPartridge", Topic: "valetudo/rocky7/MapData/map-data"}},
+	}
+	srv := newHTTPServer(st, nil, cfg, "TrickyZanyPartridge", 0)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/rocky7", nil))
+	var info vacuumInfo
+	if err := json.Unmarshal(rec.Body.Bytes(), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Room == nil || info.Room.Name != "Kitchen" {
+		t.Errorf("room = %+v, want Kitchen", info.Room)
+	}
+}
+
 func TestVacuumEndpoint_Unknown(t *testing.T) {
 	srv, _ := vacuumTestServer()
 	for _, path := range []string{"/vacuum/nope", "/vacuum/nope.png"} {
@@ -161,5 +193,40 @@ func TestVacuumEndpoint_SVG(t *testing.T) {
 	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/nope.svg", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("unknown svg: status %d, want 404", rec.Code)
+	}
+}
+
+func TestVacuumEndpoint_SVGAlertRoom(t *testing.T) {
+	srv, _ := vacuumTestServer()
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/rocky7.svg", nil))
+	body := rec.Body.String()
+	want := `<path id="alert-room" class="alert-room" data-room="Kitchen" data-segment-id="7" data-vacuum="TrickyZanyPartridge"`
+	if !strings.Contains(body, want) {
+		t.Errorf("missing %s", want)
+	}
+	rooms, alert, walls := strings.Index(body, `id="rooms"`), strings.Index(body, `id="alert-room"`), strings.Index(body, `id="walls"`)
+	if rooms >= alert || alert >= walls {
+		t.Errorf("order rooms=%d alert-room=%d walls=%d; want rooms < alert-room < walls", rooms, alert, walls)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/live.svg", nil))
+	if strings.Contains(rec.Body.String(), `id="alert-room"`) {
+		t.Error("/live.svg should have no alert room")
+	}
+}
+
+func TestCalibratedVacuums(t *testing.T) {
+	maps := map[string]*mesh.ValetudoMap{"a": {}, "b": {}}
+	cache := &mesh.CalibrationData{}
+	cache.UpdateVacuumCalibration("a", mesh.VacuumCalibration{Transform: mesh.Translation(1, 2)})
+
+	got := calibratedVacuums(maps, cache)
+	if !got["a"] || got["b"] || len(got) != 2 {
+		t.Errorf("calibratedVacuums = %v, want a only", got)
+	}
+	if got := calibratedVacuums(maps, nil); got == nil || got["a"] || got["b"] {
+		t.Errorf("nil cache = %v, want non-nil and nothing calibrated", got)
 	}
 }

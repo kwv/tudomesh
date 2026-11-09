@@ -127,6 +127,17 @@ type Config struct {
 	Reference   string         `yaml:"reference,omitempty" json:"reference,omitempty"` // Optional reference vacuum ID
 	Vacuums     []VacuumConfig `yaml:"vacuums" json:"vacuums"`
 	GridSpacing float64        `yaml:"gridSpacing,omitempty" json:"gridSpacing,omitempty"` // Grid line spacing in mm (default 1000)
+	// IgnoreRooms lists room names drawn as outside on the live maps (no fill,
+	// label or alert highlight), e.g. a porch. Matched by IsIgnoredRoom.
+	IgnoreRooms []string `yaml:"ignoreRooms,omitempty" json:"ignoreRooms,omitempty"`
+	Render      RenderConfig   `yaml:"render,omitempty" json:"render,omitempty"`
+}
+
+// RenderConfig holds optional image rendering settings.
+type RenderConfig struct {
+	// FontPath is a .ttf/.otf/.ttc font used for PNG text before the bundled
+	// Go Regular (Latin, Greek, Cyrillic), e.g. a CJK font. See SetFontFile.
+	FontPath string `yaml:"fontPath,omitempty" json:"fontPath,omitempty"`
 }
 
 // MQTTConfig holds MQTT connection settings
