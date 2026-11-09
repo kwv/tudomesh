@@ -25,6 +25,7 @@ func (m *mockApp) RunRender()                   { m.called["RunRender"] = true }
 func (m *mockApp) RunRenderIndividual(s string) { m.called["RunRenderIndividual"] = true; m.sArg = s }
 func (m *mockApp) RunCompareRotation(s string)  { m.called["RunCompareRotation"] = true; m.sArg = s }
 func (m *mockApp) RunService()                  { m.called["RunService"] = true }
+func (m *mockApp) RunPlanRooms()                { m.called["RunPlanRooms"] = true }
 
 func TestRun_Flags(t *testing.T) {
 	tests := []struct {
@@ -85,6 +86,16 @@ func TestRun_Flags(t *testing.T) {
 				}
 				if !opts.RenderIndividual {
 					t.Error("expected RenderIndividual true")
+				}
+			},
+		},
+		{
+			name:           "PlanRooms",
+			args:           []string{"--plan-rooms"},
+			expectedCalled: "RunPlanRooms",
+			verifyOpts: func(t *testing.T, opts AppOptions) {
+				if !opts.PlanRooms {
+					t.Error("expected PlanRooms true")
 				}
 			},
 		},
