@@ -60,6 +60,8 @@ const (
 	// A split must put at least this share of the minority room's cells on
 	// their own side, or the boundary isn't straight enough to cut.
 	roomSyncMinSplitGain = 0.5
+	// Cells within this many cells of the other side count as boundary.
+	roomSyncBoundaryReach = 3
 	// Segments within this many cells of each other count as adjacent.
 	roomSyncAdjacency = 2
 	roomSyncMaxOps    = 50
@@ -374,6 +376,21 @@ func (s *roomSyncState) outsideArea(seg string) map[cell]bool {
 // room a and the cells inB (what describes them) inside it. It applies and
 // returns the split when the line puts most inB cells on their own side.
 func (s *roomSyncState) trySplit(seg, a string, inB func(cell) bool, what string) (RoomOp, bool) {
+	// Boundary: cells of either side with the other side within
+	// roomSyncBoundaryReach cells. The reach spans a wall, for areas that only
+	// connect to the room through a doorway.
+	inA := func(c cell) bool { return s.label[c] == seg && s.ref[c] == a && !inB(c) }
+	isB := func(c cell) bool { return s.label[c] == seg && inB(c) }
+	near := func(c cell, other func(cell) bool) bool {
+		for dy := -roomSyncBoundaryReach; dy <= roomSyncBoundaryReach; dy++ {
+			for dx := -roomSyncBoundaryReach; dx <= roomSyncBoundaryReach; dx++ {
+				if other(cell{c.x + dx, c.y + dy}) {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	var boundary []Point
 	var cells []cell
 	for c, id := range s.label {
@@ -381,15 +398,8 @@ func (s *roomSyncState) trySplit(seg, a string, inB func(cell) bool, what string
 			continue
 		}
 		cells = append(cells, c)
-		if s.ref[c] != a {
-			continue
-		}
-		for _, d := range []cell{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
-			n := cell{c.x + d.x, c.y + d.y}
-			if s.label[n] == seg && inB(n) {
-				boundary = append(boundary, Point{X: float64(c.x) + float64(d.x)/2, Y: float64(c.y) + float64(d.y)/2})
-				break
-			}
+		if (inA(c) && near(c, isB)) || (isB(c) && near(c, inA)) {
+			boundary = append(boundary, Point{X: float64(c.x), Y: float64(c.y)})
 		}
 	}
 	if len(boundary) < 5 {
