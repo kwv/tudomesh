@@ -305,6 +305,31 @@ Without `--mqtt` or `--http`, TudoMesh works on the `ValetudoMapExport-*.json` f
 
 The vector output is the same structured SVG as `/composite-map.svg`.
 
+### Planning room edits
+
+Robots split and name rooms differently. `--plan-rooms` works out the Valetudo room edits that would make each robot's rooms match the reference robot's. It only simulates them: nothing is sent to the robots.
+
+```bash
+./tudomesh --data-dir ./tudomesh-data --plan-rooms
+```
+
+It uses each robot's current map from its API, or its map export when the robot is offline. For each robot it prints the edits in order, as the request bodies Valetudo takes, and how much of its room area matches the reference before and after:
+
+- `split_segment`: cut a room along a straight line. Used where one robot room covers two reference rooms, and to cut off an area of at least 2.5 m² outside every reference room (for example a lidar artifact only that robot maps).
+- `join_segments`: join two rooms that are the same reference room.
+- `rename_segment`: give the room the reference's name.
+
+It writes to the data dir:
+
+| File | Content |
+|------|---------|
+| `rooms-<ref>.svg` | The reference rooms |
+| `rooms-<id>-before.svg` | The robot's rooms today, in the reference frame, colored by the reference room they match; red where they disagree |
+| `rooms-<id>-after.svg` | The same after the edits, with the cut lines dashed |
+| `rooms-<id>-plan.json` | The edits as request bodies |
+
+The segment ids in a plan are the simulation's. A robot may number new rooms differently, so re-plan after each edit you apply. Splits and joins renumber a robot's rooms, which breaks anything that cleans rooms by id (Valetudo timers, Home Assistant or Node-RED schedules).
+
 ### Flags
 
 | Flag | Description |
@@ -327,6 +352,7 @@ The vector output is the same structured SVG as `/composite-map.svg`.
 | `--force-rotation=ID=DEG` | Force a vacuum's rotation (0, 90, 180, 270) |
 | `--reference=ID` | Override the reference vacuum |
 | `--rotate-all=DEG` | Rotate the whole composite (0, 90, 180, 270) |
+| `--plan-rooms` | Plan room edits that match each robot's rooms to the reference's; writes previews, changes nothing |
 | `--parse-only` | Print a summary of each map export and exit |
 
 ## Setting up Mosquitto

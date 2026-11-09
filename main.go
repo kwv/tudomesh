@@ -31,6 +31,7 @@ type AppOptions struct {
 	RenderFormat       string
 	VectorFormat       string
 	GridSpacing        float64
+	PlanRooms          bool
 }
 
 // MainApp defines the interface for the application logic
@@ -42,6 +43,7 @@ type MainApp interface {
 	RunRenderIndividual(string)
 	RunCompareRotation(string)
 	RunService()
+	RunPlanRooms()
 }
 
 func main() {
@@ -78,6 +80,7 @@ func run(args []string, out io.Writer, app MainApp) error {
 	fs.StringVar(&opts.RenderFormat, "format", "raster", "Render format: raster, vector, or both")
 	fs.StringVar(&opts.VectorFormat, "vector-format", "svg", "Vector output format (only svg)")
 	fs.Float64Var(&opts.GridSpacing, "grid-spacing", 1000.0, "Grid line spacing in millimeters (default 1000mm = 1m)")
+	fs.BoolVar(&opts.PlanRooms, "plan-rooms", false, "Plan room edits that match each robot's rooms to the reference robot's; writes previews, changes nothing")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -104,6 +107,11 @@ func run(args []string, out io.Writer, app MainApp) error {
 
 	if opts.RenderIndividual {
 		app.RunRenderIndividual(opts.IndividualRotation)
+		return nil
+	}
+
+	if opts.PlanRooms {
+		app.RunPlanRooms()
 		return nil
 	}
 
