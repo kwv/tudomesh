@@ -1,6 +1,8 @@
 package mesh
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -28,6 +30,41 @@ type RoomOp struct {
 	Name       string `json:"name,omitempty"`
 	// Reason says why the edit is planned, for people reading the plan.
 	Reason string `json:"-"`
+}
+
+// Endpoint is the Valetudo API path op is sent to with PUT.
+func (op RoomOp) Endpoint() string {
+	if op.Action == "rename_segment" {
+		return "/api/v2/robot/capabilities/MapSegmentRenameCapability"
+	}
+	return "/api/v2/robot/capabilities/MapSegmentEditCapability"
+}
+
+// Body is op's request body as JSON, with names unescaped (UTF-8, & < >).
+func (op RoomOp) Body() []byte {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(op)
+	return bytes.TrimRight(buf.Bytes(), "\n")
+}
+
+// Describe says what op does in words, e.g. `Rename segment 4 to "Kitchen"`.
+// Points are in the robot's map (cm).
+func (op RoomOp) Describe() string {
+	switch op.Action {
+	case "split_segment":
+		if op.PA != nil && op.PB != nil {
+			return fmt.Sprintf("Split segment %s along the line (%.0f,%.0f)-(%.0f,%.0f)",
+				op.SegmentID, op.PA.X, op.PA.Y, op.PB.X, op.PB.Y)
+		}
+		return "Split segment " + op.SegmentID
+	case "join_segments":
+		return fmt.Sprintf("Join segments %s and %s", op.SegmentAID, op.SegmentBID)
+	case "rename_segment":
+		return fmt.Sprintf("Rename segment %s to %q", op.SegmentID, op.Name)
+	}
+	return op.Action
 }
 
 // RoomSyncPlan is the planned edits for one robot and their simulated result.
@@ -109,7 +146,7 @@ func PlanRoomSync(robot, ref *ValetudoMap, toRef AffineMatrix) RoomSyncPlan {
 		if want := s.refNames[r]; want != "" && s.names[seg] != want && s.isLargestFor(seg, r) {
 			plan.Ops = append(plan.Ops, RoomOp{
 				Action: "rename_segment", SegmentID: seg, Name: want,
-				Reason: fmt.Sprintf("%q is the reference's %q", s.names[seg], want),
+				Reason: fmt.Sprintf("segment %s (%s) is the reference's %q", seg, nameOrUnnamed(s.names[seg]), want),
 			})
 			s.names[seg] = want
 		}
@@ -328,6 +365,14 @@ func (s *roomSyncState) nextSplit() (RoomOp, bool) {
 	return RoomOp{}, false
 }
 
+// nameOrUnnamed quotes a segment name for plan reasons, or says "unnamed".
+func nameOrUnnamed(name string) string {
+	if name == "" {
+		return "unnamed"
+	}
+	return strconv.Quote(name)
+}
+
 // refRoom describes reference segment r for plan reasons.
 func (s *roomSyncState) refRoom(r string) string {
 	if n := s.refNames[r]; n != "" {
@@ -434,8 +479,9 @@ func (s *roomSyncState) trySplit(seg, a string, inB func(cell) bool, what string
 		lo, hi = math.Min(lo, t), math.Max(hi, t)
 	}
 	lo, hi = lo-2, hi+2
-	pa := Point{X: (center.X + lo*dir.X) * s.ps, Y: (center.Y + lo*dir.Y) * s.ps}
-	pb := Point{X: (center.X + hi*dir.X) * s.ps, Y: (center.Y + hi*dir.Y) * s.ps}
+	// Whole cm: the map's own unit. The simulation cuts along side, not these.
+	pa := Point{X: math.Round((center.X + lo*dir.X) * s.ps), Y: math.Round((center.Y + lo*dir.Y) * s.ps)}
+	pb := Point{X: math.Round((center.X + hi*dir.X) * s.ps), Y: math.Round((center.Y + hi*dir.Y) * s.ps)}
 
 	newID := s.nextID()
 	for _, c := range cells {
@@ -446,8 +492,8 @@ func (s *roomSyncState) trySplit(seg, a string, inB func(cell) bool, what string
 	s.names[newID] = ""
 	return RoomOp{
 		Action: "split_segment", SegmentID: seg, PA: &pa, PB: &pb,
-		Reason: fmt.Sprintf("segment %s (%q) is %s plus %s; the cut makes new segment %s",
-			seg, s.names[seg], s.refRoom(a), what, newID),
+		Reason: fmt.Sprintf("segment %s (%s) is %s plus %s; the cut makes new segment %s",
+			seg, nameOrUnnamed(s.names[seg]), s.refRoom(a), what, newID),
 	}, true
 }
 
@@ -503,8 +549,8 @@ func (s *roomSyncState) nextJoin() (RoomOp, bool) {
 			}
 			return RoomOp{
 				Action: "join_segments", SegmentAID: keep, SegmentBID: other,
-				Reason: fmt.Sprintf("segments %s (%q) and %s (%q) are both %s",
-					keep, s.names[keep], other, s.names[other], s.refRoom(r)),
+				Reason: fmt.Sprintf("segments %s (%s) and %s (%s) are both %s",
+					keep, nameOrUnnamed(s.names[keep]), other, nameOrUnnamed(s.names[other]), s.refRoom(r)),
 			}, true
 		}
 	}
