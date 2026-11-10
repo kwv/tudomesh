@@ -718,18 +718,6 @@ func (a *App) RunService() {
 	if a.MqttMode {
 		// Create message handler that updates state tracker
 		messageHandler := func(vacuumID string, rawPayload []byte, mapData *mesh.ValetudoMap, err error) {
-			// Handle raw PNG images (no zTXt metadata) by writing directly to disk
-			if err != nil && mesh.IsPNG(rawPayload) {
-				pngPath := filepath.Join(a.DataDir, fmt.Sprintf("%s.png", vacuumID))
-				if writeErr := os.WriteFile(pngPath, rawPayload, 0644); writeErr != nil {
-					log.Printf("Error writing raw PNG for %s: %v", vacuumID, writeErr)
-				} else {
-					log.Printf("%s: saved raw PNG to %s (%d bytes)", vacuumID, pngPath, len(rawPayload))
-				}
-				// Raw PNG has no position data to extract; skip further processing
-				return
-			}
-
 			if err != nil {
 				log.Printf("Error receiving map data for %s: %v", vacuumID, err)
 				return
