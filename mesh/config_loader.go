@@ -37,45 +37,6 @@ func LoadConfig(path string) (*Config, error) {
 	return &config, nil
 }
 
-// SaveConfig saves the configuration to a YAML file
-func SaveConfig(path string, config *Config) error {
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("marshaling config YAML: %w", err)
-	}
-
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("writing config file: %w", err)
-	}
-
-	return nil
-}
-
-// MergeCalibrationIntoConfig merges auto-computed calibration data with config
-// Config manual overrides take precedence over cached calibration
-func MergeCalibrationIntoConfig(config *Config, cache *CalibrationData) map[string]AffineMatrix {
-	transforms := make(map[string]AffineMatrix)
-
-	// Start with cached transforms if available
-	for id, t := range cache.Transforms() {
-		transforms[id] = t
-	}
-
-	// Override with manual calibrations from config
-	for _, vc := range config.Vacuums {
-		if vc.HasManualCalibration() {
-			// Build affine matrix from rotation and translation
-			rotation := vc.GetRotation()
-			translation := vc.GetTranslation()
-
-			// Convert rotation to affine matrix
-			transforms[vc.ID] = CreateRotationTranslation(rotation, translation.X, translation.Y)
-		}
-	}
-
-	return transforms
-}
-
 // GetEffectiveReference determines the effective reference vacuum ID
 // Priority: config.Reference > cache.ReferenceVacuum > auto-select by area
 func GetEffectiveReference(config *Config, cache *CalibrationData, maps map[string]*ValetudoMap) string {

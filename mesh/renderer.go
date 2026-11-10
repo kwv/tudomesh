@@ -511,15 +511,6 @@ var (
 	GreyscaleBG    = LightTheme.Background
 )
 
-// RenderGreyscale creates a greyscale composite image without color coding or
-// legend, with the reference map's rooms shaded (RoomColors), outlined and
-// labelled.
-func (r *CompositeRenderer) RenderGreyscale() *image.RGBA {
-	img := r.renderBase(nil)
-	r.drawRoomOverlay(img)
-	return img
-}
-
 // renderBase draws the greyscale base map. Every map's floor is grey; the
 // reference map is drawn last with each room in its own light color. Rooms in
 // IgnoreRooms stay grey. alert, if set, is filled on top (see drawAlertRoom),

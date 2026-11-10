@@ -56,49 +56,6 @@ func SaveCalibration(path string, cal *CalibrationData) error {
 	return nil
 }
 
-// CalibrateVacuums performs auto-calibration for all vacuums against the reference
-// Returns the calibration data with transformation matrices
-func CalibrateVacuums(maps map[string]*ValetudoMap, referenceID string) (*CalibrationData, error) {
-	referenceMap, ok := maps[referenceID]
-	if !ok {
-		return nil, fmt.Errorf("reference vacuum %q not found", referenceID)
-	}
-
-	now := time.Now().Unix()
-	cal := &CalibrationData{
-		ReferenceVacuum: referenceID,
-		Vacuums:         make(map[string]VacuumCalibration),
-		LastUpdated:     now,
-	}
-
-	// Reference vacuum gets identity transform
-	cal.Vacuums[referenceID] = VacuumCalibration{
-		Transform:            Identity(),
-		LastUpdated:          now,
-		MapAreaAtCalibration: referenceMap.MetaData.TotalLayerArea,
-	}
-
-	// Align other vacuums to reference
-	for id, vacuumMap := range maps {
-		if id == referenceID {
-			continue
-		}
-
-		result, ok := AlignMaps(vacuumMap, referenceMap)
-		if !ok {
-			// No floor geometry: leave uncalibrated so it is retried later.
-			continue
-		}
-		cal.Vacuums[id] = VacuumCalibration{
-			Transform:            result.Transform,
-			LastUpdated:          now,
-			MapAreaAtCalibration: vacuumMap.MetaData.TotalLayerArea,
-		}
-	}
-
-	return cal, nil
-}
-
 // SelectReferenceVacuum auto-selects the best reference vacuum
 // based on total layer area (largest map coverage)
 // configs parameter is deprecated and ignored (kept for compatibility)

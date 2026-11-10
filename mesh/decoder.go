@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 )
 
 // DecodeMapData decodes Valetudo map data from various formats:
@@ -145,19 +144,4 @@ func inflateZlib(data []byte) ([]byte, error) {
 	}
 
 	return decompressed, nil
-}
-
-// DecodePNGMapFile reads and decodes a Valetudo PNG map file
-// This is a convenience function for testing with PNG files
-func DecodePNGMapFile(path string) (*ValetudoMap, error) {
-	data, err := readFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading file: %w", err)
-	}
-	return DecodeMapData(data)
-}
-
-// readFile is a helper to read file contents
-func readFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
 }
