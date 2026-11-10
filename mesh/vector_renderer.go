@@ -20,6 +20,9 @@ type VectorRenderer struct {
 	// Calibrated lists vacuums whose Transforms entry is a real calibration;
 	// only those get their own room highlighted. nil trusts every transform.
 	Calibrated map[string]bool
+	// Crop limits the live SVG's viewBox to the Highlight vacuum's room or a
+	// radius around it (see Crop).
+	Crop Crop
 }
 
 // Defaults for VectorRenderer, in world units (Valetudo uses cm).

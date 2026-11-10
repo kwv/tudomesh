@@ -181,10 +181,17 @@ func (f *svgFrame) sizes() svgSizes {
 	return svgSizes{radius: r, stroke: r * 0.15}
 }
 
-func writeSVGOpen(out *bytes.Buffer, f *svgFrame, ps float64, css string) {
+// writeSVGOpen writes the <svg> element, styles and background. view, if
+// set, limits the viewBox to that part of the canvas (see Crop).
+func writeSVGOpen(out *bytes.Buffer, f *svgFrame, ps float64, css string, view *cropRect) {
 	w, h := f.size()
-	fmt.Fprintf(out, `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 %.1f %.1f" width="%.0f" height="%.0f">`+"\n",
-		w, h, w/ps, h/ps)
+	v := cropRect{0, 0, w, h}
+	if view != nil {
+		v = *view
+	}
+	vw, vh := v.maxX-v.minX, v.maxY-v.minY
+	fmt.Fprintf(out, `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="%.1f %.1f %.1f %.1f" width="%.0f" height="%.0f">`+"\n",
+		v.minX, v.minY, vw, vh, vw/ps, vh/ps)
 	out.WriteString("<style>\n" + css + "</style>\n")
 	fmt.Fprintf(out, `<rect class="background" width="%.1f" height="%.1f"/>`+"\n", w, h)
 }
@@ -288,6 +295,16 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 	s := f.sizes()
 
 	alert := alertShape(r.Maps, r.Transforms, r.Calibrated, baseID, r.Highlight, positions[r.Highlight], r.IgnoreRooms...)
+	var view *cropRect
+	if pts, margin, ok := r.Crop.cropPoints(alert, baseTransform, positions[r.Highlight], ps); ok {
+		w, h := f.size()
+		toCanvas := func(p Point) (float64, float64) {
+			c := f.toCanvas(Point{X: p.X * ps, Y: p.Y * ps})
+			return c[0], c[1]
+		}
+		c := fitCrop(pts, toCanvas, margin*ps, cropMinSide, w, h)
+		view = &c
+	}
 
 	var roomCSS strings.Builder
 	roomColors := RoomColors(baseMap, r.IgnoreRooms...)
@@ -307,7 +324,7 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 .vacuum .ring{fill:none;stroke:#e61e1e;stroke-width:%.1f}
 .vacuum.highlight .ring{animation:tudomesh-pulse 1.5s ease-in-out infinite}
 @keyframes tudomesh-pulse{50%%{opacity:.25}}
-`, roomCSS.String(), svgColor(AlertRoomColor), svgColor(color.NRGBA(alertBorderColor)), gridCSS(s), roomLabelCSS(s, ps), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35))
+`, roomCSS.String(), svgColor(AlertRoomColor), svgColor(color.NRGBA(alertBorderColor)), gridCSS(s), roomLabelCSS(s, ps), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35), view)
 
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(baseMap, baseTransform))
 	writeMapLayers(out, baseMap, true, alert)
@@ -387,7 +404,7 @@ func (r *VectorRenderer) RenderCompositeToSVG(w io.Writer) error {
 
 	ps := pixelSizeOf(r.Maps[ids[0]])
 	out := &bytes.Buffer{}
-	writeSVGOpen(out, f, ps, css.String())
+	writeSVGOpen(out, f, ps, css.String(), nil)
 
 	out.WriteString(`<g id="maps">` + "\n")
 	for _, id := range ids {

@@ -65,6 +65,9 @@ type CompositeRenderer struct {
 	// Calibrated lists vacuums whose Transforms entry is a real calibration;
 	// only those get their own room highlighted. nil trusts every transform.
 	Calibrated map[string]bool
+	// Crop limits RenderLiveHighlight to the highlighted vacuum's room or a
+	// radius around it (see Crop). The cropped image has no robot legend.
+	Crop Crop
 }
 
 // NewCompositeRenderer creates a renderer with default settings
@@ -577,6 +580,13 @@ func drawText(img *image.RGBA, x, y int, text string, c color.RGBA) {
 	d.DrawString(text)
 }
 
+// textWidth is the pixel width of text as drawText renders it.
+func textWidth(text string) int {
+	face := newTextFace(textSize)
+	defer func() { _ = face.Close() }()
+	return font.MeasureString(face, text).Ceil()
+}
+
 // RenderCompositeMap aligns all maps to the reference (see AlignMaps) and renders them
 func RenderCompositeMap(maps map[string]*ValetudoMap, outputPath string, referenceOverride string, globalRotation float64) error {
 	if len(maps) < 2 {
@@ -1010,10 +1020,10 @@ func drawVacuumIcon(img *image.RGBA, cx, cy, size int, angleDeg float64, c color
 
 // RenderLive creates a greyscale map with live position triangles
 func (r *CompositeRenderer) RenderLive(positions map[string]*LivePosition) *image.RGBA {
-	return r.renderLive(positions, nil)
+	return r.renderLive(positions, nil, true)
 }
 
-func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert *alertRoom) *image.RGBA {
+func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert *alertRoom, legend bool) *image.RGBA {
 	img := r.renderBase(alert)
 	r.drawRoomOverlay(img)
 
@@ -1050,8 +1060,9 @@ func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert
 		drawVacuumIcon(img, ix, iy, 22, displayAngle, robotColor)
 	}
 
-	// Add legend with vacuum names and colors
-	drawLiveLegend(img, positions, r.Names)
+	if legend {
+		drawLiveLegend(img, positions, r.Names)
+	}
 
 	return img
 }
@@ -1060,16 +1071,45 @@ func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert
 // around highlightID's position and adds a caption strip above the map. If the
 // vacuum has no position, only the caption is added. The vacuum's room (see
 // alertShape) is filled in AlertRoomColor with a hatch and darker border.
+// With r.Crop set and a known position, the map is cropped around the vacuum
+// (kept at least as wide as the caption) and the robot legend is left out.
 func (r *CompositeRenderer) RenderLiveHighlight(positions map[string]*LivePosition, highlightID, caption string) *image.RGBA {
-	alert := alertShape(r.Maps, r.Transforms, r.Calibrated, r.Reference, highlightID, positions[highlightID], r.IgnoreRooms...)
-	img := r.renderLive(positions, alert)
+	pos := positions[highlightID]
+	alert := alertShape(r.Maps, r.Transforms, r.Calibrated, r.Reference, highlightID, pos, r.IgnoreRooms...)
+	refT, ok := r.Transforms[r.Reference]
+	if !ok {
+		refT = Identity()
+	}
+	ps := 5.0
+	if m := r.Maps[r.Reference]; m != nil {
+		ps = pixelSizeOf(m)
+	}
+	cropPts, cropMargin, cropping := r.Crop.cropPoints(alert, refT, pos, ps)
+	img := r.renderLive(positions, alert, !cropping)
 
-	if pos, ok := positions[highlightID]; ok {
-		minX, minY, _, _, centerX, centerY := r.CalculateBounds()
-		rp := r.applyGlobalRotation(Point{X: pos.X, Y: pos.Y}, centerX, centerY)
-		x := int((rp.X-minX)*r.Scale) + r.Padding
-		y := int((rp.Y-minY)*r.Scale) + r.Padding
-		drawRing(img, x, y, 34, 5, color.RGBA{230, 30, 30, 255})
+	minX, minY, _, _, centerX, centerY := r.CalculateBounds()
+	toImage := func(p Point) (float64, float64) {
+		rp := r.applyGlobalRotation(p, centerX, centerY)
+		return (rp.X-minX)*r.Scale + float64(r.Padding), (rp.Y-minY)*r.Scale + float64(r.Padding)
+	}
+	if pos != nil {
+		x, y := toImage(Point{X: pos.X, Y: pos.Y})
+		drawRing(img, int(x), int(y), 34, 5, color.RGBA{230, 30, 30, 255})
+	}
+
+	if cropping {
+		minSide := cropMinSide / ps * r.Scale
+		if caption != "" {
+			minSide = math.Max(minSide, float64(textWidth(caption)+16))
+		}
+		b := img.Bounds()
+		c := fitCrop(cropPts, toImage, cropMargin*r.Scale, minSide, float64(b.Dx()), float64(b.Dy()))
+		rect := image.Rect(int(c.minX), int(c.minY), int(math.Ceil(c.maxX)), int(math.Ceil(c.maxY))).Intersect(b)
+		if !rect.Empty() {
+			cropped := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+			draw.Draw(cropped, cropped.Bounds(), img, rect.Min, draw.Src)
+			img = cropped
+		}
 	}
 
 	if caption == "" {

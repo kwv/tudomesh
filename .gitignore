@@ -1,5 +1,6 @@
 *.png
 *.json
+!examples/**/*.json
 *.exe
 tudomesh
 tudomesh

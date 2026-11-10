@@ -22,8 +22,11 @@ import (
 //	GET /vacuum/{key}      -> vacuumInfo
 //	GET /vacuum/{key}.png  -> live map with that vacuum circled and a caption;
 //	                          ?scale=1..8 sets image pixels per map pixel (default 3)
-//	GET /vacuum/{key}.svg  -> live SVG with that vacuum (and its room, if named
-//	                          the same on the base map) highlighted
+//	GET /vacuum/{key}.svg  -> live SVG with that vacuum and its room highlighted
+//
+// Both images take ?crop=room (the vacuum's room plus 1 m) or ?crop=4m /
+// ?crop=250cm (a square of that radius around the vacuum); see mesh.ParseCrop.
+// Without it the whole floor is shown.
 //
 // {key} is the vacuum id from config (case-insensitive) or the Valetudo
 // identifier from its MQTT topic, e.g. "rocky7" for
@@ -161,11 +164,12 @@ func vacuumCaption(info vacuumInfo) string {
 // writeLiveSVG renders the structured live SVG (see mesh.RenderLiveToSVG),
 // labelling every vacuum with its name, room and state. highlight is a
 // vacuum id or "".
-func writeLiveSVG(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.CalibrationData, config *mesh.Config, refID string, rotateAll float64, highlight string) {
+func writeLiveSVG(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.CalibrationData, config *mesh.Config, refID string, rotateAll float64, highlight string, crop mesh.Crop) {
 	vr, ok := newSVGRenderer(w, st, cache, config, refID, rotateAll)
 	if !ok {
 		return
 	}
+	vr.Crop = crop
 	maps := vr.Maps
 
 	positions := st.GetPositions()
@@ -247,19 +251,24 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 			return
 		}
 		info := buildVacuumInfo(id, name, st)
-
-		switch format {
-		case "":
+		if format == "" {
 			writeJSON(w, info)
 			return
-		case ".svg":
+		}
+		crop, err := mesh.ParseCrop(r.URL.Query().Get("crop"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if format == ".svg" {
 			highlight := id
 			if _, ok := st.GetPositions()[highlight]; !ok {
 				if k, _ := mapFor(maps, id); k != "" {
 					highlight = k
 				}
 			}
-			writeLiveSVG(w, st, cache, config, refID, rotateAll, highlight)
+			writeLiveSVG(w, st, cache, config, refID, rotateAll, highlight, crop)
 			return
 		}
 
@@ -276,6 +285,7 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 		renderer.Scale = alertImageScale(r.URL.Query().Get("scale"))
 		applyConfigColors(renderer, config)
 		renderer.Calibrated = calibratedVacuums(maps, cache)
+		renderer.Crop = crop
 
 		positions := st.GetPositions()
 		applyLiveOptions(renderer, config, maps, positions)
