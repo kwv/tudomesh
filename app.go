@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"image/color"
 	"log"
 	"math"
 	"net/http"
@@ -32,12 +31,7 @@ type App struct {
 	ConfigFile       string
 	CalibrationCache string
 	RotateAll        float64
-	ForceRotation    string
 	ReferenceVacuum  string
-	OutputFile       string
-	RenderFormat     string
-	VectorFormat     string
-	GridSpacing      float64
 	HttpPort         int
 	MqttMode         bool
 	HttpMode         bool
@@ -56,70 +50,10 @@ func (a *App) ApplyOptions(opts AppOptions) {
 	a.ConfigFile = opts.ConfigFile
 	a.CalibrationCache = opts.CalibrationCache
 	a.RotateAll = opts.RotateAll
-	a.ForceRotation = opts.ForceRotation
 	a.ReferenceVacuum = opts.ReferenceVacuum
-	a.OutputFile = opts.OutputFile
-	a.RenderFormat = opts.RenderFormat
-	a.VectorFormat = opts.VectorFormat
-	a.GridSpacing = opts.GridSpacing
 	a.HttpPort = opts.HttpPort
 	a.MqttMode = opts.MqttMode
 	a.HttpMode = opts.HttpMode
-}
-
-// RunParseOnly finds and parses all Valetudo JSON exports
-func (a *App) RunParseOnly() {
-	pattern := filepath.Join(a.DataDir, "ValetudoMapExport-*.json")
-	files, err := filepath.Glob(pattern)
-	if err != nil {
-		log.Fatalf("Error finding JSON files: %v", err)
-	}
-
-	if len(files) == 0 {
-		// Try current directory
-		files, _ = filepath.Glob("ValetudoMapExport-*.json")
-	}
-
-	if len(files) == 0 {
-		log.Fatal("No ValetudoMapExport-*.json files found")
-	}
-
-	fmt.Printf("Found %d map export(s)\n\n", len(files))
-
-	for _, file := range files {
-		a.parseAndPrint(file)
-	}
-}
-
-func (a *App) parseAndPrint(path string) {
-	// Extract vacuum name from filename
-	base := filepath.Base(path)
-	name := vacuumIDFromExport(base)
-
-	fmt.Printf("=== %s ===\n", name)
-	fmt.Printf("File: %s\n", path)
-
-	m, err := mesh.ParseMapFile(path)
-	if err != nil {
-		fmt.Printf("ERROR: %v\n\n", err)
-		return
-	}
-
-	summary := mesh.Summarize(m)
-
-	fmt.Printf("Map Size: %dx%d (pixel size: %d)\n", summary.Size.X, summary.Size.Y, summary.PixelSize)
-	fmt.Printf("Total Layer Area: %d\n", summary.TotalLayerArea)
-	fmt.Printf("Robot Position: (%.0f, %.0f) angle: %.0f°\n",
-		summary.RobotPosition.X, summary.RobotPosition.Y, summary.RobotAngle)
-	fmt.Printf("Charger Position: (%.0f, %.0f)\n",
-		summary.ChargerPosition.X, summary.ChargerPosition.Y)
-	fmt.Printf("Segments: %d", summary.SegmentCount)
-	if len(summary.SegmentNames) > 0 {
-		fmt.Printf(" [%s]", strings.Join(summary.SegmentNames, ", "))
-	}
-	fmt.Println()
-	fmt.Printf("Has Floor: %v, Has Wall: %v\n", summary.HasFloor, summary.HasWall)
-	fmt.Println()
 }
 
 // RunCompareRotation renders 4 images with different rotation options for a vacuum
@@ -170,305 +104,6 @@ func (a *App) RunCompareRotation(vacuumID string) {
 
 	fmt.Printf("Created: %s_0.png, %s_90.png, %s_180.png, %s_270.png\n",
 		outputPrefix, outputPrefix, outputPrefix, outputPrefix)
-}
-
-// RunRender loads maps, aligns them, and outputs a composite PNG
-func (a *App) RunRender() {
-	pattern := filepath.Join(a.DataDir, "ValetudoMapExport-*.json")
-	files, err := filepath.Glob(pattern)
-	if err != nil {
-		log.Fatalf("Error finding JSON files: %v", err)
-	}
-
-	if len(files) == 0 {
-		files, _ = filepath.Glob("ValetudoMapExport-*.json")
-	}
-
-	if len(files) == 0 {
-		log.Fatal("No ValetudoMapExport-*.json files found")
-	}
-
-	fmt.Printf("Found %d map export(s)\n", len(files))
-
-	// Load all maps
-	maps := make(map[string]*mesh.ValetudoMap)
-	for _, file := range files {
-		base := filepath.Base(file)
-		name := vacuumIDFromExport(base)
-
-		m, err := mesh.ParseMapFile(file)
-		if err != nil {
-			fmt.Printf("Error loading %s: %v\n", name, err)
-			continue
-		}
-		maps[name] = m
-		fmt.Printf("Loaded: %s\n", name)
-	}
-
-	if len(maps) < 2 {
-		log.Fatal("Need at least 2 maps for composite render")
-	}
-
-	// Load unified config (optional - provides rotation hints and manual overrides)
-	var config *mesh.Config
-	if _, err := os.Stat(a.ConfigFile); err == nil {
-		config, err = mesh.LoadConfig(a.ConfigFile)
-		if err != nil {
-			log.Printf("Warning: Failed to load config file %s: %v", a.ConfigFile, err)
-		} else {
-			log.Printf("Loaded config from %s", a.ConfigFile)
-			mesh.ResolveVacuums(config, filepath.Join(a.DataDir, vacuumIdentityCache), discoveryTimeout)
-			applyRenderConfig(config)
-		}
-	}
-
-	// Load calibration cache (auto-computed transforms)
-	var cache *mesh.CalibrationData
-	cache, err = mesh.LoadCalibration(a.CalibrationCache)
-	if err != nil {
-		log.Printf("Warning: Failed to load calibration cache %s: %v", a.CalibrationCache, err)
-	} else if cache != nil {
-		log.Printf("Loaded calibration cache from %s", a.CalibrationCache)
-	}
-
-	// Determine effective reference
-	effectiveRef := a.ReferenceVacuum
-	if effectiveRef == "" && config != nil {
-		effectiveRef = mesh.GetEffectiveReference(config, cache, maps)
-	}
-	if effectiveRef == "" {
-		effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
-	}
-	fmt.Printf("Reference vacuum: %s\n", effectiveRef)
-
-	// Build transforms from cache, config, and CLI (priority: CLI > config > cache > auto-alignment)
-	transforms := make(map[string]mesh.AffineMatrix)
-	transforms[effectiveRef] = mesh.Identity()
-	needsRecalibration := false
-
-	for id := range maps {
-		if id == effectiveRef {
-			continue
-		}
-
-		var transform mesh.AffineMatrix
-		source := ""
-
-		// Priority 1: Check cache
-		if cache != nil && cache.ReferenceVacuum == effectiveRef {
-			if vc, ok := cache.Vacuums[id]; ok {
-				transform = vc.Transform
-				source = "cache"
-			}
-		}
-
-		// Priority 2: Config rotation hint narrows the search to ±20°
-		if config != nil {
-			vc := config.GetVacuumByID(id)
-			if vc != nil && vc.Rotation != nil {
-				rotHint := *vc.Rotation
-				fmt.Printf("  %s: aligning near rotation hint %.0f° from config\n", id, rotHint)
-				result, _ := mesh.AlignMapsWithRotationHint(maps[id], maps[effectiveRef], rotHint)
-				transform = result.Transform
-				source = fmt.Sprintf("hint(%.0f°)", rotHint)
-				needsRecalibration = true
-
-				// Apply manual translation if provided
-				if vc.Translation != nil && (vc.Translation.X != 0 || vc.Translation.Y != 0) {
-					transform = mesh.MultiplyMatrices(mesh.Translation(vc.Translation.X, vc.Translation.Y), transform)
-					source += fmt.Sprintf("+translation(%.0f,%.0f)", vc.Translation.X, vc.Translation.Y)
-				}
-			}
-		}
-
-		// Priority 3: CLI --force-rotation fixes the rotation exactly (highest priority)
-		if a.ForceRotation != "" {
-			cliRotations := mesh.BuildForceRotationMap(a.ForceRotation)
-			if rotDeg, ok := cliRotations[id]; ok {
-				fmt.Printf("  %s: CLI forced rotation %.0f°\n", id, rotDeg)
-				result, _ := mesh.AlignMapsAtRotation(maps[id], maps[effectiveRef], rotDeg)
-				transform = result.Transform
-				source = fmt.Sprintf("forced(%.0f°)", rotDeg)
-				needsRecalibration = true
-			}
-		}
-
-		// Otherwise run full alignment
-		if transform.A == 0 && transform.D == 0 {
-			fmt.Printf("  %s: aligning (not in cache)\n", id)
-			result, _ := mesh.AlignMaps(maps[id], maps[effectiveRef])
-			transform = result.Transform
-			source = result.Method
-			needsRecalibration = true
-		}
-
-		transforms[id] = transform
-		if source == "cache" {
-			totalRotation := math.Atan2(transform.C, transform.A) * 180 / math.Pi
-			if totalRotation < 0 {
-				totalRotation += 360
-			}
-			fmt.Printf("  %s: using cached transform (rotation %.1f°)\n", id, totalRotation)
-		}
-	}
-
-	// Update cache if any transforms were recomputed
-	if needsRecalibration {
-		fmt.Printf("\nUpdating calibration cache with new transforms...\n")
-		nowUnix := time.Now().Unix()
-		vacCals := make(map[string]mesh.VacuumCalibration, len(transforms))
-		for id, t := range transforms {
-			area := 0
-			if m, ok := maps[id]; ok {
-				area = m.MetaData.TotalLayerArea
-			}
-			vacCals[id] = mesh.VacuumCalibration{
-				Transform:            t,
-				LastUpdated:          nowUnix,
-				MapAreaAtCalibration: area,
-			}
-		}
-		newCache := mesh.CalibrationData{
-			ReferenceVacuum: effectiveRef,
-			Vacuums:         vacCals,
-		}
-		if err := mesh.SaveCalibration(a.CalibrationCache, &newCache); err != nil {
-			log.Printf("Warning: Failed to save calibration cache: %v", err)
-		} else {
-			fmt.Printf("Calibration cache updated: %s\n", a.CalibrationCache)
-		}
-	}
-
-	// Render with computed transforms
-	fmt.Printf("\nRendering composite map to %s...\n", a.OutputFile)
-
-	// Determine render format
-	format := a.RenderFormat
-	if format != "raster" && format != "vector" && format != "both" {
-		log.Fatalf("Invalid format: %s (must be raster, vector, or both)", format)
-	}
-
-	// Raster rendering (existing behavior)
-	if format == "raster" || format == "both" {
-		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
-		renderer.GlobalRotation = a.RotateAll
-		applyConfigColors(renderer, config)
-
-		outputPath := a.OutputFile
-		if format == "both" && !strings.HasSuffix(outputPath, ".png") {
-			outputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".png"
-		}
-
-		if err := renderer.SavePNG(outputPath); err != nil {
-			log.Fatalf("Error rendering raster: %v", err)
-		}
-		fmt.Printf("Created raster: %s\n", outputPath)
-	}
-
-	// Vector rendering
-	if format == "vector" || format == "both" {
-		if a.VectorFormat != "" && a.VectorFormat != "svg" {
-			log.Fatalf("Unsupported --vector-format %q (only svg)", a.VectorFormat)
-		}
-		vectorRenderer := mesh.NewVectorRenderer(maps, transforms, effectiveRef)
-		vectorRenderer.GlobalRotation = a.RotateAll
-		for id, c := range configColors(config) {
-			vectorRenderer.Colors[id] = c
-		}
-
-		// Grid spacing from config, else the flag
-		spacing := a.GridSpacing
-		if config != nil && config.GridSpacing > 0 {
-			spacing = config.GridSpacing
-		}
-		if spacing > 0 {
-			vectorRenderer.GridSpacing = spacing
-		}
-
-		outputPath := strings.TrimSuffix(a.OutputFile, filepath.Ext(a.OutputFile)) + ".svg"
-		outFile, err := os.Create(outputPath)
-		if err != nil {
-			log.Fatalf("Error creating output file %s: %v", outputPath, err)
-		}
-		defer func() {
-			if err := outFile.Close(); err != nil {
-				log.Printf("Warning: error closing output file %s: %v", outputPath, err)
-			}
-		}()
-		if err := vectorRenderer.RenderCompositeToSVG(outFile); err != nil {
-			log.Fatalf("Error rendering vector SVG: %v", err)
-		}
-		fmt.Printf("Created vector SVG: %s\n", outputPath)
-	}
-
-	fmt.Println("Done!")
-}
-
-// RunRenderIndividual renders each vacuum map as a separate PNG
-func (a *App) RunRenderIndividual(individualRotationFlag string) {
-	pattern := filepath.Join(a.DataDir, "ValetudoMapExport-*.json")
-	files, err := filepath.Glob(pattern)
-	if err != nil {
-		log.Fatalf("Error finding JSON files: %v", err)
-	}
-
-	if len(files) == 0 {
-		files, _ = filepath.Glob("ValetudoMapExport-*.json")
-	}
-
-	if len(files) == 0 {
-		log.Fatal("No ValetudoMapExport-*.json files found")
-	}
-
-	fmt.Printf("Found %d map export(s)\n", len(files))
-
-	// Parse individual rotations
-	individualRotations := make(map[string]float64)
-	if individualRotationFlag != "" {
-		for _, spec := range strings.Split(individualRotationFlag, ",") {
-			parts := strings.Split(strings.TrimSpace(spec), "=")
-			if len(parts) == 2 {
-				var rotDeg float64
-				if _, err := fmt.Sscanf(parts[1], "%f", &rotDeg); err == nil {
-					individualRotations[parts[0]] = rotDeg
-				}
-			}
-		}
-	}
-
-	// Define colors for each vacuum
-	colors := []struct {
-		name  string
-		floor color.RGBA
-		wall  color.RGBA
-	}{
-		{"blue", color.RGBA{100, 149, 237, 255}, color.RGBA{0, 0, 139, 255}},
-		{"red", color.RGBA{255, 99, 71, 255}, color.RGBA{139, 0, 0, 255}},
-		{"green", color.RGBA{144, 238, 144, 255}, color.RGBA{0, 100, 0, 255}},
-	}
-
-	for i, file := range files {
-		base := filepath.Base(file)
-		name := vacuumIDFromExport(base)
-
-		m, err := mesh.ParseMapFile(file)
-		if err != nil {
-			fmt.Printf("Error loading %s: %v\n", name, err)
-			continue
-		}
-
-		colorIdx := i % len(colors)
-		rotDeg := individualRotations[name] // defaults to 0 if not specified
-		outputPath := fmt.Sprintf("individual_%s_%s_rot%d.png", name, colors[colorIdx].name, int(rotDeg))
-
-		fmt.Printf("Rendering %s as %s (rot %.0f°) -> %s\n", name, colors[colorIdx].name, rotDeg, outputPath)
-
-		if err := mesh.RenderSingleMapWithRotation(m, outputPath, colors[colorIdx].floor, colors[colorIdx].wall, rotDeg); err != nil {
-			fmt.Printf("Error rendering %s: %v\n", name, err)
-		}
-	}
-
-	fmt.Println("Done!")
 }
 
 // RunCalibration loads all JSON exports, aligns them to the reference and writes the calibration cache
@@ -850,8 +485,8 @@ func (a *App) RunService() {
 		fmt.Println("  GET /health          - Health check")
 		fmt.Println("  GET /live.svg        - Live map with vacuum positions (SVG)")
 		fmt.Println("  GET /live.png        - Live map with vacuum positions (PNG)")
-		fmt.Println("  GET /composite-map.png - Color-coded composite map")
-		fmt.Println("  GET /composite-map.svg - Color-coded composite map (SVG)")
+		fmt.Println("  GET /composite-map.svg - Every robot's map in its own color (alignment check)")
+		fmt.Println("  GET /vacuum/{id}[.png|.svg] - One robot's state, or a map centered on it")
 		fmt.Println("  GET /floorplan.svg   - Greyscale floor plan (SVG)")
 	}
 

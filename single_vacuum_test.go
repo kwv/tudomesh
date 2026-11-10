@@ -37,7 +37,7 @@ func TestSingleVacuumInstance(t *testing.T) {
 
 	srv := newHTTPServer(st, cache, cfg, "", 0)
 	for _, path := range []string{"/vacuums", "/vacuum/robo2", "/vacuum/robo2.png", "/vacuum/robo2.svg",
-		"/live.svg", "/live.png", "/composite-map.svg", "/composite-map.png", "/floorplan.svg"} {
+		"/live.svg", "/live.png", "/composite-map.svg", "/floorplan.svg"} {
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != http.StatusOK || rec.Body.Len() == 0 {

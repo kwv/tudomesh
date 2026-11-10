@@ -9,7 +9,7 @@ DEV_VERSION := $(shell git describe --tags --dirty --always 2>/dev/null | sed 's
 
 REMOTE_IMAGE := $(DOCKERHUB_USER)/$(IMAGE_NAME)
 
-.PHONY: build build-dev test lint run clean docker-build bump bump-minor bump-major check-version show-version verify-release coverage coverage-report coverage-html render
+.PHONY: build build-dev test lint run clean docker-build bump bump-minor bump-major check-version show-version verify-release coverage coverage-report coverage-html calibrate
 
 # Build binary
 build:
@@ -155,8 +155,7 @@ define bump_version
 	gh pr create --fill --base main --title "chore: release $$NEW_TAG"
 endef
 
-# Render composite map (clears cache to force a fresh alignment)
-render: build
-	@echo "Rendering composite map..."
-	@cd tudomesh-data && rm -f .calibration-cache.json && \
-		../tudomesh --config config.yaml --render --format both --output test.png --vector-format svg
+# Realign the maps in tudomesh-data from scratch and print each robot's fit
+calibrate: build
+	@rm -f tudomesh-data/.calibration-cache.json
+	@./tudomesh --data-dir tudomesh-data --calibrate

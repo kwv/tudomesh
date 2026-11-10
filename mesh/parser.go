@@ -126,53 +126,6 @@ func PixelsToPoints(pixels []int) []Point {
 	return points
 }
 
-// MapSummary provides a summary of map contents
-type MapSummary struct {
-	Version         int
-	TotalLayerArea  int
-	Size            Size
-	PixelSize       int
-	RobotPosition   Point
-	RobotAngle      float64
-	ChargerPosition Point
-	SegmentCount    int
-	SegmentNames    []string
-	HasFloor        bool
-	HasWall         bool
-}
-
-// Summarize extracts key information from a map
-func Summarize(m *ValetudoMap) MapSummary {
-	summary := MapSummary{
-		Version:        m.MetaData.Version,
-		TotalLayerArea: m.MetaData.TotalLayerArea,
-		Size:           m.Size,
-		PixelSize:      m.PixelSize,
-	}
-
-	if pos, angle, ok := ExtractRobotPosition(m); ok {
-		summary.RobotPosition = pos
-		summary.RobotAngle = angle
-	}
-
-	if pos, ok := ExtractChargerPosition(m); ok {
-		summary.ChargerPosition = pos
-	}
-
-	segments := ExtractSegments(m)
-	summary.SegmentCount = len(segments)
-	for _, seg := range segments {
-		if seg.MetaData.Name != "" {
-			summary.SegmentNames = append(summary.SegmentNames, seg.MetaData.Name)
-		}
-	}
-
-	_, summary.HasFloor = ExtractFloorLayer(m)
-	_, summary.HasWall = ExtractWallLayer(m)
-
-	return summary
-}
-
 // MinAreaRatio is the minimum ratio of new map area to last known good map area
 // required for the new map to be considered complete.
 const MinAreaRatio = 0.8
