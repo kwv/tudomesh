@@ -308,13 +308,15 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 
 	theme := r.Theme.orLight()
 	var roomCSS strings.Builder
-	slots := roomIndexes(baseMap, r.IgnoreRooms...)
+	slots := roomSlots(baseMap, len(theme.Rooms), r.IgnoreRooms...)
+	usedSlots := 0
 	for _, seg := range sortedKeys(slots) {
-		fmt.Fprintf(&roomCSS, "#room-%s{fill:var(--tm-room-%d)}\n", cssToken(seg), slots[seg]%max(1, len(theme.Rooms)))
+		fmt.Fprintf(&roomCSS, "#room-%s{fill:var(--tm-room-%d)}\n", cssToken(seg), slots[seg])
+		usedSlots = max(usedSlots, slots[seg]+1)
 	}
 
 	out := &bytes.Buffer{}
-	writeSVGOpen(out, f, ps, svgThemeCSS(theme, min(len(slots), len(theme.Rooms)))+fmt.Sprintf(`.background{fill:var(--tm-bg)}
+	writeSVGOpen(out, f, ps, svgThemeCSS(theme, usedSlots)+fmt.Sprintf(`.background{fill:var(--tm-bg)}
 .floor{fill:var(--tm-floor)}
 .room{fill:var(--tm-floor)}
 %s.alert-room{fill:var(--tm-alert);stroke:var(--tm-alert-border);stroke-width:1.2;stroke-dasharray:2.4 1.2}

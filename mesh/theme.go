@@ -167,9 +167,9 @@ func (t Theme) roomColor(i int) color.NRGBA {
 	return t.Rooms[i%len(t.Rooms)]
 }
 
-// RoomColors gives each of m's rooms its fill (see roomIndexes).
+// RoomColors gives each of m's rooms its fill (see roomSlots).
 func (t Theme) RoomColors(m *ValetudoMap, ignore ...string) map[string]color.NRGBA {
-	idx := roomIndexes(m, ignore...)
+	idx := roomSlots(m, len(t.Rooms), ignore...)
 	out := make(map[string]color.NRGBA, len(idx))
 	for seg, i := range idx {
 		out[seg] = t.roomColor(i)

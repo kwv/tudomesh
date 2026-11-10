@@ -30,32 +30,116 @@ func IsIgnoredRoom(name string, ignore []string) bool {
 }
 
 // RoomColors gives each segment of m its light-theme fill (see
-// roomIndexes and Theme.RoomColors).
+// roomSlots and Theme.RoomColors).
 func RoomColors(m *ValetudoMap, ignore ...string) map[string]color.NRGBA {
 	return LightTheme.RoomColors(m, ignore...)
 }
 
-// roomIndexes gives each segment of m a palette slot. Segments are taken in
-// id order (numeric ids sort numerically) so colors stay stable between
-// renders. Segments whose name is in ignore (IsIgnoredRoom) get no slot.
-func roomIndexes(m *ValetudoMap, ignore ...string) map[string]int {
+// roomTouchReach is how close, in grid cells, two segments must come to
+// count as touching for coloring; it spans a wall between them.
+const roomTouchReach = 4
+
+// roomSlots gives each segment of m a palette slot (0..palette-1) so that
+// touching segments get different slots, as far as the palette allows.
+// Segments are colored most-connected first, ties in id order (numeric ids
+// sort numerically), each taking the least-used slot none of its colored
+// neighbours has; so colors stay stable between renders and spread across
+// the palette. Segments whose name is in ignore (IsIgnoredRoom) get no slot.
+func roomSlots(m *ValetudoMap, palette int, ignore ...string) map[string]int {
 	var ids []string
+	cellsOf := map[string][]int{}
 	for _, layer := range m.Layers {
 		if layer.Type == "segment" && !IsIgnoredRoom(layer.MetaData.Name, ignore) {
-			ids = append(ids, layer.MetaData.SegmentID)
+			id := layer.MetaData.SegmentID
+			if _, seen := cellsOf[id]; !seen {
+				ids = append(ids, id)
+			}
+			cellsOf[id] = append(cellsOf[id], layer.Pixels...)
 		}
 	}
-	sort.Slice(ids, func(i, j int) bool {
-		if len(ids[i]) != len(ids[j]) {
-			return len(ids[i]) < len(ids[j])
+	adj := segmentAdjacency(ids, cellsOf, roomTouchReach)
+
+	order := append([]string(nil), ids...)
+	sort.Slice(order, func(i, j int) bool {
+		if di, dj := len(adj[order[i]]), len(adj[order[j]]); di != dj {
+			return di > dj
 		}
-		return ids[i] < ids[j]
+		return segLess(order[i], order[j])
 	})
+
 	out := make(map[string]int, len(ids))
-	for i, id := range ids {
-		out[id] = i
+	used := make([]int, max(1, palette))
+	for _, id := range order {
+		taken := make([]int, len(used)) // neighbours per slot
+		for n := range adj[id] {
+			if s, ok := out[n]; ok {
+				taken[s]++
+			}
+		}
+		best := -1
+		for s := range used {
+			if best < 0 || taken[s] < taken[best] || (taken[s] == taken[best] && used[s] < used[best]) {
+				best = s
+			}
+		}
+		out[id] = best
+		used[best]++
 	}
 	return out
+}
+
+// segmentAdjacency returns, for each segment id, the segments whose cells
+// come within reach cells (Chebyshev distance) of its own.
+func segmentAdjacency(ids []string, cellsOf map[string][]int, reach int) map[string]map[string]bool {
+	adj := make(map[string]map[string]bool, len(ids))
+	for _, id := range ids {
+		adj[id] = map[string]bool{}
+	}
+	if len(ids) < 2 {
+		return adj
+	}
+	minX, minY, maxX, maxY := math.MaxInt, math.MaxInt, math.MinInt, math.MinInt
+	for _, px := range cellsOf {
+		for i := 0; i+1 < len(px); i += 2 {
+			minX, maxX = min(minX, px[i]), max(maxX, px[i])
+			minY, maxY = min(minY, px[i+1]), max(maxY, px[i+1])
+		}
+	}
+	if minX > maxX {
+		return adj
+	}
+	w, h := maxX-minX+1, maxY-minY+1
+	owner := make([]int32, w*h) // index into ids + 1; 0 = none
+	for k, id := range ids {
+		px := cellsOf[id]
+		for i := 0; i+1 < len(px); i += 2 {
+			owner[(px[i+1]-minY)*w+px[i]-minX] = int32(k + 1)
+		}
+	}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			a := owner[y*w+x]
+			if a == 0 {
+				continue
+			}
+			for dy := 0; dy <= reach; dy++ {
+				for dx := -reach; dx <= reach; dx++ {
+					if dy == 0 && dx <= 0 {
+						continue
+					}
+					nx, ny := x+dx, y+dy
+					if nx < 0 || nx >= w || ny >= h {
+						continue
+					}
+					if b := owner[ny*w+nx]; b != 0 && b != a {
+						adj[ids[a-1]][ids[b-1]] = true
+						adj[ids[b-1]][ids[a-1]] = true
+					}
+				}
+			}
+		}
+	}
+	return adj
 }
 
 // roomUnder returns the segment id of m's room at pos, a position in
