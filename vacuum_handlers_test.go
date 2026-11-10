@@ -230,3 +230,22 @@ func TestCalibratedVacuums(t *testing.T) {
 		t.Errorf("nil cache = %v, want non-nil and nothing calibrated", got)
 	}
 }
+
+// Crop geometry is tested in mesh; here only the query handling.
+func TestVacuumEndpoint_Crop(t *testing.T) {
+	srv, _ := vacuumTestServer()
+	for _, path := range []string{"/vacuum/rocky7.png?crop=room", "/vacuum/rocky7.svg?crop=room"} {
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status %d", path, rec.Code)
+		}
+	}
+	for _, path := range []string{"/vacuum/rocky7.png?crop=bogus", "/vacuum/rocky7.svg?crop=0"} {
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", path, rec.Code)
+		}
+	}
+}

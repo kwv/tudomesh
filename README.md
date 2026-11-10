@@ -179,6 +179,16 @@ PNG text uses the bundled Go Regular font, which covers Latin, Greek and Cyrilli
 - `/vacuum/{id}.png` - Live map with the vacuum circled, its room in red with a hatch and a dark red border, and a caption (`rocky7 | Kitchen | error`). `?scale=1..8` sets the size (default 3).
 - `/vacuum/{id}.svg` - Live SVG with the vacuum highlighted (pulsing ring) and its room filled red with a dashed outline
 
+Both images take `?crop=` to zoom in on the vacuum, which reads better in a phone notification:
+
+| Value | Shows |
+|---|---|
+| (none) | The whole floor (default) |
+| `room` | The vacuum's room plus 1 m; 4 m around the vacuum if the room is unknown |
+| `4m`, `2.5`, `250cm` | A square with that radius around the vacuum (bare numbers are metres; max 50 m) |
+
+A cropped image is at least 4 m wide (and as wide as the PNG caption), leaves out the PNG's robot legend, and is the whole floor if the vacuum has no position. Other values return `400`. Example: `/vacuum/rocky7.png?crop=room&scale=4`.
+
 The highlighted room is the robot's own segment under its position, mapped onto the shared map with its calibration, so it matches `room` in the JSON. If the robot is uncalibrated, is the reference, or has no segment there, the reference map's room at that position is used instead.
 
 ```json
@@ -262,7 +272,7 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, hide on
 [`examples/node-red/stuck-vacuum-alert.json`](examples/node-red/stuck-vacuum-alert.json) is an importable flow:
 
 1. Listens on `valetudo/+/StatusStateAttribute/status` and passes on only `error`.
-2. Calls `GET /vacuum/{id}` for the room, then `GET /vacuum/{id}.png` for the map.
+2. Calls `GET /vacuum/{id}` for the room, then `GET /vacuum/{id}.png` for the map. Append `?crop=room` to that image URL for a close-up of the robot's room.
 3. Emits `msg.topic` = "rocky7 is stuck", `msg.payload` = "rocky7 reported an error in Kitchen.", `msg.image` = PNG Buffer.
 
 To use it: import the flow, set the `TUDOMESH_URL` environment variable on the flow (default `http://tudomesh:8080`), point the MQTT node at your broker, and replace the debug node with your notifier (Telegram, Pushover, Home Assistant, ...).

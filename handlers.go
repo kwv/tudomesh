@@ -154,7 +154,7 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 
 	// Live SVG endpoint
 	mux.HandleFunc("/live.svg", func(w http.ResponseWriter, r *http.Request) {
-		writeLiveSVG(w, stateTracker, cache, config, refID, rotateAll, "")
+		writeLiveSVG(w, stateTracker, cache, config, refID, rotateAll, "", mesh.Crop{})
 	})
 
 	// Default route serves HTML page embedding the SVG map

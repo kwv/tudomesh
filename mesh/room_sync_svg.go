@@ -38,7 +38,7 @@ func RenderRoomSyncSVG(w io.Writer, m *ValetudoMap, toRef AffineMatrix, refColor
 	}
 
 	out := &bytes.Buffer{}
-	writeSVGOpen(out, f, ps, css.String())
+	writeSVGOpen(out, f, ps, css.String(), nil)
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(m, toRef))
 	writeMapLayers(out, m, true, nil)
 	if d := cellRectsPath(mismatch); d != "" {
