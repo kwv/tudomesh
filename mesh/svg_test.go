@@ -237,3 +237,10 @@ func TestRenderLiveToSVG_NoPositionsIsFloorplan(t *testing.T) {
 		t.Errorf("floorplan should have no vacuums, got %d", n)
 	}
 }
+
+func TestNewVectorRendererDefaults(t *testing.T) {
+	r := NewVectorRenderer(map[string]*ValetudoMap{}, nil, "")
+	if r.GridSpacing != DefaultGridSpacing || r.Padding != DefaultPadding {
+		t.Errorf("GridSpacing, Padding = %g, %g; want %g, %g", r.GridSpacing, r.Padding, DefaultGridSpacing, DefaultPadding)
+	}
+}

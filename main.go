@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/kwv/tudomesh/mesh"
 )
 
 // Version is set at build time via -ldflags
@@ -79,7 +81,7 @@ func run(args []string, out io.Writer, app MainApp) error {
 	fs.IntVar(&opts.HttpPort, "http-port", 8080, "HTTP server port (default 8080)")
 	fs.StringVar(&opts.RenderFormat, "format", "raster", "Render format: raster, vector, or both")
 	fs.StringVar(&opts.VectorFormat, "vector-format", "svg", "Vector output format (only svg)")
-	fs.Float64Var(&opts.GridSpacing, "grid-spacing", 1000.0, "Grid line spacing in millimeters (default 1000mm = 1m)")
+	fs.Float64Var(&opts.GridSpacing, "grid-spacing", mesh.DefaultGridSpacing, "Grid line spacing in map units (cm; 100 = 1 m)")
 	fs.BoolVar(&opts.PlanRooms, "plan-rooms", false, "Plan room edits that match each robot's rooms to the reference robot's; writes previews, changes nothing")
 
 	if err := fs.Parse(args); err != nil {

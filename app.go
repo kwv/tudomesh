@@ -383,7 +383,6 @@ func (a *App) RunRender() {
 		}
 		if spacing > 0 {
 			vectorRenderer.GridSpacing = spacing
-			vectorRenderer.Padding = spacing / 2
 		}
 
 		outputPath := strings.TrimSuffix(a.OutputFile, filepath.Ext(a.OutputFile)) + ".svg"

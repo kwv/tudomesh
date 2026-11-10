@@ -24,7 +24,7 @@ vacuums:
 # reference: FrugalLameLion   # vacuum id used as the world origin;
 #                             # default: the robot with the largest map
 
-# gridSpacing: 1000           # grid line spacing in map units
+# gridSpacing: 100            # grid line spacing in cm (default 100 = 1 m)
 
 # ignoreRooms: [Porch, Deck]  # rooms drawn as plain floor on the live maps:
 #                             # no fill, label or alert highlight. Matched
