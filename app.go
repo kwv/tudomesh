@@ -508,9 +508,21 @@ func (a *App) RunCalibration() {
 		log.Fatal("Need at least 2 maps for calibration")
 	}
 
-	// Select reference vacuum (largest area)
-	refID := mesh.SelectReferenceVacuum(maps, nil)
-	fmt.Printf("\nReference vacuum: %s (auto-selected by largest area)\n\n", refID)
+	// Config is optional here; it supplies reference and rotation hints.
+	configPath, cachePath := a.dataDirPaths()
+	config, err := mesh.LoadConfig(configPath)
+	if err != nil {
+		log.Printf("No config used (%v)", err)
+		config = &mesh.Config{}
+	} else {
+		mesh.ResolveVacuums(config, filepath.Join(a.DataDir, vacuumIdentityCache), discoveryTimeout)
+	}
+
+	refID := a.ReferenceVacuum
+	if maps[refID] == nil {
+		refID = mesh.GetEffectiveReference(config, nil, maps)
+	}
+	fmt.Printf("\nReference vacuum: %s (--reference, else config reference, else largest map)\n\n", refID)
 
 	refMap := maps[refID]
 
@@ -541,7 +553,15 @@ func (a *App) RunCalibration() {
 			continue
 		}
 
-		result, ok := mesh.AlignMaps(m, refMap)
+		var result mesh.Alignment
+		var ok bool
+		hint := ""
+		if vc := config.GetVacuumByID(id); vc != nil && vc.Rotation != nil {
+			result, ok = mesh.AlignMapsWithRotationHint(m, refMap, *vc.Rotation)
+			hint = fmt.Sprintf(" (rotation hint %.0f° from config)", *vc.Rotation)
+		} else {
+			result, ok = mesh.AlignMaps(m, refMap)
+		}
 		if !ok {
 			fmt.Printf("%-25s: no floor geometry, skipped\n", id)
 			continue
@@ -552,7 +572,7 @@ func (a *App) RunCalibration() {
 			MapAreaAtCalibration: m.MetaData.TotalLayerArea,
 		}
 
-		fmt.Printf("%-25s:\n", id)
+		fmt.Printf("%-25s:%s\n", id, hint)
 		fmt.Printf("  Method: %s, rotation %.1f°, confidence %.2f (>= %.2f is unambiguous)\n",
 			result.Method, result.RotationDeg, result.Confidence, mesh.MinGridConfidence)
 		fmt.Printf("  Translation: (%.1f, %.1f)\n", result.Transform.Tx, result.Transform.Ty)
@@ -584,8 +604,8 @@ func (a *App) RunCalibration() {
 	fmt.Printf("  Charger: (%.0f, %.0f)\n", refCharger.X, refCharger.Y)
 
 	// Save to cache file
-	fmt.Printf("\nSaving calibration cache to %s\n", a.CalibrationCache)
-	if err := mesh.SaveCalibration(a.CalibrationCache, &cache); err != nil {
+	fmt.Printf("\nSaving calibration cache to %s\n", cachePath)
+	if err := mesh.SaveCalibration(cachePath, &cache); err != nil {
 		log.Printf("Warning: Failed to save calibration cache: %v", err)
 	} else {
 		fmt.Println("Calibration cache saved successfully")

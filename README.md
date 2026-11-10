@@ -14,6 +14,8 @@ Combines the maps of several Valetudo vacuum robots into one coordinate system a
 
 ## Installation
 
+New to TudoMesh? The [setup guide](docs/setup.md) walks through a fresh install with your own robots, from checking MQTT to alerts.
+
 ### Docker (recommended)
 
 ```bash
@@ -478,7 +480,7 @@ mosquitto_sub -h localhost -t 'valetudo/+/StatusStateAttribute/status' -v
 - No robot's full map is known yet. Wait for a robot to dock (see [Auto-Calibration](#auto-calibration)), or copy a Valetudo map export (`ValetudoMapExport-*.json`) into the data directory and restart.
 
 **A robot is misaligned:**
-- Run `./tudomesh --data-dir ./tudomesh-data --calibrate` and check its confidence. If it reports `grid-ambiguous`, set a `rotation` hint for that vacuum in `config.yaml` (see `--compare-rotation` to pick one).
+- Run `./tudomesh --data-dir ./tudomesh-data --calibrate` and check its confidence. If it reports `grid-ambiguous`, set a `rotation` hint for that vacuum in `config.yaml` (see `--compare-rotation` to pick one), run `--calibrate` again and restart the service. `--calibrate` uses the config's `reference` and `rotation` hints and writes `.calibration-cache.json` in the data directory.
 
 **Auto-calibration not triggering:**
 - Look for `Discovered <url>` in the startup logs to confirm the robot was reached
