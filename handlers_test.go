@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/kwv/tudomesh/mesh"
@@ -702,5 +703,36 @@ func TestEndpoints_WithGlobalRotation(t *testing.T) {
 				t.Errorf("%s with rotation=90: status = %d, want %d", ep, w.Code, http.StatusOK)
 			}
 		})
+	}
+}
+
+func TestThemeQuery(t *testing.T) {
+	srv, _ := vacuumTestServer()
+	for path, want := range map[string]int{
+		"/live.svg?theme=dark":          http.StatusOK,
+		"/live.png?theme=auto":          http.StatusOK,
+		"/floorplan.svg?theme=light":    http.StatusOK,
+		"/vacuum/rocky7.png?theme=dark": http.StatusOK,
+		"/vacuum/rocky7.svg?theme=dark": http.StatusOK,
+		"/?theme=dark":                  http.StatusOK,
+		"/live.svg?theme=neon":          http.StatusBadRequest,
+		"/vacuum/rocky7.png?theme=neon": http.StatusBadRequest,
+		"/?theme=%22%3E%3Cscript%3E":    http.StatusBadRequest,
+	} {
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != want {
+			t.Errorf("%s: status %d, want %d", path, rec.Code, want)
+		}
+	}
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/?theme=dark", nil))
+	if !strings.Contains(rec.Body.String(), `src="/live.svg?theme=dark"`) {
+		t.Errorf("homepage does not pass the theme on:\n%s", rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/live.svg?theme=dark", nil))
+	if !strings.Contains(rec.Body.String(), "--tm-bg:#18181b;") {
+		t.Error("dark live.svg lacks the dark background")
 	}
 }

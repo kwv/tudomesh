@@ -26,7 +26,8 @@ import (
 //
 // Both images take ?crop=room (the vacuum's room plus 1 m) or ?crop=4m /
 // ?crop=250cm (a square of that radius around the vacuum); see mesh.ParseCrop.
-// Without it the whole floor is shown.
+// Without it the whole floor is shown. ?theme=light|dark|auto overrides the
+// configured theme (render.theme).
 //
 // {key} is the vacuum id from config (case-insensitive) or the Valetudo
 // identifier from its MQTT topic, e.g. "rocky7" for
@@ -164,12 +165,12 @@ func vacuumCaption(info vacuumInfo) string {
 // writeLiveSVG renders the structured live SVG (see mesh.RenderLiveToSVG),
 // labelling every vacuum with its name, room and state. highlight is a
 // vacuum id or "".
-func writeLiveSVG(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.CalibrationData, config *mesh.Config, refID string, rotateAll float64, highlight string, crop mesh.Crop) {
+func writeLiveSVG(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.CalibrationData, config *mesh.Config, refID string, rotateAll float64, highlight string, crop mesh.Crop, theme mesh.Theme) {
 	vr, ok := newSVGRenderer(w, st, cache, config, refID, rotateAll)
 	if !ok {
 		return
 	}
-	vr.Crop = crop
+	vr.Crop, vr.Theme = crop, theme
 	maps := vr.Maps
 
 	positions := st.GetPositions()
@@ -260,6 +261,10 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		theme, ok := requestTheme(w, r, config)
+		if !ok {
+			return
+		}
 
 		if format == ".svg" {
 			highlight := id
@@ -268,7 +273,7 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 					highlight = k
 				}
 			}
-			writeLiveSVG(w, st, cache, config, refID, rotateAll, highlight, crop)
+			writeLiveSVG(w, st, cache, config, refID, rotateAll, highlight, crop, theme)
 			return
 		}
 
@@ -285,7 +290,7 @@ func registerVacuumHandlers(mux *http.ServeMux, st *mesh.StateTracker, cache *me
 		renderer.Scale = alertImageScale(r.URL.Query().Get("scale"))
 		applyConfigColors(renderer, config)
 		renderer.Calibrated = calibratedVacuums(maps, cache)
-		renderer.Crop = crop
+		renderer.Crop, renderer.Theme = crop, theme
 
 		positions := st.GetPositions()
 		applyLiveOptions(renderer, config, maps, positions)

@@ -6,19 +6,11 @@ import (
 	"sort"
 )
 
-// roomPalette holds light room fills for the live map. They stay pale so
-// walls, vacuums and the alert room (AlertRoomColor) stand out.
-var roomPalette = []color.NRGBA{
-	{207, 224, 240, 255}, // blue
-	{214, 234, 210, 255}, // green
-	{243, 227, 195, 255}, // sand
-	{226, 214, 238, 255}, // lavender
-	{210, 236, 234, 255}, // teal
-	{239, 232, 200, 255}, // straw
-}
-
-// AlertRoomColor fills the room the highlighted vacuum is in.
-var AlertRoomColor = color.NRGBA{244, 163, 163, 255}
+// roomPalette and AlertRoomColor are the light theme's room and alert fills.
+var (
+	roomPalette    = LightTheme.Rooms
+	AlertRoomColor = LightTheme.Alert
+)
 
 // IsIgnoredRoom reports whether a segment named name is listed in ignore
 // (Config.IgnoreRooms), compared with NormalizeRoomName. Ignored rooms are
@@ -37,11 +29,16 @@ func IsIgnoredRoom(name string, ignore []string) bool {
 	return false
 }
 
-// RoomColors gives each segment of m a palette color. Segments are taken in
-// id order (numeric ids sort numerically) so colors stay stable between renders.
-// Segments whose name is in ignore (IsIgnoredRoom) get no color and no
-// palette slot.
+// RoomColors gives each segment of m its light-theme fill (see
+// roomIndexes and Theme.RoomColors).
 func RoomColors(m *ValetudoMap, ignore ...string) map[string]color.NRGBA {
+	return LightTheme.RoomColors(m, ignore...)
+}
+
+// roomIndexes gives each segment of m a palette slot. Segments are taken in
+// id order (numeric ids sort numerically) so colors stay stable between
+// renders. Segments whose name is in ignore (IsIgnoredRoom) get no slot.
+func roomIndexes(m *ValetudoMap, ignore ...string) map[string]int {
 	var ids []string
 	for _, layer := range m.Layers {
 		if layer.Type == "segment" && !IsIgnoredRoom(layer.MetaData.Name, ignore) {
@@ -54,11 +51,11 @@ func RoomColors(m *ValetudoMap, ignore ...string) map[string]color.NRGBA {
 		}
 		return ids[i] < ids[j]
 	})
-	colors := make(map[string]color.NRGBA, len(ids))
+	out := make(map[string]int, len(ids))
 	for i, id := range ids {
-		colors[id] = roomPalette[i%len(roomPalette)]
+		out[id] = i
 	}
-	return colors
+	return out
 }
 
 // roomUnder returns the segment id of m's room at pos, a position in

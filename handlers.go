@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"image/color"
 	"image/png"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -77,6 +79,10 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 
 	// Live positions endpoint
 	mux.HandleFunc("/live.png", func(w http.ResponseWriter, r *http.Request) {
+		theme, ok := requestTheme(w, r, config)
+		if !ok {
+			return
+		}
 		maps := stateTracker.GetMaps()
 		if len(maps) == 0 {
 			http.Error(w, "No maps available", http.StatusServiceUnavailable)
@@ -98,6 +104,7 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		// Create renderer
 		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
 		renderer.GlobalRotation = rotateAll
+		renderer.Theme = theme
 		applyLiveOptions(renderer, config, maps, positions)
 
 		// If no drawable content exists, we can still show positions on a blank map
@@ -141,10 +148,15 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 
 	// Floorplan SVG: the live view without vacuums
 	mux.HandleFunc("/floorplan.svg", func(w http.ResponseWriter, r *http.Request) {
+		theme, ok := requestTheme(w, r, config)
+		if !ok {
+			return
+		}
 		vr, ok := newSVGRenderer(w, stateTracker, cache, config, refID, rotateAll)
 		if !ok {
 			return
 		}
+		vr.Theme = theme
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.Header().Set("Cache-Control", "no-cache")
 		if err := vr.RenderLiveToSVG(w, nil); err != nil {
@@ -154,7 +166,11 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 
 	// Live SVG endpoint
 	mux.HandleFunc("/live.svg", func(w http.ResponseWriter, r *http.Request) {
-		writeLiveSVG(w, stateTracker, cache, config, refID, rotateAll, "", mesh.Crop{})
+		theme, ok := requestTheme(w, r, config)
+		if !ok {
+			return
+		}
+		writeLiveSVG(w, stateTracker, cache, config, refID, rotateAll, "", mesh.Crop{}, theme)
 	})
 
 	// Default route serves HTML page embedding the SVG map
@@ -163,9 +179,17 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 			http.NotFound(w, r)
 			return
 		}
+		src := "/live.svg"
+		if t := r.URL.Query().Get("theme"); t != "" {
+			if _, err := mesh.ThemeByName(t); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			src += "?theme=" + url.QueryEscape(t)
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = fmt.Fprint(w, `<!DOCTYPE html>
+		_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -173,14 +197,14 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 <title>tudomesh</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#1a1a1a}
+html,body{width:100%%;height:100%%;overflow:hidden;background:#1a1a1a}
 img{display:block;width:100vw;height:100vh;object-fit:contain}
 </style>
 </head>
 <body>
-<img src="/live.svg" alt="Live Map">
+<img src="%s" alt="Live Map">
 </body>
-</html>`)
+</html>`, html.EscapeString(src))
 	})
 
 	registerVacuumHandlers(mux, stateTracker, cache, config, refID, rotateAll)
@@ -190,6 +214,17 @@ img{display:block;width:100vw;height:100vh;object-fit:contain}
 		log.Printf("[HTTP] %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// requestTheme resolves ?theme= (light, dark or auto; default from config)
+// with the configured colors. It writes a 400 and returns false on a bad name.
+func requestTheme(w http.ResponseWriter, r *http.Request, config *mesh.Config) (mesh.Theme, bool) {
+	t, err := config.ResolveTheme(r.URL.Query().Get("theme"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return mesh.Theme{}, false
+	}
+	return t, true
 }
 
 // buildTransforms creates transform map from cache or identity

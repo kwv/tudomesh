@@ -2,6 +2,7 @@ package mesh
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 )
 
@@ -129,8 +130,8 @@ type Config struct {
 	GridSpacing float64        `yaml:"gridSpacing,omitempty" json:"gridSpacing,omitempty"` // Grid line spacing in cm (default 100 = 1 m)
 	// IgnoreRooms lists room names drawn as outside on the live maps (no fill,
 	// label or alert highlight), e.g. a porch. Matched by IsIgnoredRoom.
-	IgnoreRooms []string `yaml:"ignoreRooms,omitempty" json:"ignoreRooms,omitempty"`
-	Render      RenderConfig   `yaml:"render,omitempty" json:"render,omitempty"`
+	IgnoreRooms []string     `yaml:"ignoreRooms,omitempty" json:"ignoreRooms,omitempty"`
+	Render      RenderConfig `yaml:"render,omitempty" json:"render,omitempty"`
 }
 
 // RenderConfig holds optional image rendering settings.
@@ -138,6 +139,32 @@ type RenderConfig struct {
 	// FontPath is a .ttf/.otf/.ttc font used for PNG text before the bundled
 	// Go Regular (Latin, Greek, Cyrillic), e.g. a CJK font. See SetFontFile.
 	FontPath string `yaml:"fontPath,omitempty" json:"fontPath,omitempty"`
+	// Theme is the default theme of the live and alert maps: light (default),
+	// dark, or auto (SVG follows the viewer; PNG is light). ?theme= overrides it.
+	Theme string `yaml:"theme,omitempty" json:"theme,omitempty"`
+	// Colors overrides single theme colors, for every theme.
+	Colors ThemeColors `yaml:"colors,omitempty" json:"colors,omitempty"`
+}
+
+// ResolveTheme returns the theme named name (the configured one if "")
+// with the configured color overrides. c may be nil.
+func (c *Config) ResolveTheme(name string) (Theme, error) {
+	var rc RenderConfig
+	if c != nil {
+		rc = c.Render
+	}
+	if name == "" {
+		name = rc.Theme
+	}
+	t, err := ThemeByName(name)
+	if err != nil {
+		return Theme{}, err
+	}
+	t, err = t.WithColors(rc.Colors)
+	if err != nil {
+		return Theme{}, fmt.Errorf("render.colors: %w", err)
+	}
+	return t, nil
 }
 
 // MQTTConfig holds MQTT connection settings

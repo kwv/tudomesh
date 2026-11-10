@@ -30,6 +30,9 @@ func LoadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("vacuum[%d] needs a url (or id and topic)", i)
 		}
 	}
+	if _, err := config.ResolveTheme(""); err != nil {
+		return nil, fmt.Errorf("render: %w", err)
+	}
 
 	return &config, nil
 }

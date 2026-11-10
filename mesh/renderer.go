@@ -65,6 +65,9 @@ type CompositeRenderer struct {
 	// Calibrated lists vacuums whose Transforms entry is a real calibration;
 	// only those get their own room highlighted. nil trusts every transform.
 	Calibrated map[string]bool
+	// Theme colors the live and alert views (RenderLive, RenderGreyscale,
+	// RenderLiveHighlight). The zero value is LightTheme.
+	Theme Theme
 	// Crop limits RenderLiveHighlight to the highlighted vacuum's room or a
 	// radius around it (see Crop). The cropped image has no robot legend.
 	Crop Crop
@@ -708,11 +711,11 @@ func RenderRotationComparison(maps map[string]*ValetudoMap, vacuumID string, out
 	return nil
 }
 
-// Greyscale colors for floorplan rendering
+// Light-theme floorplan colors; renderers use CompositeRenderer.Theme.
 var (
-	GreyscaleFloor = color.NRGBA{200, 200, 200, 255} // Light grey for floor
-	GreyscaleWall  = color.NRGBA{60, 60, 60, 255}    // Dark grey for walls
-	GreyscaleBG    = color.NRGBA{240, 240, 240, 255} // Background
+	GreyscaleFloor = LightTheme.Floor
+	GreyscaleWall  = LightTheme.Wall
+	GreyscaleBG    = LightTheme.Background
 )
 
 // RenderGreyscale creates a greyscale composite image without color coding or
@@ -730,6 +733,7 @@ func (r *CompositeRenderer) RenderGreyscale() *image.RGBA {
 // before the walls. Walls come from the reference map only, so maps a cell or
 // two apart don't double them; other maps only add floor.
 func (r *CompositeRenderer) renderBase(alert *alertRoom) *image.RGBA {
+	theme := r.Theme.orLight()
 	// Calculate bounds
 	minX, minY, maxX, maxY, centerX, centerY := r.CalculateBounds()
 
@@ -768,7 +772,7 @@ func (r *CompositeRenderer) renderBase(alert *alertRoom) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			img.Set(x, y, GreyscaleBG)
+			img.Set(x, y, theme.Background)
 		}
 	}
 
@@ -808,14 +812,14 @@ func (r *CompositeRenderer) renderBase(alert *alertRoom) *image.RGBA {
 		transform := r.Transforms[id]
 		var roomColors map[string]color.NRGBA
 		if id == r.Reference {
-			roomColors = RoomColors(m, r.IgnoreRooms...)
+			roomColors = theme.RoomColors(m, r.IgnoreRooms...)
 		}
 
 		for _, layer := range m.Layers {
 			if layer.Type != "floor" && layer.Type != "segment" {
 				continue
 			}
-			var c color.Color = GreyscaleFloor
+			var c color.Color = theme.Floor
 			if rc, ok := roomColors[layer.MetaData.SegmentID]; ok && layer.Type == "segment" {
 				c = rc
 			}
@@ -831,7 +835,7 @@ func (r *CompositeRenderer) renderBase(alert *alertRoom) *image.RGBA {
 		if !ok {
 			refT = Identity()
 		}
-		drawAlertRoom(img, alert, refT, toImage, cell)
+		drawAlertRoom(img, alert, refT, toImage, cell, theme)
 	}
 
 	// Second pass: walls (dark grey), from the reference map (every map if
@@ -854,7 +858,7 @@ func (r *CompositeRenderer) renderBase(alert *alertRoom) *image.RGBA {
 						for dy := -1; dy <= 1; dy++ {
 							px, py := ix+dx, iy+dy
 							if px >= 0 && px < width && py >= 0 && py < height {
-								img.Set(px, py, GreyscaleWall)
+								img.Set(px, py, theme.Wall)
 							}
 						}
 					}
@@ -866,18 +870,19 @@ func (r *CompositeRenderer) renderBase(alert *alertRoom) *image.RGBA {
 	return img
 }
 
-// Second cues for the alert room, so it doesn't rely on hue alone.
+// Second cues for the alert room, so it doesn't rely on hue alone: a 2px
+// inner border and a 1px diagonal hatch (Theme.AlertBorder, AlertHatch).
 var (
-	alertBorderColor = color.RGBA{170, 30, 30, 255} // 2px inner border
-	alertHatchColor  = color.RGBA{214, 96, 96, 255} // 1px diagonal hatch
-	alertBorderWidth = 2                            // image pixels
-	alertHatchPeriod = 6                            // image pixels between hatch lines
+	alertBorderColor = toRGBA(LightTheme.AlertBorder) // light theme, for tests
+	alertBorderWidth = 2                              // image pixels
+	alertHatchPeriod = 6                              // image pixels between hatch lines
 )
 
 // drawAlertRoom fills alert's cells (reference-map grid, placed with refT and
-// toImage) in AlertRoomColor with a diagonal hatch and a darker inner border.
+// toImage) in theme.Alert with a diagonal hatch and an inner border.
 // cell is the image size of one grid cell.
-func drawAlertRoom(img *image.RGBA, alert *alertRoom, refT AffineMatrix, toImage func(Point) (int, int), cell int) {
+func drawAlertRoom(img *image.RGBA, alert *alertRoom, refT AffineMatrix, toImage func(Point) (int, int), cell int, theme Theme) {
+	fill, hatch, edge := toRGBA(theme.Alert), toRGBA(theme.AlertHatch), toRGBA(theme.AlertBorder)
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
 	mask := make([]bool, w*h)
@@ -895,15 +900,15 @@ func drawAlertRoom(img *image.RGBA, alert *alertRoom, refT AffineMatrix, toImage
 			if !mask[y*w+x] {
 				continue
 			}
-			c := color.RGBA(AlertRoomColor)
+			c := fill
 			if (x+y)%alertHatchPeriod == 0 {
-				c = alertHatchColor
+				c = hatch
 			}
 		border:
 			for dy := -alertBorderWidth; dy <= alertBorderWidth; dy++ {
 				for dx := -alertBorderWidth; dx <= alertBorderWidth; dx++ {
 					if !inside(x+dx, y+dy) {
-						c = alertBorderColor
+						c = edge
 						break border
 					}
 				}
@@ -1061,7 +1066,7 @@ func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert
 	}
 
 	if legend {
-		drawLiveLegend(img, positions, r.Names)
+		drawLiveLegend(img, positions, r.Names, toRGBA(r.Theme.orLight().Text))
 	}
 
 	return img
@@ -1142,7 +1147,7 @@ func drawRing(img *image.RGBA, cx, cy, radius, thickness int, c color.RGBA) {
 
 // drawLiveLegend adds a legend with each vacuum's color and name (names[id],
 // else the id) to the live position image.
-func drawLiveLegend(img *image.RGBA, positions map[string]*LivePosition, names map[string]string) {
+func drawLiveLegend(img *image.RGBA, positions map[string]*LivePosition, names map[string]string, text color.RGBA) {
 	if len(positions) == 0 {
 		return
 	}
@@ -1171,7 +1176,7 @@ func drawLiveLegend(img *image.RGBA, positions map[string]*LivePosition, names m
 		if n := names[id]; n != "" {
 			label = n
 		}
-		drawText(img, 28, y, label, color.RGBA{0, 0, 0, 255})
+		drawText(img, 28, y, label, text)
 
 		y += 18
 	}
