@@ -592,24 +592,27 @@ func (a *App) RunCalibration() {
 	}
 }
 
+// dataDirPaths returns the config and calibration cache paths: inside
+// DataDir when it is set and the flags are left at their defaults.
+func (a *App) dataDirPaths() (config, cache string) {
+	config, cache = a.ConfigFile, a.CalibrationCache
+	if a.DataDir != "." && a.DataDir != "" {
+		if config == "config.yaml" {
+			config = filepath.Join(a.DataDir, "config.yaml")
+		}
+		if cache == ".calibration-cache.json" {
+			cache = filepath.Join(a.DataDir, ".calibration-cache.json")
+		}
+	}
+	return config, cache
+}
+
 // RunService starts the combined MQTT and/or HTTP service
 func (a *App) RunService() {
 	fmt.Println("Starting tudomesh service...")
 
 	// 1. Resolve configuration paths relative to data-dir if provided
-	resolvedConfig := a.ConfigFile
-	resolvedCache := a.CalibrationCache
-
-	// If data-dir is specified and files are still pointing to defaults,
-	// resolve them relative to the data-dir.
-	if a.DataDir != "." {
-		if resolvedConfig == "config.yaml" {
-			resolvedConfig = filepath.Join(a.DataDir, "config.yaml")
-		}
-		if resolvedCache == ".calibration-cache.json" {
-			resolvedCache = filepath.Join(a.DataDir, ".calibration-cache.json")
-		}
-	}
+	resolvedConfig, resolvedCache := a.dataDirPaths()
 
 	// 2. Load config.yaml (required)
 	config, err := mesh.LoadConfig(resolvedConfig)
