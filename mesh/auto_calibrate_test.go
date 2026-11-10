@@ -21,7 +21,7 @@ import (
 //   2. DockingHandler fires for the correct vacuum
 //   3. Handler fetches fresh map data via HTTP API (httptest server)
 //   4. ShouldRecalibrate decides whether to proceed
-//   5. CalibrateVacuums computes transforms
+//   5. AlignMaps computes the transform
 //   6. CalibrationData is updated and persisted to disk
 // ---------------------------------------------------------------------------
 
@@ -94,22 +94,17 @@ func TestDockingAutoCalibrateFlow(t *testing.T) {
 			return
 		}
 
-		// Step 3: Build maps collection and calibrate
-		maps := map[string]*ValetudoMap{
-			"vacuum1": referenceMap,
-			vacuumID:  fetchedMap,
-		}
-
-		newCal, err := CalibrateVacuums(maps, "vacuum1")
-		if err != nil {
-			t.Errorf("CalibrateVacuums failed: %v", err)
+		// Step 3: Align against the reference and update the calibration data
+		result, ok := AlignMaps(fetchedMap, referenceMap)
+		if !ok {
+			t.Error("AlignMaps found no floor geometry")
 			return
 		}
-
-		// Step 4: Update the existing calibration data
-		if vc, ok := newCal.Vacuums[vacuumID]; ok {
-			calData.UpdateVacuumCalibration(vacuumID, vc)
-		}
+		calData.UpdateVacuumCalibration(vacuumID, VacuumCalibration{
+			Transform:            result.Transform,
+			LastUpdated:          time.Now().Unix(),
+			MapAreaAtCalibration: fetchedMap.MetaData.TotalLayerArea,
+		})
 
 		// Step 5: Persist to disk
 		if err := SaveCalibration(cachePath, calData); err != nil {

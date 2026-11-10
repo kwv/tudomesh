@@ -10,8 +10,6 @@ import (
 // helpers
 // ---------------------------------------------------------------------------
 
-func floatPtr(v float64) *float64 { return &v }
-
 func validConfigYAML() string {
 	return `mqtt:
   broker: tcp://localhost:1883
@@ -109,110 +107,6 @@ vacuums:
 			}
 		})
 	}
-}
-
-// ---------------------------------------------------------------------------
-// SaveConfig
-// ---------------------------------------------------------------------------
-
-func TestSaveConfig(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "out.yaml")
-
-	original := &Config{
-		MQTT: MQTTConfig{
-			Broker:   "tcp://localhost:1883",
-			ClientID: "test-client",
-		},
-		Vacuums: []VacuumConfig{
-			{ID: "vac-a", Topic: "valetudo/vac-a", Color: "#FF0000"},
-		},
-		GridSpacing: 500,
-	}
-
-	if err := SaveConfig(path, original); err != nil {
-		t.Fatalf("SaveConfig: %v", err)
-	}
-
-	// Round-trip: LoadConfig must succeed and reproduce the data
-	loaded, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("LoadConfig after save: %v", err)
-	}
-	if loaded.MQTT.Broker != original.MQTT.Broker {
-		t.Errorf("Broker = %q, want %q", loaded.MQTT.Broker, original.MQTT.Broker)
-	}
-	if loaded.GridSpacing != 500 {
-		t.Errorf("GridSpacing = %g, want 500", loaded.GridSpacing)
-	}
-	if len(loaded.Vacuums) != 1 || loaded.Vacuums[0].ID != "vac-a" {
-		t.Errorf("Vacuums round-trip mismatch: %+v", loaded.Vacuums)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// MergeCalibrationIntoConfig
-// ---------------------------------------------------------------------------
-
-func TestMergeCalibrationIntoConfig(t *testing.T) {
-	t.Run("nil cache yields manual-only transforms", func(t *testing.T) {
-		rot := floatPtr(90)
-		cfg := &Config{
-			Vacuums: []VacuumConfig{
-				{ID: "vac-a", Topic: "t/a", Rotation: rot},
-			},
-		}
-		result := MergeCalibrationIntoConfig(cfg, nil)
-		if _, ok := result["vac-a"]; !ok {
-			t.Fatal("vac-a missing from result")
-		}
-		// 90-degree rotation: A ~= 0, C ~= 1
-		if result["vac-a"].A > 0.01 || result["vac-a"].A < -0.01 {
-			t.Errorf("90-deg rotation A = %g, want ~0", result["vac-a"].A)
-		}
-	})
-
-	t.Run("cache only, no manual overrides", func(t *testing.T) {
-		cfg := &Config{
-			Vacuums: []VacuumConfig{
-				{ID: "vac-a", Topic: "t/a"}, // no Rotation, no Translation
-				{ID: "vac-b", Topic: "t/b"},
-			},
-		}
-		cache := &CalibrationData{
-			Vacuums: map[string]VacuumCalibration{
-				"vac-a": {Transform: AffineMatrix{A: 1, B: 0, Tx: 10, C: 0, D: 1, Ty: 20}},
-				"vac-b": {Transform: Identity()},
-			},
-		}
-		result := MergeCalibrationIntoConfig(cfg, cache)
-		if result["vac-a"].Tx != 10 {
-			t.Errorf("vac-a.Tx = %g, want 10 (from cache)", result["vac-a"].Tx)
-		}
-		if result["vac-b"] != Identity() {
-			t.Errorf("vac-b = %+v, want identity (from cache)", result["vac-b"])
-		}
-	})
-
-	t.Run("manual override wins over cache", func(t *testing.T) {
-		cfg := &Config{
-			Vacuums: []VacuumConfig{
-				{ID: "vac-a", Topic: "t/a", Rotation: floatPtr(0), Translation: &TranslationOffset{X: 99, Y: 88}},
-			},
-		}
-		cache := &CalibrationData{
-			Vacuums: map[string]VacuumCalibration{
-				"vac-a": {Transform: AffineMatrix{A: 1, B: 0, Tx: 10, C: 0, D: 1, Ty: 20}}, // should be overridden
-			},
-		}
-		result := MergeCalibrationIntoConfig(cfg, cache)
-		// 0-degree rotation + translation (99, 88) => Tx=99, Ty=88
-		if result["vac-a"].Tx != 99 {
-			t.Errorf("vac-a.Tx = %g, want 99 (manual override)", result["vac-a"].Tx)
-		}
-		if result["vac-a"].Ty != 88 {
-			t.Errorf("vac-a.Ty = %g, want 88 (manual override)", result["vac-a"].Ty)
-		}
-	})
 }
 
 // ---------------------------------------------------------------------------

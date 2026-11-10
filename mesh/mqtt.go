@@ -38,19 +38,11 @@ type MQTTClient struct {
 
 // MessageHandler is called when a map data message is received
 // Parameters: vacuumID, rawPayload, mapData, error
-// rawPayload is provided so callers can handle raw PNG images that lack zTXt metadata
 type MessageHandler func(vacuumID string, rawPayload []byte, mapData *ValetudoMap, err error)
-
-var (
-	globalClient *MQTTClient
-	clientMu     sync.Mutex
-)
 
 // InitMQTT initializes the global MQTT client with the provided configuration
 // If MQTT_BROKER env var is empty, MQTT is disabled and this returns nil
 func InitMQTT(config *Config, handler MessageHandler) (*MQTTClient, error) {
-	clientMu.Lock()
-	defer clientMu.Unlock()
 
 	// Check if MQTT is enabled via env var or config
 	broker := os.Getenv("MQTT_BROKER")
@@ -128,15 +120,7 @@ func InitMQTT(config *Config, handler MessageHandler) (*MQTTClient, error) {
 	// Connect asynchronously with retry
 	go client.connectWithRetry()
 
-	globalClient = client
 	return client, nil
-}
-
-// GetMQTTClient returns the global MQTT client instance
-func GetMQTTClient() *MQTTClient {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	return globalClient
 }
 
 // connectWithRetry attempts to connect to the MQTT broker with exponential backoff
@@ -370,14 +354,4 @@ func (c *MQTTClient) GetVacuumByTopic(topic string) (string, bool) {
 // GetClient returns the underlying MQTT client interface
 func (c *MQTTClient) GetClient() MQTTClientInterface {
 	return c.client
-}
-
-// newMQTTClientWithMock creates an MQTTClient with a provided MQTTClientInterface
-// This is used for testing with mock clients
-func newMQTTClientWithMock(client MQTTClientInterface, config *Config, handler MessageHandler) *MQTTClient {
-	return &MQTTClient{
-		client:         client,
-		config:         config,
-		messageHandler: handler,
-	}
 }

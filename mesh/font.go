@@ -127,13 +127,3 @@ func (f *fallbackFace) Kern(r0, r1 rune) fixed.Int26_6 {
 }
 
 func (f *fallbackFace) Metrics() font.Metrics { return f.faces[0].Metrics() }
-
-// hasGlyph reports whether one of f's fonts has a real (non-notdef) glyph for r.
-func (f *fallbackFace) hasGlyph(r rune) bool {
-	for _, fnt := range f.fonts {
-		if idx, err := fnt.GlyphIndex(&f.buf, r); err == nil && idx != 0 {
-			return true
-		}
-	}
-	return false
-}

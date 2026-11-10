@@ -83,37 +83,6 @@ func ExtractChargerPosition(m *ValetudoMap) (Point, bool) {
 	return Point{}, false
 }
 
-// ExtractSegments returns all segment layers with their names
-func ExtractSegments(m *ValetudoMap) []MapLayer {
-	var segments []MapLayer
-	for _, layer := range m.Layers {
-		if layer.Type == "segment" {
-			segments = append(segments, layer)
-		}
-	}
-	return segments
-}
-
-// ExtractFloorLayer returns the floor layer if present
-func ExtractFloorLayer(m *ValetudoMap) (*MapLayer, bool) {
-	for _, layer := range m.Layers {
-		if layer.Type == "floor" {
-			return &layer, true
-		}
-	}
-	return nil, false
-}
-
-// ExtractWallLayer returns the wall layer if present
-func ExtractWallLayer(m *ValetudoMap) (*MapLayer, bool) {
-	for _, layer := range m.Layers {
-		if layer.Type == "wall" {
-			return &layer, true
-		}
-	}
-	return nil, false
-}
-
 // PixelsToPoints converts a flat pixel array [x1,y1,x2,y2,...] to Point slice
 func PixelsToPoints(pixels []int) []Point {
 	points := make([]Point, 0, len(pixels)/2)
@@ -155,24 +124,6 @@ func ValidateMapForCalibration(m *ValetudoMap) error {
 		return ErrNoChargerLocation
 	}
 	return nil
-}
-
-// IsMapComplete validates that newMap is a complete, usable map that should replace
-// the lastKnownGood map. It checks structural completeness via ValidateMapForCalibration,
-// then optionally verifies that the new map's total layer area has not shrunk
-// below MinAreaRatio of the last known good map (to guard against partial updates).
-// If lastKnownGood is nil, only structural checks are performed.
-func IsMapComplete(newMap, lastKnownGood *ValetudoMap) bool {
-	if err := ValidateMapForCalibration(newMap); err != nil {
-		return false
-	}
-	if lastKnownGood != nil && lastKnownGood.MetaData.TotalLayerArea > 0 {
-		ratio := float64(newMap.MetaData.TotalLayerArea) / float64(lastKnownGood.MetaData.TotalLayerArea)
-		if ratio < MinAreaRatio {
-			return false
-		}
-	}
-	return true
 }
 
 // HasDrawablePixels returns true if the map contains any pixels in floor, wall or segment layers

@@ -99,18 +99,6 @@ func TestMQTTClient_GetVacuumByTopic(t *testing.T) {
 	}
 }
 
-func TestGetMQTTClient_NotInitialized(t *testing.T) {
-	// Reset global client
-	clientMu.Lock()
-	globalClient = nil
-	clientMu.Unlock()
-
-	client := GetMQTTClient()
-	if client != nil {
-		t.Error("GetMQTTClient() should return nil when not initialized")
-	}
-}
-
 // TestMessageHandler_Integration tests the complete message handling flow
 func TestMessageHandler_Integration(t *testing.T) {
 	// Create test map data

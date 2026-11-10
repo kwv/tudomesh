@@ -2,7 +2,6 @@ package mesh
 
 import (
 	"log"
-	"math"
 )
 
 // Alignment is the transform that maps one vacuum's map into another's
@@ -69,9 +68,4 @@ func AlignMapsAtRotation(source, target *ValetudoMap, rotationDeg float64) (Alig
 
 func fromGrid(ga GridAlignment, method string) Alignment {
 	return Alignment{Transform: ga.Transform, RotationDeg: ga.RotationDeg, Confidence: ga.Confidence, Method: method}
-}
-
-// TransformRotationDeg returns the rotation of a transform in [0, 360).
-func TransformRotationDeg(t AffineMatrix) float64 {
-	return NormalizeAngle(math.Atan2(t.C, t.A) * 180 / math.Pi)
 }
