@@ -266,7 +266,7 @@ func (c *MQTTClient) getDockingHandler() DockingHandler {
 }
 
 // deriveStateTopic converts a map data topic to a state topic.
-// Example: "valetudo/rocky7/MapData/map-data" -> "valetudo/rocky7/StatusStateAttribute/status"
+// Example: "valetudo/robo7/MapData/map-data" -> "valetudo/robo7/StatusStateAttribute/status"
 // Returns the derived topic and true if the conversion succeeded, or empty string and false otherwise.
 func deriveStateTopic(mapDataTopic string) (string, bool) {
 	// Expected format: valetudo/{name}/MapData/map-data

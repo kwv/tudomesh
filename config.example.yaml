@@ -21,13 +21,13 @@ vacuums:
 #   username: mqtt_user
 #   password: mqtt_password
 
-# reference: FrugalLameLion   # vacuum id used as the world origin;
+# reference: FairBoldFalcon   # vacuum id used as the world origin;
 #                             # default: the robot with the largest map
 
 # gridSpacing: 100            # grid line spacing in cm (default 100 = 1 m)
 
 # ignoreRooms: [Porch, Deck]  # rooms drawn as plain floor on the live maps:
-#                             # no fill, label or alert highlight. Matched
+#                             # no fill, label or highlight. Matched
 #                             # ignoring case, spaces and punctuation.
 #                             # /vacuum/{id} still reports the room's name.
 # render:
@@ -35,14 +35,14 @@ vacuums:
 #                             # font for PNG room names and captions, tried before
 #                             # the bundled Go font (Latin, Greek, Cyrillic);
 #                             # only needed for other scripts, e.g. CJK
-#   theme: dark               # live and alert maps: light (default), dark, or
+#   theme: dark               # live and per-robot maps: light (default), dark, or
 #                             # auto (SVG follows the viewer's dark mode; PNG
 #                             # is light). ?theme= overrides it per request.
 #   colors:                   # override single colors (#rrggbb), any theme
 #     background: "#101010"
 #     wall: "#e0e0e0"
 #     rooms: ["#2c4056", "#2e4a36", "#56482e"]
-#     # also: floor, text, halo (outline behind text), alert (stuck room)
+#     # also: floor, text, halo (outline behind text), alert (highlighted robot's room)
 
 # Per-vacuum overrides (rarely needed):
 #   id: name        # instead of the Valetudo systemId

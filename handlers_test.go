@@ -709,15 +709,15 @@ func TestEndpoints_WithGlobalRotation(t *testing.T) {
 func TestThemeQuery(t *testing.T) {
 	srv, _ := vacuumTestServer()
 	for path, want := range map[string]int{
-		"/live.svg?theme=dark":          http.StatusOK,
-		"/live.png?theme=auto":          http.StatusOK,
-		"/floorplan.svg?theme=light":    http.StatusOK,
-		"/vacuum/rocky7.png?theme=dark": http.StatusOK,
-		"/vacuum/rocky7.svg?theme=dark": http.StatusOK,
-		"/?theme=dark":                  http.StatusOK,
-		"/live.svg?theme=neon":          http.StatusBadRequest,
-		"/vacuum/rocky7.png?theme=neon": http.StatusBadRequest,
-		"/?theme=%22%3E%3Cscript%3E":    http.StatusBadRequest,
+		"/live.svg?theme=dark":         http.StatusOK,
+		"/live.png?theme=auto":         http.StatusOK,
+		"/floorplan.svg?theme=light":   http.StatusOK,
+		"/vacuum/robo7.png?theme=dark": http.StatusOK,
+		"/vacuum/robo7.svg?theme=dark": http.StatusOK,
+		"/?theme=dark":                 http.StatusOK,
+		"/live.svg?theme=neon":         http.StatusBadRequest,
+		"/vacuum/robo7.png?theme=neon": http.StatusBadRequest,
+		"/?theme=%22%3E%3Cscript%3E":   http.StatusBadRequest,
 	} {
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))

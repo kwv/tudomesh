@@ -7,19 +7,19 @@ A step-by-step guide for a fresh install with your own Valetudo robots: one robo
 For each robot:
 
 - It runs [Valetudo](https://valetudo.cloud/) and its web UI opens from the machine that will run TudoMesh (`http://<robot>/`).
-- MQTT is enabled in Valetudo (Settings → Connectivity → MQTT) and connected to a broker. No broker yet? See [Setting up Mosquitto](../README.md#setting-up-mosquitto).
+- MQTT is enabled in Valetudo (Settings → Connectivity → MQTT) and connected to a broker. No broker yet? See [setting up Mosquitto](#appendix-setting-up-mosquitto).
 - It has a complete map, from at least one full cleaning or mapping run.
 
 Confirm the robots publish to the broker:
 
 ```bash
 mosquitto_sub -h <broker> -t 'valetudo/+/StatusStateAttribute/status' -v
-# valetudo/rocky7/StatusStateAttribute/status {"value":"docked",...}
+# valetudo/robo7/StatusStateAttribute/status {"value":"docked",...}
 ```
 
 `valetudo` is Valetudo's default topic prefix; TudoMesh reads each robot's prefix from the robot, so a custom one works too.
 
-Robots on different floors share no map. Set up one TudoMesh per floor (step 2 for each), with its own data directory and port. See [One instance per floor](../README.md#one-instance-per-floor).
+Robots on different floors share no map. Set up one TudoMesh per floor (step 2 for each), with its own data directory and port. A robot alone on a floor works fine: it becomes its own reference.
 
 ## 2. Install and configure
 
@@ -43,17 +43,17 @@ Start it:
 docker run -d --name tudomesh -p 8080:8080 -v /srv/tudomesh:/data kwv4/tudomesh
 ```
 
-Everything else is optional; [`config.example.yaml`](../config.example.yaml) lists it. To build from source instead, see [Installation](../README.md#installation).
+Everything else is optional; [`config.example.yaml`](../config.example.yaml) lists it. To build from source instead: `make build`.
 
 ## 3. Check every robot is found
 
 ```bash
 docker logs tudomesh | grep Discovered
-# Discovered http://<robot1>: id=TrickyZanyPartridge name=rocky7 topic=valetudo/rocky7/MapData/map-data
+# Discovered http://<robot1>: id=TidyCalmPanda name=robo7 topic=valetudo/robo7/MapData/map-data
 curl http://<host>:8080/vacuums
 ```
 
-Each robot is listed with its id (Valetudo's `systemId`) and name (its MQTT identifier, e.g. `rocky7`). Either one works in `/vacuum/{id}` URLs. A robot that is missing or listed with a guessed name was unreachable: check its URL from the TudoMesh host.
+Each robot is listed with its id (Valetudo's `systemId`) and name (its MQTT identifier, e.g. `robo7`). Either one works in `/vacuum/{id}` URLs. A robot that is missing or listed with a guessed name was unreachable: check its URL from the TudoMesh host.
 
 ## 4. Load and align the maps
 
@@ -71,7 +71,7 @@ docker restart tudomesh
 `--calibrate` prints one result per robot:
 
 ```
-TrickyZanyPartridge      :
+TidyCalmPanda      :
   Method: grid, rotation 178.0°, confidence 1.55 (>= 1.25 is unambiguous)
 ```
 
@@ -98,29 +98,58 @@ Open `http://<host>:8080/`: the live map with every robot on it.
 
 - **Rooms come from one robot**, the reference: the one with the largest map unless `reference: <id>` says otherwise. Pick the robot whose rooms are split and named the way you like.
 - **Hide areas** that aren't really rooms, like a porch seen through glass, with `ignoreRooms: [Porch]`.
-- **Dark map:** `render.theme: dark`, or `?theme=dark` on any map URL. See [Themes](../README.md#themes).
-- **Other alphabets:** PNG room names need a font that covers them; see [Room labels](../README.md#room-labels).
+- **Dark map:** `render.theme: dark`, or `?theme=dark` on any map URL.
+- **Other alphabets:** the bundled PNG font covers Latin, Greek and Cyrillic. For others (e.g. CJK), set `render.fontPath` to a font file mounted into the container.
 
 Restart TudoMesh after editing `config.yaml`.
 
-## 6. Hook up alerts
+## 6. Look up a robot
 
-When a robot reports an error, ask TudoMesh where it is:
+Each robot has its own JSON and map image:
 
 ```bash
-curl http://<host>:8080/vacuum/rocky7
-# {"id":"TrickyZanyPartridge","name":"rocky7","state":"error","room":{"name":"Kitchen",...},...}
-curl -o alert.png 'http://<host>:8080/vacuum/rocky7.png?crop=room'
+curl http://<host>:8080/vacuum/robo7
+# {"id":"TidyCalmPanda","name":"robo7","state":"docked","room":{"name":"Kitchen",...},...}
+curl -o robo7.png 'http://<host>:8080/vacuum/robo7.png?crop=room'
 ```
 
-The image shows the robot circled, its room hatched in red, and a caption. `?crop=room` zooms in on the room so it reads on a phone; see [Per-vacuum (alerts)](../README.md#per-vacuum-alerts) for other crops and sizes.
-
-For Node-RED, import [`examples/node-red/stuck-vacuum-alert.json`](../examples/node-red/stuck-vacuum-alert.json) and replace its debug node with your notifier ([Alerts with Node-RED](../README.md#alerts-with-node-red)). Anything else that can fetch a URL when an MQTT message arrives (Home Assistant, a script) works the same way.
+The image shows the robot circled, its room hatched in red, and a caption. `?crop=room` zooms in on its room, `?crop=4m` on a radius around it, and `?scale=` sets the size.
 
 ## 7. Optional: give the robots the same rooms
 
-If something picks rooms by name across robots, for example a scheduler that sends whichever robot is free to "Kitchen", make each robot's rooms match the reference's with `--plan-rooms`. It previews the Valetudo room edits and changes nothing. See [Planning room edits](../README.md#planning-room-edits).
+If something picks rooms by name across robots, for example a scheduler that sends whichever robot is free to "Kitchen", make each robot's rooms match the reference's with `--plan-rooms`. It previews the Valetudo room edits and changes nothing. See [Planning room edits](plan-rooms.md).
 
-## Stuck?
+## Problems?
 
 See [Troubleshooting](../README.md#troubleshooting).
+
+## Appendix: setting up Mosquitto
+
+Skip this if your robots already publish to a broker.
+
+```bash
+# Docker
+docker run -d --name mosquitto -p 1883:1883 eclipse-mosquitto:latest
+
+# Ubuntu/Debian
+sudo apt-get install mosquitto mosquitto-clients
+sudo systemctl enable --now mosquitto
+
+# macOS
+brew install mosquitto
+brew services start mosquitto
+```
+
+Recent Mosquitto versions only accept local connections by default. To accept robots on your network without authentication, add to `/etc/mosquitto/mosquitto.conf` (Linux) or `/opt/homebrew/etc/mosquitto/mosquitto.conf` (macOS) and restart:
+
+```
+listener 1883
+allow_anonymous true
+```
+
+Check that your robots are publishing:
+
+```bash
+mosquitto_sub -h localhost -t 'valetudo/+/MapData/map-data' -C 1 | head -c 200
+mosquitto_sub -h localhost -t 'valetudo/+/StatusStateAttribute/status' -v
+```

@@ -417,12 +417,12 @@ func TestLoadInitialMaps_EdgeCases(t *testing.T) {
 
 func TestVacuumIDFromExport(t *testing.T) {
 	cases := map[string]string{
-		"ValetudoMapExport-FrugalLameLion.json":                               "FrugalLameLion",
-		"ValetudoMapExport-FrugalLameLion-2026-01-24T16-38-03.json":           "FrugalLameLion",
-		"ValetudoMapExport-My-Robot.json":                                     "My-Robot",
-		"ValetudoMapExport-test-vacuum-20240101.json":                         "test-vacuum",
-		"ValetudoMapExport-test1-2024-01-01.json":                             "test1",
-		"ValetudoMapExport-AppropriateMinorAntelope-2026-02-13T02-25-08.json": "AppropriateMinorAntelope",
+		"ValetudoMapExport-FairBoldFalcon.json":                      "FairBoldFalcon",
+		"ValetudoMapExport-FairBoldFalcon-2026-01-24T16-38-03.json":  "FairBoldFalcon",
+		"ValetudoMapExport-My-Robot.json":                            "My-Robot",
+		"ValetudoMapExport-test-vacuum-20240101.json":                "test-vacuum",
+		"ValetudoMapExport-test1-2024-01-01.json":                    "test1",
+		"ValetudoMapExport-AmberQuietOtter-2026-02-13T02-25-08.json": "AmberQuietOtter",
 	}
 	for in, want := range cases {
 		if got := vacuumIDFromExport(in); got != want {

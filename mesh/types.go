@@ -113,7 +113,7 @@ type TranslationOffset struct {
 // optionally Color) is set; ResolveVacuums fills ID, Topic and ApiURL from
 // the robot's Valetudo API.
 type VacuumConfig struct {
-	URL         string             `yaml:"url,omitempty" json:"url,omitempty"` // Valetudo base URL, e.g. http://rocky.home
+	URL         string             `yaml:"url,omitempty" json:"url,omitempty"` // Valetudo base URL, e.g. http://robo2.home
 	ID          string             `yaml:"id,omitempty" json:"id,omitempty"`   // default: Valetudo systemId
 	Topic       string             `yaml:"topic,omitempty" json:"topic,omitempty"`
 	Color       string             `yaml:"color,omitempty" json:"color,omitempty"`

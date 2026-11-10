@@ -32,14 +32,14 @@ func fakeValetudo(t *testing.T, systemID, identifier, prefix string) *httptest.S
 }
 
 func TestResolveVacuums_FromURL(t *testing.T) {
-	srv := fakeValetudo(t, "NormalLostHamster", "rocky", "")
+	srv := fakeValetudo(t, "NimbleLuckyHare", "robo2", "")
 	cfg := &Config{Vacuums: []VacuumConfig{{URL: srv.URL + "/", Color: "#123456"}}}
 	cachePath := filepath.Join(t.TempDir(), ".vacuums.json")
 
 	ResolveVacuums(cfg, cachePath, time.Second)
 
 	vc := cfg.Vacuums[0]
-	if vc.ID != "NormalLostHamster" || vc.Topic != "valetudo/rocky/MapData/map-data" {
+	if vc.ID != "NimbleLuckyHare" || vc.Topic != "valetudo/robo2/MapData/map-data" {
 		t.Errorf("id/topic = %q/%q", vc.ID, vc.Topic)
 	}
 	if vc.ApiURL == nil || *vc.ApiURL != srv.URL+"/api/v2/robot/state/map" {
@@ -54,13 +54,13 @@ func TestResolveVacuums_FromURL(t *testing.T) {
 }
 
 func TestResolveVacuums_ExplicitValuesWin(t *testing.T) {
-	srv := fakeValetudo(t, "NormalLostHamster", "rocky", "home/valetudo")
+	srv := fakeValetudo(t, "NimbleLuckyHare", "robo2", "home/valetudo")
 	cfg := &Config{
 		MQTT:    MQTTConfig{Broker: "mqtt://other:1883"},
 		Vacuums: []VacuumConfig{{URL: srv.URL, ID: "basement"}},
 	}
 	ResolveVacuums(cfg, filepath.Join(t.TempDir(), ".vacuums.json"), time.Second)
-	if vc := cfg.Vacuums[0]; vc.ID != "basement" || vc.Topic != "home/valetudo/rocky/MapData/map-data" {
+	if vc := cfg.Vacuums[0]; vc.ID != "basement" || vc.Topic != "home/valetudo/robo2/MapData/map-data" {
 		t.Errorf("id/topic = %q/%q", vc.ID, vc.Topic)
 	}
 	if cfg.MQTT.Broker != "mqtt://other:1883" {
@@ -73,21 +73,21 @@ func TestResolveVacuums_OfflineUsesCacheThenHostName(t *testing.T) {
 	cachePath := filepath.Join(dir, ".vacuums.json")
 
 	// Learn the identity while online.
-	srv := fakeValetudo(t, "NormalLostHamster", "rocky", "")
+	srv := fakeValetudo(t, "NimbleLuckyHare", "robo2", "")
 	ResolveVacuums(&Config{Vacuums: []VacuumConfig{{URL: srv.URL}}}, cachePath, time.Second)
 	srv.Close()
 
 	// Same URL offline: cached identity.
 	cfg := &Config{Vacuums: []VacuumConfig{{URL: srv.URL}}}
 	ResolveVacuums(cfg, cachePath, 200*time.Millisecond)
-	if cfg.Vacuums[0].ID != "NormalLostHamster" {
+	if cfg.Vacuums[0].ID != "NimbleLuckyHare" {
 		t.Errorf("cached id = %q", cfg.Vacuums[0].ID)
 	}
 
 	// Unknown, unreachable host name: guessed from the first label.
-	cfg = &Config{Vacuums: []VacuumConfig{{URL: "http://rocky6.invalid"}}}
+	cfg = &Config{Vacuums: []VacuumConfig{{URL: "http://robo6.invalid"}}}
 	ResolveVacuums(cfg, cachePath, 200*time.Millisecond)
-	if len(cfg.Vacuums) != 1 || cfg.Vacuums[0].ID != "rocky6" || cfg.Vacuums[0].Topic != "valetudo/rocky6/MapData/map-data" {
+	if len(cfg.Vacuums) != 1 || cfg.Vacuums[0].ID != "robo6" || cfg.Vacuums[0].Topic != "valetudo/robo6/MapData/map-data" {
 		t.Errorf("guessed = %+v", cfg.Vacuums)
 	}
 
@@ -100,13 +100,13 @@ func TestResolveVacuums_OfflineUsesCacheThenHostName(t *testing.T) {
 }
 
 func TestVacuumConfigBaseURL(t *testing.T) {
-	api := "http://rocky7.home/api/v2/robot/state/map"
+	api := "http://robo7.home/api/v2/robot/state/map"
 	cases := []struct {
 		vc   VacuumConfig
 		want string
 	}{
-		{VacuumConfig{URL: "http://rocky.home/"}, "http://rocky.home"},
-		{VacuumConfig{ApiURL: &api}, "http://rocky7.home"},
+		{VacuumConfig{URL: "http://robo2.home/"}, "http://robo2.home"},
+		{VacuumConfig{ApiURL: &api}, "http://robo7.home"},
 		{VacuumConfig{ID: "x", Topic: "t"}, ""},
 	}
 	for _, c := range cases {

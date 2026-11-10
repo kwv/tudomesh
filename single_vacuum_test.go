@@ -21,22 +21,22 @@ func TestSingleVacuumInstance(t *testing.T) {
 	t.Cleanup(api.Close)
 
 	u := api.URL
-	cfg := &mesh.Config{Vacuums: []mesh.VacuumConfig{{ID: "NormalLostHamster", Topic: "valetudo/rocky/MapData/map-data", ApiURL: &u}}}
+	cfg := &mesh.Config{Vacuums: []mesh.VacuumConfig{{ID: "NimbleLuckyHare", Topic: "valetudo/robo2/MapData/map-data", ApiURL: &u}}}
 	dir := t.TempDir()
 	cachePath := filepath.Join(dir, ".calibration-cache.json")
 	cache := loadServiceCalibration(cachePath)
 	st := mesh.NewStateTracker()
-	st.UpdateMap("NormalLostHamster", m)
-	st.UpdatePosition("NormalLostHamster", 10, 10, 0)
-	st.UpdateStatus("NormalLostHamster", "error")
+	st.UpdateMap("NimbleLuckyHare", m)
+	st.UpdatePosition("NimbleLuckyHare", 10, 10, 0)
+	st.UpdateStatus("NimbleLuckyHare", "error")
 
-	mesh.NewAutoCalibrator(cfg, cache, cachePath, dir, st).OnDockingEvent("NormalLostHamster")
-	if cache.Reference() != "NormalLostHamster" || cache.GetVacuumCalibration("NormalLostHamster") == nil {
-		t.Errorf("reference=%q, calibration=%v", cache.Reference(), cache.GetVacuumCalibration("NormalLostHamster"))
+	mesh.NewAutoCalibrator(cfg, cache, cachePath, dir, st).OnDockingEvent("NimbleLuckyHare")
+	if cache.Reference() != "NimbleLuckyHare" || cache.GetVacuumCalibration("NimbleLuckyHare") == nil {
+		t.Errorf("reference=%q, calibration=%v", cache.Reference(), cache.GetVacuumCalibration("NimbleLuckyHare"))
 	}
 
 	srv := newHTTPServer(st, cache, cfg, "", 0)
-	for _, path := range []string{"/vacuums", "/vacuum/rocky", "/vacuum/rocky.png", "/vacuum/rocky.svg",
+	for _, path := range []string{"/vacuums", "/vacuum/robo2", "/vacuum/robo2.png", "/vacuum/robo2.svg",
 		"/live.svg", "/live.png", "/composite-map.svg", "/composite-map.png", "/floorplan.svg"} {
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))

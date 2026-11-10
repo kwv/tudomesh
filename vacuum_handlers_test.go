@@ -36,21 +36,21 @@ func roomMapWithRobot() *mesh.ValetudoMap {
 
 func vacuumTestServer() (http.Handler, *mesh.StateTracker) {
 	st := mesh.NewStateTracker()
-	st.UpdateMap("TrickyZanyPartridge", roomMapWithRobot())
-	st.UpdatePosition("TrickyZanyPartridge", 10, 10, 90)
-	st.UpdateStatus("TrickyZanyPartridge", "error")
+	st.UpdateMap("TidyCalmPanda", roomMapWithRobot())
+	st.UpdatePosition("TidyCalmPanda", 10, 10, 90)
+	st.UpdateStatus("TidyCalmPanda", "error")
 	cfg := &mesh.Config{Vacuums: []mesh.VacuumConfig{
-		{ID: "TrickyZanyPartridge", Topic: "valetudo/rocky7/MapData/map-data", Color: "#057dcd"},
-		{ID: "FrugalLameLion", Topic: "valetudo/rockette/MapData/map-data"},
+		{ID: "TidyCalmPanda", Topic: "valetudo/robo7/MapData/map-data", Color: "#057dcd"},
+		{ID: "FairBoldFalcon", Topic: "valetudo/robo1/MapData/map-data"},
 	}}
-	return newHTTPServer(st, nil, cfg, "TrickyZanyPartridge", 0), st
+	return newHTTPServer(st, nil, cfg, "TidyCalmPanda", 0), st
 }
 
 func TestTopicIdentifier(t *testing.T) {
 	cases := map[string]string{
-		"valetudo/rocky7/MapData/map-data":      "rocky7",
-		"home/valetudo/rocky7/MapData/map-data": "rocky7",
-		"map-data":                              "",
+		"valetudo/robo7/MapData/map-data":      "robo7",
+		"home/valetudo/robo7/MapData/map-data": "robo7",
+		"map-data":                             "",
 	}
 	for topic, want := range cases {
 		if got := topicIdentifier(topic); got != want {
@@ -61,7 +61,7 @@ func TestTopicIdentifier(t *testing.T) {
 
 func TestVacuumEndpoint_JSON(t *testing.T) {
 	srv, _ := vacuumTestServer()
-	for _, key := range []string{"rocky7", "ROCKY7", "TrickyZanyPartridge", "trickyzanypartridge"} {
+	for _, key := range []string{"robo7", "ROBO7", "TidyCalmPanda", "tidycalmpanda"} {
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/"+key, nil))
 		if rec.Code != http.StatusOK {
@@ -71,7 +71,7 @@ func TestVacuumEndpoint_JSON(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &info); err != nil {
 			t.Fatal(err)
 		}
-		if info.ID != "TrickyZanyPartridge" || info.Name != "rocky7" {
+		if info.ID != "TidyCalmPanda" || info.Name != "robo7" {
 			t.Errorf("%s: id/name = %q/%q", key, info.ID, info.Name)
 		}
 		if info.State != "error" || info.StateSince == nil {
@@ -83,7 +83,7 @@ func TestVacuumEndpoint_JSON(t *testing.T) {
 		if info.Position == nil || info.Position.X != 10 {
 			t.Errorf("%s: position = %+v", key, info.Position)
 		}
-		if info.MapURL != "/vacuum/rocky7.png" {
+		if info.MapURL != "/vacuum/robo7.png" {
 			t.Errorf("%s: mapUrl = %q", key, info.MapURL)
 		}
 	}
@@ -92,7 +92,7 @@ func TestVacuumEndpoint_JSON(t *testing.T) {
 func TestVacuumEndpoint_PNG(t *testing.T) {
 	srv, _ := vacuumTestServer()
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/rocky7.png", nil))
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/robo7.png", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -106,27 +106,27 @@ func TestVacuumEndpoint_PNG(t *testing.T) {
 
 func TestVacuumNames(t *testing.T) {
 	cfg := &mesh.Config{Vacuums: []mesh.VacuumConfig{
-		{ID: "TrickyZanyPartridge", Topic: "valetudo/rocky7/MapData/map-data"},
+		{ID: "TidyCalmPanda", Topic: "valetudo/robo7/MapData/map-data"},
 	}}
-	maps := map[string]*mesh.ValetudoMap{"TrickyZanyPartridge.json": {}, "Other.json": {}}
-	positions := map[string]*mesh.LivePosition{"TrickyZanyPartridge.json": {}, "Other.json": {}}
+	maps := map[string]*mesh.ValetudoMap{"TidyCalmPanda.json": {}, "Other.json": {}}
+	positions := map[string]*mesh.LivePosition{"TidyCalmPanda.json": {}, "Other.json": {}}
 	got := vacuumNames(cfg, maps, positions)
-	if len(got) != 1 || got["TrickyZanyPartridge.json"] != "rocky7" {
-		t.Errorf("vacuumNames = %v, want only TrickyZanyPartridge.json: rocky7", got)
+	if len(got) != 1 || got["TidyCalmPanda.json"] != "robo7" {
+		t.Errorf("vacuumNames = %v, want only TidyCalmPanda.json: robo7", got)
 	}
 }
 
 // A robot in an ignored room still reports that room in JSON.
 func TestVacuumEndpoint_IgnoredRoomStillReported(t *testing.T) {
 	st := mesh.NewStateTracker()
-	st.UpdateMap("TrickyZanyPartridge", roomMapWithRobot())
+	st.UpdateMap("TidyCalmPanda", roomMapWithRobot())
 	cfg := &mesh.Config{
 		IgnoreRooms: []string{"kitchen"},
-		Vacuums:     []mesh.VacuumConfig{{ID: "TrickyZanyPartridge", Topic: "valetudo/rocky7/MapData/map-data"}},
+		Vacuums:     []mesh.VacuumConfig{{ID: "TidyCalmPanda", Topic: "valetudo/robo7/MapData/map-data"}},
 	}
-	srv := newHTTPServer(st, nil, cfg, "TrickyZanyPartridge", 0)
+	srv := newHTTPServer(st, nil, cfg, "TidyCalmPanda", 0)
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/rocky7", nil))
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/robo7", nil))
 	var info vacuumInfo
 	if err := json.Unmarshal(rec.Body.Bytes(), &info); err != nil {
 		t.Fatal(err)
@@ -159,7 +159,7 @@ func TestVacuumsEndpoint_ListsConfiguredAndMapped(t *testing.T) {
 		t.Fatalf("got %d vacuums, want 2: %s", len(list), rec.Body.String())
 	}
 	// Sorted by id; the one without data still appears with its name and map URL.
-	if list[0].ID != "FrugalLameLion" || list[0].Name != "rockette" || list[0].State != "" {
+	if list[0].ID != "FairBoldFalcon" || list[0].Name != "robo1" || list[0].State != "" {
 		t.Errorf("first entry %+v", list[0])
 	}
 	if list[1].Room == nil || list[1].Room.Name != "Kitchen" {
@@ -169,7 +169,7 @@ func TestVacuumsEndpoint_ListsConfiguredAndMapped(t *testing.T) {
 
 func TestVacuumEndpoint_SVG(t *testing.T) {
 	srv, _ := vacuumTestServer()
-	for path, wantHighlight := range map[string]bool{"/vacuum/rocky7.svg": true, "/live.svg": false} {
+	for path, wantHighlight := range map[string]bool{"/vacuum/robo7.svg": true, "/live.svg": false} {
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != http.StatusOK {
@@ -179,7 +179,7 @@ func TestVacuumEndpoint_SVG(t *testing.T) {
 			t.Errorf("%s: content-type %q", path, ct)
 		}
 		body := rec.Body.String()
-		for _, want := range []string{`id="vacuum-trickyzanypartridge"`, `data-name="rocky7"`, `data-room="Kitchen"`, `data-state="error"`, `class="room`} {
+		for _, want := range []string{`id="vacuum-tidycalmpanda"`, `data-name="robo7"`, `data-room="Kitchen"`, `data-state="error"`, `class="room`} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s: missing %s", path, want)
 			}
@@ -199,9 +199,9 @@ func TestVacuumEndpoint_SVG(t *testing.T) {
 func TestVacuumEndpoint_SVGAlertRoom(t *testing.T) {
 	srv, _ := vacuumTestServer()
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/rocky7.svg", nil))
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/vacuum/robo7.svg", nil))
 	body := rec.Body.String()
-	want := `<path id="alert-room" class="alert-room" data-room="Kitchen" data-segment-id="7" data-vacuum="TrickyZanyPartridge"`
+	want := `<path id="alert-room" class="alert-room" data-room="Kitchen" data-segment-id="7" data-vacuum="TidyCalmPanda"`
 	if !strings.Contains(body, want) {
 		t.Errorf("missing %s", want)
 	}
@@ -234,14 +234,14 @@ func TestCalibratedVacuums(t *testing.T) {
 // Crop geometry is tested in mesh; here only the query handling.
 func TestVacuumEndpoint_Crop(t *testing.T) {
 	srv, _ := vacuumTestServer()
-	for _, path := range []string{"/vacuum/rocky7.png?crop=room", "/vacuum/rocky7.svg?crop=room"} {
+	for _, path := range []string{"/vacuum/robo7.png?crop=room", "/vacuum/robo7.svg?crop=room"} {
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s: status %d", path, rec.Code)
 		}
 	}
-	for _, path := range []string{"/vacuum/rocky7.png?crop=bogus", "/vacuum/rocky7.svg?crop=0"} {
+	for _, path := range []string{"/vacuum/robo7.png?crop=bogus", "/vacuum/robo7.svg?crop=0"} {
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != http.StatusBadRequest {

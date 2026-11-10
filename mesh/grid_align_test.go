@@ -2,6 +2,7 @@ package mesh
 
 import (
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -113,19 +114,12 @@ func TestAlignByGridEmptyMap(t *testing.T) {
 }
 
 // TestAlignByGridRealMaps runs on local exports in ../tudomesh-data, with room
-// names removed, and checks against the known orientations.
+// names removed, and checks against the orientations in its calibration cache.
 func TestAlignByGridRealMaps(t *testing.T) {
-	load := func(id string) *ValetudoMap {
-		m, err := ParseMapFile(filepath.Join("..", "tudomesh-data", "ValetudoMapExport-"+id+".json"))
-		if err != nil {
-			t.Skip("local map exports not present")
-		}
-		return m
-	}
-	ref := load("FrugalLameLion")
-	for id, want := range map[string]float64{"TrickyZanyPartridge": 180, "AppropriateMinorAntelope": 270} {
-		named := load(id)
-		unnamed := load(id)
+	ref, want := localRealMaps(t)
+	for id, want := range want {
+		named := loadLocalMap(t, id)
+		unnamed := loadLocalMap(t, id)
 		for i := range unnamed.Layers {
 			unnamed.Layers[i].MetaData.Name = ""
 		}
@@ -151,4 +145,42 @@ func TestAlignByGridRealMaps(t *testing.T) {
 			t.Logf("%s: rotation %.1f° confidence %.2f, max disagreement with room fit %.0f", id, ga.RotationDeg, ga.Confidence, worst)
 		}
 	}
+}
+
+// localRealMaps reads the calibration cache in ../tudomesh-data and returns
+// the reference map and, for every other vacuum with an export there, its
+// cached rotation in degrees. It skips the test without local data.
+func localRealMaps(t *testing.T) (*ValetudoMap, map[string]float64) {
+	t.Helper()
+	cache, err := LoadCalibration(filepath.Join("..", "tudomesh-data", ".calibration-cache.json"))
+	if err != nil || cache == nil || cache.ReferenceVacuum == "" {
+		t.Skip("local calibration cache not present")
+	}
+	ref := loadLocalMap(t, cache.ReferenceVacuum)
+	want := map[string]float64{}
+	for id, vc := range cache.Vacuums {
+		if id == cache.ReferenceVacuum {
+			continue
+		}
+		if _, err := os.Stat(localMapPath(id)); err == nil {
+			want[id] = NormalizeAngle(math.Atan2(vc.Transform.C, vc.Transform.A) * 180 / math.Pi)
+		}
+	}
+	if len(want) == 0 {
+		t.Skip("no local map exports besides the reference")
+	}
+	return ref, want
+}
+
+func localMapPath(id string) string {
+	return filepath.Join("..", "tudomesh-data", "ValetudoMapExport-"+id+".json")
+}
+
+func loadLocalMap(t *testing.T, id string) *ValetudoMap {
+	t.Helper()
+	m, err := ParseMapFile(localMapPath(id))
+	if err != nil {
+		t.Skip("local map exports not present")
+	}
+	return m
 }

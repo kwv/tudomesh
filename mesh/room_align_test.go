@@ -2,8 +2,6 @@ package mesh
 
 import (
 	"math"
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -160,23 +158,12 @@ func TestParseMapJSONExpandsCompressedPixels(t *testing.T) {
 	}
 }
 
-// TestAlignByRoomsRealMaps runs against local exports in ../tudomesh-data when present.
+// TestAlignByRoomsRealMaps runs on local exports in ../tudomesh-data when
+// present (see localRealMaps).
 func TestAlignByRoomsRealMaps(t *testing.T) {
-	dir := filepath.Join("..", "tudomesh-data")
-	load := func(id string) *ValetudoMap {
-		path := filepath.Join(dir, "ValetudoMapExport-"+id+".json")
-		if _, err := os.Stat(path); err != nil {
-			t.Skip("local map exports not present")
-		}
-		m, err := ParseMapFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return m
-	}
-	ref := load("FrugalLameLion")
-	for id, want := range map[string]float64{"TrickyZanyPartridge": 180, "AppropriateMinorAntelope": 270} {
-		ra, ok := AlignByRooms(load(id), ref)
+	ref, want := localRealMaps(t)
+	for id, want := range want {
+		ra, ok := AlignByRooms(loadLocalMap(t, id), ref)
 		if !ok {
 			t.Fatalf("%s: rejected %+v", id, ra)
 		}
