@@ -259,7 +259,6 @@ func newSVGRenderer(w http.ResponseWriter, st *mesh.StateTracker, cache *mesh.Ca
 	}
 	if config != nil && config.GridSpacing > 0 {
 		vr.GridSpacing = config.GridSpacing
-		vr.Padding = config.GridSpacing / 2
 	}
 	if config != nil {
 		vr.IgnoreRooms = config.IgnoreRooms

@@ -22,6 +22,12 @@ type VectorRenderer struct {
 	Calibrated map[string]bool
 }
 
+// Defaults for VectorRenderer, in world units (Valetudo uses cm).
+const (
+	DefaultGridSpacing = 100.0 // 1 m grid
+	DefaultPadding     = 50.0  // 0.5 m margin around the map
+)
+
 // NewVectorRenderer creates a vector renderer with default settings.
 func NewVectorRenderer(maps map[string]*ValetudoMap, transforms map[string]AffineMatrix, reference string) *VectorRenderer {
 	colors := DefaultColors()
@@ -42,7 +48,7 @@ func NewVectorRenderer(maps map[string]*ValetudoMap, transforms map[string]Affin
 		Transforms:  transforms,
 		Colors:      colorMap,
 		Reference:   reference,
-		Padding:     500.0,
-		GridSpacing: 1000.0,
+		Padding:     DefaultPadding,
+		GridSpacing: DefaultGridSpacing,
 	}
 }

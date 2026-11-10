@@ -126,7 +126,7 @@ type Config struct {
 	MQTT        MQTTConfig     `yaml:"mqtt" json:"mqtt"`
 	Reference   string         `yaml:"reference,omitempty" json:"reference,omitempty"` // Optional reference vacuum ID
 	Vacuums     []VacuumConfig `yaml:"vacuums" json:"vacuums"`
-	GridSpacing float64        `yaml:"gridSpacing,omitempty" json:"gridSpacing,omitempty"` // Grid line spacing in mm (default 1000)
+	GridSpacing float64        `yaml:"gridSpacing,omitempty" json:"gridSpacing,omitempty"` // Grid line spacing in cm (default 100 = 1 m)
 	// IgnoreRooms lists room names drawn as outside on the live maps (no fill,
 	// label or alert highlight), e.g. a porch. Matched by IsIgnoredRoom.
 	IgnoreRooms []string `yaml:"ignoreRooms,omitempty" json:"ignoreRooms,omitempty"`
