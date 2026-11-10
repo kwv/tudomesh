@@ -163,11 +163,11 @@ func TestRenderLive_LegendShowsNames(t *testing.T) {
 		return map[string]*LivePosition{id: {X: 30, Y: 30, Color: "#ff0000"}}
 	}
 
-	named := newR("AppropriateMinorAntelope")
-	named.Names = map[string]string{"AppropriateMinorAntelope": "rocky5"}
-	got := named.RenderLive(pos("AppropriateMinorAntelope"))
-	want := newR("rocky5").RenderLive(pos("rocky5"))
-	unnamed := newR("AppropriateMinorAntelope").RenderLive(pos("AppropriateMinorAntelope"))
+	named := newR("AmberQuietOtter")
+	named.Names = map[string]string{"AmberQuietOtter": "robo5"}
+	got := named.RenderLive(pos("AmberQuietOtter"))
+	want := newR("robo5").RenderLive(pos("robo5"))
+	unnamed := newR("AmberQuietOtter").RenderLive(pos("AmberQuietOtter"))
 
 	legend := image.Rect(0, 0, 160, 30)
 	same := func(a, b *image.RGBA) bool {

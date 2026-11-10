@@ -75,14 +75,14 @@ func renderLive(t *testing.T, r *VectorRenderer, positions map[string]*LivePosit
 
 func TestRenderLiveToSVG_Structure(t *testing.T) {
 	r := liveTestRenderer()
-	r.Meta = map[string]VacuumMeta{"rocky7": {Name: "rocky7", Room: "kitchen", State: "error"}}
-	r.Highlight = "rocky7"
+	r.Meta = map[string]VacuumMeta{"robo7": {Name: "robo7", Room: "kitchen", State: "error"}}
+	r.Highlight = "robo7"
 	root := renderLive(t, r, map[string]*LivePosition{
-		"rocky7": {X: 5, Y: 5, Color: "#057dcd"},
-		"other":  {X: 15, Y: 15, Color: "#43b0f1"},
+		"robo7": {X: 5, Y: 5, Color: "#057dcd"},
+		"other": {X: 15, Y: 15, Color: "#43b0f1"},
 	})
 
-	for _, id := range []string{"map", "rooms", "alert-room", "walls", "grid", "vacuums", "room-16", "room-17", "vacuum-rocky7", "vacuum-other"} {
+	for _, id := range []string{"map", "rooms", "alert-room", "walls", "grid", "vacuums", "room-16", "room-17", "vacuum-robo7", "vacuum-other"} {
 		if len(root.find(byID(id))) != 1 {
 			t.Errorf("expected exactly one element with id %q", id)
 		}
@@ -92,8 +92,8 @@ func TestRenderLiveToSVG_Structure(t *testing.T) {
 	if kitchen.attr("data-room") != "Kitchen" || kitchen.attr("class") != "room" {
 		t.Errorf("kitchen attrs: class=%q room=%q", kitchen.attr("class"), kitchen.attr("data-room"))
 	}
-	// rocky7 has no map of its own, so the alert room is the base map's Kitchen.
-	if a := root.find(byID("alert-room"))[0]; a.attr("data-room") != "Kitchen" || a.attr("data-segment-id") != "16" || a.attr("data-vacuum") != "rocky7" {
+	// robo7 has no map of its own, so the alert room is the base map's Kitchen.
+	if a := root.find(byID("alert-room"))[0]; a.attr("data-room") != "Kitchen" || a.attr("data-segment-id") != "16" || a.attr("data-vacuum") != "robo7" {
 		t.Errorf("alert-room attrs: %+v", a.Attrs)
 	}
 	other := root.find(byID("room-17"))[0]
@@ -101,7 +101,7 @@ func TestRenderLiveToSVG_Structure(t *testing.T) {
 		t.Errorf("escaped room attrs: class=%q room=%q", other.attr("class"), other.attr("data-room"))
 	}
 
-	v := root.find(byID("vacuum-rocky7"))[0]
+	v := root.find(byID("vacuum-robo7"))[0]
 	if v.attr("class") != "vacuum state-error highlight" || v.attr("data-room") != "kitchen" || v.attr("data-state") != "error" {
 		t.Errorf("vacuum attrs: %+v", v.Attrs)
 	}
@@ -109,7 +109,7 @@ func TestRenderLiveToSVG_Structure(t *testing.T) {
 		t.Error("highlighted vacuum should have a ring")
 	}
 	labels := v.find(func(n svgNode) bool { return n.attr("class") == "label" })
-	if len(labels) != 1 || labels[0].Text != "rocky7" {
+	if len(labels) != 1 || labels[0].Text != "robo7" {
 		t.Errorf("label = %+v", labels)
 	}
 

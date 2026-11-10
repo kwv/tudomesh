@@ -70,7 +70,7 @@ func run(args []string, out io.Writer, app MainApp) error {
 	fs.BoolVar(&opts.RenderIndividual, "render-individual", false, "Render each vacuum map as separate PNG")
 	fs.StringVar(&opts.IndividualRotation, "individual-rotation", "", "Rotation for individual renders: VACUUM_ID=DEGREES")
 	fs.StringVar(&opts.CompareRotation, "compare-rotation", "", "Render 4 rotation options for specified vacuum ID")
-	fs.StringVar(&opts.ForceRotation, "force-rotation", "", "Force rotation for vacuum: VACUUM_ID=DEGREES (e.g., FrugalLameLion=180)")
+	fs.StringVar(&opts.ForceRotation, "force-rotation", "", "Force rotation for vacuum: VACUUM_ID=DEGREES (e.g., FairBoldFalcon=180)")
 	fs.StringVar(&opts.ReferenceVacuum, "reference", "", "Override reference vacuum (default: from config or largest area)")
 	fs.Float64Var(&opts.RotateAll, "rotate-all", 0, "Rotate entire composite by degrees (0, 90, 180, 270)")
 	fs.StringVar(&opts.OutputFile, "output", "composite-map.png", "Output file for --render mode")

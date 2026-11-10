@@ -22,11 +22,11 @@ How-to:
 Example output:
 
 ```
-== rocky7 (aligned by grid, rotated 179°)
+== robo7 (aligned by grid, rotated 179°)
    Rooms match the reference on 63.6% of their area now, 100.0% after 2 edit(s):
    1. Split segment 10 along the line (198,-10)-(198,205)
       why: segment 10 ("Raum 1") is reference room Küche (1) plus reference room Wohnzimmer (2); the cut makes new segment 12
-      PUT http://rocky7.home/api/v2/robot/capabilities/MapSegmentEditCapability
+      PUT http://robo7.home/api/v2/robot/capabilities/MapSegmentEditCapability
       {"action":"split_segment","segment_id":"10","pA":{"x":198,"y":-10},"pB":{"x":198,"y":205}}
    2. Rename segment 10 to "Küche"
       ...

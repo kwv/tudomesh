@@ -30,8 +30,8 @@ import (
 // configured theme (render.theme).
 //
 // {key} is the vacuum id from config (case-insensitive) or the Valetudo
-// identifier from its MQTT topic, e.g. "rocky7" for
-// valetudo/rocky7/MapData/map-data.
+// identifier from its MQTT topic, e.g. "robo7" for
+// valetudo/robo7/MapData/map-data.
 
 type vacuumPosition struct {
 	X         float64   `json:"x"` // shared (composite) map coordinates
@@ -42,7 +42,7 @@ type vacuumPosition struct {
 
 type vacuumInfo struct {
 	ID         string             `json:"id"`
-	Name       string             `json:"name,omitempty"` // topic identifier, e.g. "rocky7"
+	Name       string             `json:"name,omitempty"` // topic identifier, e.g. "robo7"
 	State      string             `json:"state,omitempty"`
 	StateSince *time.Time         `json:"stateSince,omitempty"`
 	Room       *mesh.RoomLocation `json:"room,omitempty"`

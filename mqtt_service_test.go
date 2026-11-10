@@ -39,7 +39,7 @@ vacuums:
 		{
 			name: "url only (broker and ids discovered)",
 			configYAML: `vacuums:
-  - url: http://rocky.home
+  - url: http://robo2.home
 `,
 			shouldError: false,
 		},

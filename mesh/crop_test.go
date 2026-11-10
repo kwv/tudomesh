@@ -108,7 +108,7 @@ func TestRenderLiveHighlight_PNGCrop(t *testing.T) {
 		t.Errorf("room crop %v, want 120x100", room.Size())
 	}
 	// The caption strip is kept at least as wide as its text.
-	caption := "rocky7 | Kitchen | error | a long caption"
+	caption := "robo7 | Kitchen | error | a long caption"
 	img := newR(Crop{Radius: 50}).RenderLiveHighlight(pos, "v", caption).Bounds()
 	if want := textWidth(caption) + 16; img.Dx() < want {
 		t.Errorf("caption crop width %d, want >= %d", img.Dx(), want)

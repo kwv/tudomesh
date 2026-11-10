@@ -14,7 +14,7 @@ Confirm the robots publish to the broker:
 
 ```bash
 mosquitto_sub -h <broker> -t 'valetudo/+/StatusStateAttribute/status' -v
-# valetudo/rocky7/StatusStateAttribute/status {"value":"docked",...}
+# valetudo/robo7/StatusStateAttribute/status {"value":"docked",...}
 ```
 
 `valetudo` is Valetudo's default topic prefix; TudoMesh reads each robot's prefix from the robot, so a custom one works too.
@@ -49,11 +49,11 @@ Everything else is optional; [`config.example.yaml`](../config.example.yaml) lis
 
 ```bash
 docker logs tudomesh | grep Discovered
-# Discovered http://<robot1>: id=TrickyZanyPartridge name=rocky7 topic=valetudo/rocky7/MapData/map-data
+# Discovered http://<robot1>: id=TidyCalmPanda name=robo7 topic=valetudo/robo7/MapData/map-data
 curl http://<host>:8080/vacuums
 ```
 
-Each robot is listed with its id (Valetudo's `systemId`) and name (its MQTT identifier, e.g. `rocky7`). Either one works in `/vacuum/{id}` URLs. A robot that is missing or listed with a guessed name was unreachable: check its URL from the TudoMesh host.
+Each robot is listed with its id (Valetudo's `systemId`) and name (its MQTT identifier, e.g. `robo7`). Either one works in `/vacuum/{id}` URLs. A robot that is missing or listed with a guessed name was unreachable: check its URL from the TudoMesh host.
 
 ## 4. Load and align the maps
 
@@ -71,7 +71,7 @@ docker restart tudomesh
 `--calibrate` prints one result per robot:
 
 ```
-TrickyZanyPartridge      :
+TidyCalmPanda      :
   Method: grid, rotation 178.0°, confidence 1.55 (>= 1.25 is unambiguous)
 ```
 
@@ -108,9 +108,9 @@ Restart TudoMesh after editing `config.yaml`.
 When a robot reports an error, ask TudoMesh where it is:
 
 ```bash
-curl http://<host>:8080/vacuum/rocky7
-# {"id":"TrickyZanyPartridge","name":"rocky7","state":"error","room":{"name":"Kitchen",...},...}
-curl -o alert.png 'http://<host>:8080/vacuum/rocky7.png?crop=room'
+curl http://<host>:8080/vacuum/robo7
+# {"id":"TidyCalmPanda","name":"robo7","state":"error","room":{"name":"Kitchen",...},...}
+curl -o alert.png 'http://<host>:8080/vacuum/robo7.png?crop=room'
 ```
 
 The image shows the robot circled, its room hatched in red, and a caption. `?crop=room` zooms in on the room so it reads on a phone; `?crop=4m` crops to a radius instead, and `?scale=` sets the size.

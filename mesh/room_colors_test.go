@@ -192,9 +192,9 @@ func TestAlertShape_Rotated30HasNoHoles(t *testing.T) {
 // robot's reported room name points elsewhere.
 func TestRenderLiveToSVG_AlertRoomByPosition(t *testing.T) {
 	r := liveTestRenderer()
-	r.Meta = map[string]VacuumMeta{"rocky7": {Name: "rocky7", Room: "Kitchen"}}
-	r.Highlight = "rocky7"
-	root := renderLive(t, r, map[string]*LivePosition{"rocky7": {X: 5, Y: 15}})
+	r.Meta = map[string]VacuumMeta{"robo7": {Name: "robo7", Room: "Kitchen"}}
+	r.Highlight = "robo7"
+	root := renderLive(t, r, map[string]*LivePosition{"robo7": {X: 5, Y: 15}})
 
 	for _, id := range []string{"room-16", "room-17"} {
 		if c := root.find(byID(id))[0].attr("class"); c != "room" {
@@ -205,7 +205,7 @@ func TestRenderLiveToSVG_AlertRoomByPosition(t *testing.T) {
 	if len(alert) != 1 {
 		t.Fatalf("want one #alert-room, got %d", len(alert))
 	}
-	if a := alert[0]; a.attr("class") != "alert-room" || a.attr("data-segment-id") != "17" || a.attr("data-vacuum") != "rocky7" {
+	if a := alert[0]; a.attr("class") != "alert-room" || a.attr("data-segment-id") != "17" || a.attr("data-vacuum") != "robo7" {
 		t.Errorf("alert-room attrs: %+v", a.Attrs)
 	}
 }
@@ -246,7 +246,7 @@ func TestRenderLiveToSVG_AlertRoomIsRobotSegment(t *testing.T) {
 }
 
 func TestRenderLiveToSVG_NoHighlightNoAlertRoom(t *testing.T) {
-	root := renderLive(t, liveTestRenderer(), map[string]*LivePosition{"rocky7": {X: 5, Y: 15}})
+	root := renderLive(t, liveTestRenderer(), map[string]*LivePosition{"robo7": {X: 5, Y: 15}})
 	if n := len(root.find(byID("alert-room"))); n != 0 {
 		t.Errorf("got %d #alert-room without a highlight", n)
 	}

@@ -15,7 +15,7 @@ The SVG maps are structured so they can be restyled with CSS or scripted.
       <path class="floor"/>                 unsegmented floor
     </g>
     <path id="alert-room" class="alert-room"  /vacuum/{id}.svg only: the robot's room outline
-          data-room="Kitchen" data-segment-id="4" data-vacuum="TrickyZanyPartridge"/>
+          data-room="Kitchen" data-segment-id="4" data-vacuum="TidyCalmPanda"/>
     <g id="walls"><path class="wall"/></g>
     <g id="room-outlines">
       <path class="room-outline" data-room="Kitchen" data-segment-id="16"/>
@@ -26,10 +26,10 @@ The SVG maps are structured so they can be restyled with CSS or scripted.
     <text class="room-label" data-room="Kitchen" data-segment-id="16">Kitchen</text>
   </g>
   <g id="vacuums">
-    <g id="vacuum-trickyzanypartridge" class="vacuum state-error highlight"
-       data-id="TrickyZanyPartridge" data-name="rocky7" data-room="Kitchen" data-state="error">
+    <g id="vacuum-tidycalmpanda" class="vacuum state-error highlight"
+       data-id="TidyCalmPanda" data-name="robo7" data-room="Kitchen" data-state="error">
       <circle class="ring"/>                only when highlighted
-      <circle class="body"/> <line class="heading"/> <text class="label">rocky7</text>
+      <circle class="body"/> <line class="heading"/> <text class="label">robo7</text>
     </g>
   </g>
 </svg>
@@ -41,7 +41,7 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, hide on
 
 ```css
 .vacuum.state-error .body { fill: #e61e1e; }
-#vacuum-frugallamelion { display: none; }
+#vacuum-fairboldfalcon { display: none; }
 .room[data-room="Kitchen"] { fill: #fff3c4; }
 .room-outline { stroke: #446; stroke-opacity: 1; }
 .room-label { font-family: "Noto Sans", sans-serif; fill: #124; }
@@ -56,14 +56,14 @@ Example: embed `/live.svg` inline and flag any vacuum in an error state, hide on
 
 ```text
 <g id="maps">
-  <g id="map-frugallamelion" class="map" data-id="FrugalLameLion" transform="…">
+  <g id="map-fairboldfalcon" class="map" data-id="FairBoldFalcon" transform="…">
     <g class="rooms"><path class="room" data-room="Kitchen" …/></g>
     <g class="walls"><path class="wall"/></g>
   </g>
   …
 </g>
 <g id="grid">…</g>
-<g id="chargers"><circle class="charger" data-id="FrugalLameLion"/>…</g>
+<g id="chargers"><circle class="charger" data-id="FairBoldFalcon"/>…</g>
 ```
 
 ## Theme variables

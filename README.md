@@ -26,8 +26,8 @@ The image runs `--http --mqtt --data-dir=/data`. [`docker-compose.yml`](docker-c
 mqtt:
   broker: mqtt://mqtt.home:1883
 vacuums:
-  - url: http://rockette.home
-  - url: http://rocky7.home
+  - url: http://robo1.home
+  - url: http://robo7.home
 ```
 
 Each robot's id (`systemId`), MQTT topic and map API are read from its Valetudo API and cached in `.vacuums.json`, so a robot that is offline at startup still resolves. [`config.example.yaml`](config.example.yaml) lists every option, including:
@@ -58,17 +58,17 @@ Robots on different floors share no map: run one instance per floor, each with i
 | `/vacuum/{id}.png`, `.svg` | Live map with that robot circled and its room hatched red |
 | `/health` | Health check |
 
-`{id}` is the robot's id or its MQTT name (`rocky7`), case-insensitive. Map endpoints return `503` until a map is loaded.
+`{id}` is the robot's id or its MQTT name (`robo7`), case-insensitive. Map endpoints return `503` until a map is loaded.
 
 ```json
 {
-  "id": "TrickyZanyPartridge",
-  "name": "rocky7",
+  "id": "TidyCalmPanda",
+  "name": "robo7",
   "state": "error",
   "stateSince": "2026-11-07T14:46:25Z",
   "room": { "name": "Kitchen", "segmentId": "4", "distance": 0 },
   "position": { "x": 517.3, "y": 314.9, "angle": 183, "updatedAt": "2026-11-07T14:46:25Z" },
-  "mapUrl": "/vacuum/rocky7.png"
+  "mapUrl": "/vacuum/robo7.png"
 }
 ```
 
@@ -88,7 +88,7 @@ The live views draw the reference robot's rooms, each outlined and labelled with
 
 ## Calibration
 
-When a robot docks, TudoMesh fetches its full map from the Valetudo API, saves it as `ValetudoMapExport-<id>.json`, aligns it to the reference, and stores the result in `.calibration-cache.json`. Recalibration is skipped within 30 minutes if the map area is unchanged. Docking is read from the status topic next to the map topic (`.../StatusStateAttribute/status`).
+When a robot docks, TudoMesh fetches its full map from the Valetudo API, saves it as `ValetudoMapExport-<id>.json`, aligns it to the reference, and stores the result in `.calibration-cache.json`. Recalibration is skipped within 30 minutes if the map area is unchanged.
 
 To align now from the saved maps (using the config's `reference` and `rotation` hints):
 

@@ -289,8 +289,8 @@ func TestDeriveStateTopic(t *testing.T) {
 	}{
 		{
 			name:      "standard valetudo topic",
-			mapTopic:  "valetudo/rocky7/MapData/map-data",
-			wantTopic: "valetudo/rocky7/StatusStateAttribute/status",
+			mapTopic:  "valetudo/robo7/MapData/map-data",
+			wantTopic: "valetudo/robo7/StatusStateAttribute/status",
 			wantOK:    true,
 		},
 		{
@@ -410,21 +410,21 @@ func TestCreateStateMessageHandler_DockedState(t *testing.T) {
 		mu.Unlock()
 	})
 
-	handler := client.createStateMessageHandler("rocky7")
+	handler := client.createStateMessageHandler("robo7")
 
 	// Simulate a docked state message
 	mockClient := NewMockClient()
 	// Expectations are set in NewMockClient by default, but we can be explicit
-	mockClient.On("Subscribe", "valetudo/rocky7/StatusStateAttribute/status", mock.Anything, mock.Anything).Return(NewMockToken(nil))
+	mockClient.On("Subscribe", "valetudo/robo7/StatusStateAttribute/status", mock.Anything, mock.Anything).Return(NewMockToken(nil))
 
-	mockClient.Subscribe("valetudo/rocky7/StatusStateAttribute/status", 0, handler)
-	mockClient.SimulateMessage("valetudo/rocky7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
+	mockClient.Subscribe("valetudo/robo7/StatusStateAttribute/status", 0, handler)
+	mockClient.SimulateMessage("valetudo/robo7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
 
 	mu.Lock()
 	got := receivedVacuumID
 	mu.Unlock()
 
-	assert.Equal(t, "rocky7", got)
+	assert.Equal(t, "robo7", got)
 	mockClient.AssertExpectations(t)
 }
 
@@ -699,7 +699,7 @@ func TestDockingHandler_EndToEnd(t *testing.T) {
 
 	config := &Config{
 		Vacuums: []VacuumConfig{
-			{ID: "rocky7", Topic: "valetudo/rocky7/MapData/map-data"},
+			{ID: "robo7", Topic: "valetudo/robo7/MapData/map-data"},
 		},
 	}
 
@@ -714,13 +714,13 @@ func TestDockingHandler_EndToEnd(t *testing.T) {
 	client.onConnect(mockClient)
 
 	// Simulate state message arriving on the state topic
-	mockClient.SimulateMessage("valetudo/rocky7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
+	mockClient.SimulateMessage("valetudo/robo7/StatusStateAttribute/status", []byte(`{"value":"docked"}`))
 
-	assert.Equal(t, "rocky7", dockedVacuum)
+	assert.Equal(t, "robo7", dockedVacuum)
 }
 
 func BenchmarkDeriveStateTopic(b *testing.B) {
-	topic := "valetudo/rocky7/MapData/map-data"
+	topic := "valetudo/robo7/MapData/map-data"
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		deriveStateTopic(topic)
@@ -746,11 +746,11 @@ func TestStateHandlerReceivesEveryState(t *testing.T) {
 		got = append(got, vacuumID+"="+state)
 		mu.Unlock()
 	})
-	handler := client.createStateMessageHandler("rocky7")
+	handler := client.createStateMessageHandler("robo7")
 	for _, payload := range []string{`{"value":"cleaning"}`, `"error"`, "docked"} {
-		handler(nil, &mockMessage{topic: "valetudo/rocky7/StatusStateAttribute/status", payload: []byte(payload)})
+		handler(nil, &mockMessage{topic: "valetudo/robo7/StatusStateAttribute/status", payload: []byte(payload)})
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal(t, []string{"rocky7=cleaning", "rocky7=error", "rocky7=docked"}, got)
+	assert.Equal(t, []string{"robo7=cleaning", "robo7=error", "robo7=docked"}, got)
 }

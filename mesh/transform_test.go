@@ -1050,7 +1050,7 @@ func TestTransformAngle(t *testing.T) {
 		},
 		// Real calibration data from .calibration-cache.json
 		{
-			name:       "AppropriateMinorAntelope calibration (~270 degree rotation)",
+			name:       "AmberQuietOtter calibration (~270 degree rotation)",
 			localAngle: 246,
 			transform: AffineMatrix{
 				A: 0.008252605176549174, B: 0.9999659466740853, Tx: -119.1931139847944,
@@ -1060,7 +1060,7 @@ func TestTransformAngle(t *testing.T) {
 			tolerance: 0.5,
 		},
 		{
-			name:       "TrickyZanyPartridge calibration (~180 degree rotation)",
+			name:       "TidyCalmPanda calibration (~180 degree rotation)",
 			localAngle: 182,
 			transform: AffineMatrix{
 				A: -0.9999511647570667, B: 0.009882717287546475, Tx: 1221.33038219282,
@@ -1070,7 +1070,7 @@ func TestTransformAngle(t *testing.T) {
 			tolerance: 0.5,
 		},
 		{
-			name:       "FrugalLameLion identity calibration",
+			name:       "FairBoldFalcon identity calibration",
 			localAngle: 182,
 			transform: AffineMatrix{
 				A: 1, B: 0, Tx: 0,

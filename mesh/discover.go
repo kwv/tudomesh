@@ -16,8 +16,8 @@ import (
 
 // VacuumIdentity is what tudomesh learns from a robot's Valetudo API.
 type VacuumIdentity struct {
-	ID          string `json:"id"`               // Valetudo systemId, e.g. "FrugalLameLion"
-	Name        string `json:"name"`             // MQTT identifier, e.g. "rockette"
+	ID          string `json:"id"`               // Valetudo systemId, e.g. "FairBoldFalcon"
+	Name        string `json:"name"`             // MQTT identifier, e.g. "robo1"
 	TopicPrefix string `json:"topicPrefix"`      // MQTT topic prefix, default "valetudo"
 	Broker      string `json:"broker,omitempty"` // broker the robot uses, "mqtt://host:port"
 }
@@ -106,7 +106,7 @@ func DiscoverVacuum(ctx context.Context, client *http.Client, baseURL string) (V
 }
 
 // identityFromHost guesses an identity from the URL's first host label
-// ("http://rocky6.home" -> "rocky6"), used when the robot is unreachable
+// ("http://robo6.home" -> "robo6"), used when the robot is unreachable
 // and nothing is cached.
 func identityFromHost(baseURL string) (VacuumIdentity, bool) {
 	u, err := url.Parse(baseURL)

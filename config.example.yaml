@@ -21,7 +21,7 @@ vacuums:
 #   username: mqtt_user
 #   password: mqtt_password
 
-# reference: FrugalLameLion   # vacuum id used as the world origin;
+# reference: FairBoldFalcon   # vacuum id used as the world origin;
 #                             # default: the robot with the largest map
 
 # gridSpacing: 100            # grid line spacing in cm (default 100 = 1 m)
