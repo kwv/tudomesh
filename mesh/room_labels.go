@@ -279,27 +279,20 @@ func (r *CompositeRenderer) drawRoomOverlay(img *image.RGBA) {
 		if !rectInside(cx, cy, float64(w+2*pad), float64(h+2*pad), 1, inside) {
 			continue
 		}
-		// A 1px halo in the room's fill keeps text readable over obstacles.
+		// A white halo keeps text readable over furniture and walls.
 		dot := fixed.P(int(math.Round(cx-float64(w)/2)), int(math.Round(cy-float64(h)/2))+ascent)
-		halo := image.NewUniform(roomFillAt(img, pixels[k], fills))
-		for _, off := range []fixed.Point26_6{fixed.P(-1, 0), fixed.P(1, 0), fixed.P(0, -1), fixed.P(0, 1)} {
+		halo := image.NewUniform(color.RGBA{255, 255, 255, 255})
+		for _, off := range []fixed.Point26_6{
+			fixed.P(-1, 0), fixed.P(1, 0), fixed.P(0, -1), fixed.P(0, 1),
+			fixed.P(-1, -1), fixed.P(1, -1), fixed.P(-1, 1), fixed.P(1, 1),
+			fixed.P(-2, 0), fixed.P(2, 0), fixed.P(0, -2), fixed.P(0, 2),
+		} {
 			d := &font.Drawer{Dst: img, Src: halo, Face: face, Dot: dot.Add(off)}
 			d.DrawString(name)
 		}
 		d := &font.Drawer{Dst: img, Src: image.NewUniform(color.RGBA{48, 48, 48, 255}), Face: face, Dot: dot}
 		d.DrawString(name)
 	}
-}
-
-// roomFillAt returns the first room fill color found at pixels [x1,y1,...]
-// of img, or white.
-func roomFillAt(img *image.RGBA, pixels []int, fills map[color.RGBA]bool) color.RGBA {
-	for i := 0; i+1 < len(pixels); i += 2 {
-		if c := img.RGBAAt(pixels[i], pixels[i+1]); fills[c] {
-			return c
-		}
-	}
-	return color.RGBA{255, 255, 255, 255}
 }
 
 func toRGBA(c color.NRGBA) color.RGBA {
@@ -455,7 +448,8 @@ func writeRoomLabels(out *bytes.Buffer, f *svgFrame, m *ValetudoMap, t AffineMat
 }
 
 func roomLabelCSS(s svgSizes, ps float64) string {
+	size := svgLabelSize(ps)
 	return fmt.Sprintf(`.room-outline{fill:none;stroke:#000;stroke-opacity:.3;stroke-width:%.2f;stroke-linecap:square}
-.room-label{font:%.1fpx sans-serif;text-anchor:middle;fill:#303030}
-`, s.stroke/ps, svgLabelSize(ps))
+.room-label{font:%.1fpx sans-serif;text-anchor:middle;fill:#303030;paint-order:stroke;stroke:#fff;stroke-width:%.1f;stroke-linejoin:round}
+`, s.stroke/ps, size, size*0.24)
 }
