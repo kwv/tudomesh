@@ -1,10 +1,10 @@
 # TudoMesh
 
-Combines the maps of several [Valetudo](https://valetudo.cloud/) robot vacuums into one coordinate system and serves it over HTTP: a live map with every robot on it, and per-robot endpoints for "where is my stuck vacuum?" alerts.
+Combines the maps of several [Valetudo](https://valetudo.cloud/) robot vacuums into one coordinate system and serves it over HTTP: a live map with every robot on it, and per-robot endpoints with each robot's room, status and position.
 
 - **Alignment from map shape alone**: no room names needed. Searches every rotation and offset for where floor lands on floor and wall on wall, and reports a confidence.
 - **Live positions over MQTT**, realigned automatically each time a robot docks.
-- **Alert endpoints**: the room a robot is in, and a map image of it circled.
+- **Per-robot endpoints**: the room a robot is in, its last status, and a map image with it circled.
 - **Minimal config**: list each robot's Valetudo URL; ids, topics and broker are read from the robot.
 
 New here? Follow the [setup guide](docs/setup.md).
@@ -77,14 +77,10 @@ Robots on different floors share no map: run one instance per floor, each with i
 Query parameters:
 
 - `?theme=light|dark|auto`: on every live, floorplan and per-vacuum view. `auto` lets the SVG follow the viewer's dark mode.
-- `?crop=room` or `?crop=4m`: on `/vacuum/{id}.png|.svg`. Zooms to the robot's room (plus 1 m) or a radius around it, for phone notifications.
+- `?crop=room` or `?crop=4m`: on `/vacuum/{id}.png|.svg`. Zooms to the robot's room (plus 1 m) or a radius around it.
 - `?scale=1..8`: on `/vacuum/{id}.png`. Image size (default 3).
 
 The live views draw the reference robot's rooms, each outlined and labelled with its Valetudo name. The SVGs give every room and robot its own element with stable ids and `data-*` attributes, for restyling with CSS: see [SVG structure](docs/svg.md).
-
-## Alerts
-
-[`examples/node-red/stuck-vacuum-alert.json`](examples/node-red/stuck-vacuum-alert.json) is an importable Node-RED flow: on a robot's `error` status it fetches `/vacuum/{id}` and the cropped map image and emits both for your notifier. Set `TUDOMESH_URL` on the flow and point its MQTT node at your broker. Any tool that can fetch a URL on an MQTT message works the same way.
 
 ## Calibration
 

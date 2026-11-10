@@ -2,7 +2,7 @@
 
 Robots split and name rooms differently. `--plan-rooms` works out the Valetudo room edits that would make each robot's rooms match the reference robot's rooms, in shape and name. It only simulates them: nothing is sent to the robots. Room names can be anything, in any language; they are copied from the reference as written.
 
-Matching rooms is optional: alignment and alerts work without it. It helps when something picks rooms by name across robots, like a scheduler that sends whichever robot is free to "Kitchen".
+Matching rooms is optional: alignment and the per-robot endpoints work without it. It helps when something picks rooms by name across robots, like a scheduler that sends whichever robot is free to "Kitchen".
 
 How-to:
 
@@ -49,4 +49,4 @@ It writes to the data dir:
 | `rooms-<id>-after.svg` | The same after the edits, with the cut lines dashed |
 | `rooms-<id>-plan.json` | The edits as request bodies |
 
-Splits and joins renumber a robot's rooms, which breaks anything that cleans rooms by id (Valetudo timers, Home Assistant or Node-RED schedules); update those afterwards.
+Splits and joins renumber a robot's rooms, which breaks anything that cleans rooms by id (Valetudo timers, external schedules); update those afterwards.

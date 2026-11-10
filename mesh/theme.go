@@ -17,7 +17,7 @@ type Theme struct {
 	Wall        color.NRGBA
 	Text        color.NRGBA // room and vacuum labels, PNG legend
 	Halo        color.NRGBA // outline behind label text
-	Alert       color.NRGBA // fill of the stuck vacuum's room
+	Alert       color.NRGBA // fill of the highlighted vacuum's room
 	AlertBorder color.NRGBA
 	AlertHatch  color.NRGBA
 	Rooms       []color.NRGBA // room fills, assigned in segment id order

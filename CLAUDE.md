@@ -1,9 +1,9 @@
 # tudomesh
 
-Merges maps from multiple Valetudo vacuums into one coordinate system, with live robot positions over MQTT and an HTTP API (composite SVG/PNG map, per-vacuum state/room/map for alerts). See README.md for features and config.
+Merges maps from multiple Valetudo vacuums into one coordinate system, with live robot positions over MQTT and an HTTP API (composite SVG/PNG map, per-vacuum state/room/map). See README.md for features and config.
 
 ## Layout
-- `main.go`, `app.go`, `handlers.go`, `vacuum_handlers.go` — CLI entry, MQTT service, HTTP handlers (`/vacuum/{key}` for alerts)
+- `main.go`, `app.go`, `handlers.go`, `vacuum_handlers.go` — CLI entry, MQTT service, HTTP handlers (`/vacuum/{key}` per-robot state and map)
 - `mesh/` — decoding, alignment (`align.go`: grid occupancy search in `grid_align.go`, room-name fallback in `room_align.go`), calibration cache, renderers (`svg.go`: structured SVG for live, floorplan and composite views; `renderer.go`: PNG), room sync planning (`room_sync.go`: Valetudo split/join/rename edits that match a robot's rooms to the reference's, simulated only; `--plan-rooms`)
 - Units: layer pixels are grid indices; entity points are grid × pixelSize. Only renderers convert to image scale.
 - `.designs/` — older design notes; they predate the grid alignment and still mention ICP

@@ -103,25 +103,23 @@ Open `http://<host>:8080/`: the live map with every robot on it.
 
 Restart TudoMesh after editing `config.yaml`.
 
-## 6. Hook up alerts
+## 6. Look up a robot
 
-When a robot reports an error, ask TudoMesh where it is:
+Each robot has its own JSON and map image:
 
 ```bash
 curl http://<host>:8080/vacuum/robo7
-# {"id":"TidyCalmPanda","name":"robo7","state":"error","room":{"name":"Kitchen",...},...}
-curl -o alert.png 'http://<host>:8080/vacuum/robo7.png?crop=room'
+# {"id":"TidyCalmPanda","name":"robo7","state":"docked","room":{"name":"Kitchen",...},...}
+curl -o robo7.png 'http://<host>:8080/vacuum/robo7.png?crop=room'
 ```
 
-The image shows the robot circled, its room hatched in red, and a caption. `?crop=room` zooms in on the room so it reads on a phone; `?crop=4m` crops to a radius instead, and `?scale=` sets the size.
-
-For Node-RED, import [`examples/node-red/stuck-vacuum-alert.json`](../examples/node-red/stuck-vacuum-alert.json) set `TUDOMESH_URL` on the flow, point its MQTT node at your broker, and replace its debug node with your notifier. Anything else that can fetch a URL when an MQTT message arrives (Home Assistant, a script) works the same way.
+The image shows the robot circled, its room hatched in red, and a caption. `?crop=room` zooms in on its room, `?crop=4m` on a radius around it, and `?scale=` sets the size.
 
 ## 7. Optional: give the robots the same rooms
 
 If something picks rooms by name across robots, for example a scheduler that sends whichever robot is free to "Kitchen", make each robot's rooms match the reference's with `--plan-rooms`. It previews the Valetudo room edits and changes nothing. See [Planning room edits](plan-rooms.md).
 
-## Stuck?
+## Problems?
 
 See [Troubleshooting](../README.md#troubleshooting).
 

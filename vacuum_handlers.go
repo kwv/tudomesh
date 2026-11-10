@@ -15,8 +15,8 @@ import (
 	"github.com/kwv/tudomesh/mesh"
 )
 
-// Per-vacuum endpoints for alerting (e.g. a Node-RED flow reacting to a
-// Valetudo error):
+// Per-vacuum endpoints: each robot's room, status and position, and a map
+// image centered on it:
 //
 //	GET /vacuums           -> []vacuumInfo for every known vacuum
 //	GET /vacuum/{key}      -> vacuumInfo
