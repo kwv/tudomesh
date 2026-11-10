@@ -397,3 +397,36 @@ func TestAlertShape_IgnoredOwnRoom(t *testing.T) {
 		t.Errorf("room = %+v, want nil for an ignored reference room", room)
 	}
 }
+
+// A hallway touching seven rooms that don't touch each other: the hallway's
+// color differs from every room's, although id order alone would wrap the
+// 8th id onto a color already used by a touching room.
+func TestRoomSlots_TouchingRoomsDiffer(t *testing.T) {
+	m := &ValetudoMap{Layers: []MapLayer{}}
+	for i := 0; i < 7; i++ {
+		// 5 cells wide, 6 apart: rooms are farther apart than roomTouchReach.
+		m.Layers = append(m.Layers, MapLayer{Type: "segment",
+			MetaData: LayerMetaData{SegmentID: fmt.Sprint(i + 1)}, Pixels: cells(i*11, 6, 5, 10)})
+	}
+	m.Layers = append(m.Layers, MapLayer{Type: "segment", MetaData: LayerMetaData{SegmentID: "8", Name: "Hallway"}, Pixels: cells(0, 0, 77, 5)})
+
+	adj := segmentAdjacency([]string{"1", "2", "8"}, map[string][]int{"1": cells(0, 6, 5, 10), "2": cells(11, 6, 5, 10), "8": cells(0, 0, 77, 5)}, roomTouchReach)
+	if !adj["1"]["8"] || adj["1"]["2"] {
+		t.Fatalf("adjacency = %v, want 1-8 touching and 1-2 apart", adj)
+	}
+
+	slots := roomSlots(m, len(roomPalette))
+	for i := 1; i <= 7; i++ {
+		if id := fmt.Sprint(i); slots[id] == slots["8"] {
+			t.Errorf("room %s and the hallway share slot %d", id, slots["8"])
+		}
+	}
+	// The rooms spread over the other five colors rather than all taking one.
+	seen := map[int]bool{}
+	for i := 1; i <= 7; i++ {
+		seen[slots[fmt.Sprint(i)]] = true
+	}
+	if len(seen) != len(roomPalette)-1 {
+		t.Errorf("rooms use %d colors, want %d: %v", len(seen), len(roomPalette)-1, slots)
+	}
+}
