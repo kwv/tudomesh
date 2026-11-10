@@ -58,12 +58,7 @@ func TestApplyOptions(t *testing.T) {
 		ConfigFile:       "test-config.yaml",
 		CalibrationCache: ".test-cache.json",
 		RotateAll:        90.0,
-		ForceRotation:    "vacuum1=180",
 		ReferenceVacuum:  "ref-vacuum",
-		OutputFile:       "test-output.png",
-		RenderFormat:     "raster",
-		VectorFormat:     "svg",
-		GridSpacing:      10.0,
 		HttpPort:         8080,
 		MqttMode:         true,
 		HttpMode:         false,
@@ -83,23 +78,8 @@ func TestApplyOptions(t *testing.T) {
 	if app.RotateAll != 90.0 {
 		t.Errorf("RotateAll = %f, want 90.0", app.RotateAll)
 	}
-	if app.ForceRotation != "vacuum1=180" {
-		t.Errorf("ForceRotation = %s, want vacuum1=180", app.ForceRotation)
-	}
 	if app.ReferenceVacuum != "ref-vacuum" {
 		t.Errorf("ReferenceVacuum = %s, want ref-vacuum", app.ReferenceVacuum)
-	}
-	if app.OutputFile != "test-output.png" {
-		t.Errorf("OutputFile = %s, want test-output.png", app.OutputFile)
-	}
-	if app.RenderFormat != "raster" {
-		t.Errorf("RenderFormat = %s, want raster", app.RenderFormat)
-	}
-	if app.VectorFormat != "svg" {
-		t.Errorf("VectorFormat = %s, want svg", app.VectorFormat)
-	}
-	if app.GridSpacing != 10.0 {
-		t.Errorf("GridSpacing = %f, want 10.0", app.GridSpacing)
 	}
 	if app.HttpPort != 8080 {
 		t.Errorf("HttpPort = %d, want 8080", app.HttpPort)
@@ -214,67 +194,6 @@ func TestLoadInitialMaps_MultipleFiles(t *testing.T) {
 	}
 }
 
-func TestParseAndPrint(t *testing.T) {
-	app := NewApp()
-	tmpDir := t.TempDir()
-
-	// Create a valid sample JSON export file with entities
-	sampleMap := createTestMap("test")
-	sampleMap.Entities = []mesh.MapEntity{
-		{
-			Type:   "robot_position",
-			Points: []int{500, 500},
-			MetaData: map[string]interface{}{
-				"angle": 45,
-			},
-		},
-		{
-			Type:   "charger_location",
-			Points: []int{100, 100},
-		},
-	}
-
-	samplePath := filepath.Join(tmpDir, "ValetudoMapExport-test-2024.json")
-	if err := saveTestMapToFile(sampleMap, samplePath); err != nil {
-		t.Fatalf("Failed to create sample map file: %v", err)
-	}
-
-	// Should not panic when parsing valid file
-	app.parseAndPrint(samplePath)
-}
-
-func TestParseAndPrint_InvalidFile(t *testing.T) {
-	app := NewApp()
-
-	// Should not panic when parsing non-existent file
-	app.parseAndPrint("/nonexistent/path/file.json")
-}
-
-func TestParseAndPrint_WithSegments(t *testing.T) {
-	app := NewApp()
-	tmpDir := t.TempDir()
-
-	// Create a map with segments
-	sampleMap := createTestMap("test")
-	sampleMap.Layers = append(sampleMap.Layers, mesh.MapLayer{
-		Type:   "segment",
-		Pixels: []int{5, 6, 7, 8},
-		MetaData: mesh.LayerMetaData{
-			SegmentID: "seg1",
-			Name:      "Living Room",
-			Area:      50,
-		},
-	})
-
-	samplePath := filepath.Join(tmpDir, "ValetudoMapExport-segments-20240101.json")
-	if err := saveTestMapToFile(sampleMap, samplePath); err != nil {
-		t.Fatalf("Failed to create sample map file: %v", err)
-	}
-
-	// Should not panic
-	app.parseAndPrint(samplePath)
-}
-
 func TestLoadInitialMaps_GlobError(t *testing.T) {
 	app := NewApp()
 
@@ -347,11 +266,7 @@ func TestApplyOptions_Combinations(t *testing.T) {
 		},
 		{
 			name: "with rotation",
-			opts: AppOptions{RotateAll: 180.0, ForceRotation: "v1=90,v2=270"},
-		},
-		{
-			name: "vector format",
-			opts: AppOptions{RenderFormat: "vector", VectorFormat: "svg"},
+			opts: AppOptions{RotateAll: 180.0},
 		},
 	}
 

@@ -37,46 +37,6 @@ func newHTTPServer(stateTracker *mesh.StateTracker, cache *mesh.CalibrationData,
 		}
 	})
 
-	// Composite map endpoint (color-coded)
-	mux.HandleFunc("/composite-map.png", func(w http.ResponseWriter, r *http.Request) {
-		maps := stateTracker.GetMaps()
-		if len(maps) == 0 {
-			http.Error(w, "No maps available", http.StatusServiceUnavailable)
-			return
-		}
-
-		// Build transforms from cache
-		transforms := buildTransforms(maps, cache)
-
-		// Determine effective reference
-		effectiveRef := refID
-		if effectiveRef == "" {
-			effectiveRef = mesh.SelectReferenceVacuum(maps, nil)
-		}
-
-		// Create renderer with colors from config
-		renderer := mesh.NewCompositeRenderer(maps, transforms, effectiveRef)
-		renderer.GlobalRotation = rotateAll
-
-		// Apply colors from config
-		applyConfigColors(renderer, config)
-
-		// If no drawable content exists, return service unavailable to avoid generating invalid images
-		if !renderer.HasDrawableContent() {
-			log.Printf("Warning: maps present but no drawable content; endpoint=/composite-map.png")
-			http.Error(w, "No drawable map content", http.StatusServiceUnavailable)
-			return
-		}
-
-		// Render and send
-		img := renderer.Render()
-		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("Cache-Control", "no-cache")
-		if err := png.Encode(w, img); err != nil {
-			log.Printf("Error encoding composite map PNG: %v", err)
-		}
-	})
-
 	// Live positions endpoint
 	mux.HandleFunc("/live.png", func(w http.ResponseWriter, r *http.Request) {
 		theme, ok := requestTheme(w, r, config)

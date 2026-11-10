@@ -12,10 +12,10 @@ Merges maps from multiple Valetudo vacuums into one coordinate system, with live
 make build      # build ./tudomesh
 make test       # go test
 make lint       # golangci-lint (also run by the pre-commit hook)
-make render     # rebuild, clear calibration cache, render tudomesh-data/test.{png,svg}
+make calibrate  # rebuild, clear the calibration cache, realign tudomesh-data/ and print each robot's fit
 ```
 
-`tudomesh-data/` holds the local config and map exports used by `make render`; it is not committed.
+`tudomesh-data/` holds the local config and map exports used by `make calibrate` and the real-map tests; it is not committed.
 
 ## Workflow
 - Branch off `main`, open a PR on GitHub (`kwv/tudomesh`), merge after CI passes.

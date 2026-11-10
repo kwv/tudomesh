@@ -344,7 +344,6 @@ func TestEndpoints_NoMaps_503(t *testing.T) {
 	handler := newHTTPServer(emptyTracker(), nil, nil, "", 0)
 
 	endpoints := []string{
-		"/composite-map.png",
 		"/live.png",
 		"/composite-map.svg",
 		"/floorplan.svg",
@@ -367,27 +366,6 @@ func TestEndpoints_NoMaps_503(t *testing.T) {
 // ---------------------------------------------------------------------------
 // newHTTPServer -- PNG endpoints with maps (200 paths)
 // ---------------------------------------------------------------------------
-
-func TestCompositeMapPNG_WithMaps(t *testing.T) {
-	handler := newHTTPServer(populatedTracker(), nil, nil, "vac1", 0)
-	req := httptest.NewRequest(http.MethodGet, "/composite-map.png", nil)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("/composite-map.png status = %d, want %d, body=%q", w.Code, http.StatusOK, w.Body.String())
-	}
-	if ct := w.Header().Get("Content-Type"); ct != "image/png" {
-		t.Errorf("Content-Type = %q, want %q", ct, "image/png")
-	}
-	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
-		t.Errorf("Cache-Control = %q, want %q", cc, "no-cache")
-	}
-	if w.Body.Len() == 0 {
-		t.Error("response body is empty; expected PNG data")
-	}
-}
 
 func TestLivePNG_WithMaps(t *testing.T) {
 	st := populatedTracker()
@@ -557,7 +535,6 @@ func TestEndpoints_EmptyRefID_AutoSelects(t *testing.T) {
 	handler := newHTTPServer(populatedTracker(), nil, nil, "", 0)
 
 	endpoints := []string{
-		"/composite-map.png",
 		"/live.png",
 		"/composite-map.svg",
 		"/floorplan.svg",
@@ -590,7 +567,6 @@ func TestEndpoints_WithCache(t *testing.T) {
 	handler := newHTTPServer(populatedTracker(), cache, nil, "vac1", 0)
 
 	endpoints := []string{
-		"/composite-map.png",
 		"/live.png",
 		"/composite-map.svg",
 		"/floorplan.svg",
@@ -605,30 +581,6 @@ func TestEndpoints_WithCache(t *testing.T) {
 				t.Errorf("%s with cache: status = %d, want %d", ep, w.Code, http.StatusOK)
 			}
 		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// newHTTPServer -- composite-map.png with colors applied from config
-// ---------------------------------------------------------------------------
-
-func TestCompositeMapPNG_WithConfigColors(t *testing.T) {
-	cfg := &mesh.Config{
-		Vacuums: []mesh.VacuumConfig{
-			{ID: "vac1", Color: "#3366CC"},
-		},
-	}
-	handler := newHTTPServer(populatedTracker(), nil, cfg, "vac1", 0)
-	req := httptest.NewRequest(http.MethodGet, "/composite-map.png", nil)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("/composite-map.png with config colors: status = %d, want %d, body=%q", w.Code, http.StatusOK, w.Body.String())
-	}
-	if w.Body.Len() == 0 {
-		t.Error("response body is empty; expected PNG data")
 	}
 }
 
@@ -665,27 +617,6 @@ func TestLivePNG_NoDrawableContent_WithPositions(t *testing.T) {
 // newHTTPServer -- composite/floorplan PNG with no drawable content (503)
 // ---------------------------------------------------------------------------
 
-func TestCompositeMapPNG_NoDrawableContent_503(t *testing.T) {
-	st := mesh.NewStateTracker()
-	st.UpdateMap("vac1", &mesh.ValetudoMap{
-		MetaData: mesh.MapMetaData{TotalLayerArea: 50},
-		Size:     mesh.Size{X: 100, Y: 100},
-		Layers: []mesh.MapLayer{
-			{Type: "unknown_type", Pixels: []int{5, 5, 1}},
-		},
-	})
-
-	handler := newHTTPServer(st, nil, nil, "vac1", 0)
-	req := httptest.NewRequest(http.MethodGet, "/composite-map.png", nil)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("/composite-map.png no-drawable status = %d, want %d", w.Code, http.StatusServiceUnavailable)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // newHTTPServer -- GlobalRotation is wired through
 // ---------------------------------------------------------------------------
@@ -693,7 +624,7 @@ func TestCompositeMapPNG_NoDrawableContent_503(t *testing.T) {
 func TestEndpoints_WithGlobalRotation(t *testing.T) {
 	handler := newHTTPServer(populatedTracker(), nil, nil, "vac1", 90)
 
-	endpoints := []string{"/composite-map.png", "/live.png", "/live.svg"}
+	endpoints := []string{"/live.png", "/live.svg"}
 	for _, ep := range endpoints {
 		t.Run(ep, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, ep, nil)

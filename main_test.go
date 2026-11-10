@@ -19,10 +19,7 @@ func newMockApp() *mockApp {
 }
 
 func (m *mockApp) ApplyOptions(opts AppOptions) { m.opts = opts }
-func (m *mockApp) RunParseOnly()                { m.called["RunParseOnly"] = true }
 func (m *mockApp) RunCalibration()              { m.called["RunCalibration"] = true }
-func (m *mockApp) RunRender()                   { m.called["RunRender"] = true }
-func (m *mockApp) RunRenderIndividual(s string) { m.called["RunRenderIndividual"] = true; m.sArg = s }
 func (m *mockApp) RunCompareRotation(s string)  { m.called["RunCompareRotation"] = true; m.sArg = s }
 func (m *mockApp) RunService()                  { m.called["RunService"] = true }
 func (m *mockApp) RunPlanRooms()                { m.called["RunPlanRooms"] = true }
@@ -34,22 +31,10 @@ func TestRun_Flags(t *testing.T) {
 		expectedCalled string
 		verifyOpts     func(*testing.T, AppOptions)
 	}{
-		{
-			name:           "ParseOnly",
-			args:           []string{"--parse-only", "--data-dir", "/tmp/data"},
-			expectedCalled: "RunParseOnly",
-			verifyOpts: func(t *testing.T, opts AppOptions) {
-				if opts.DataDir != "/tmp/data" {
-					t.Errorf("expected DataDir /tmp/data, got %s", opts.DataDir)
-				}
-				if !opts.ParseOnly {
-					t.Error("expected ParseOnly true")
-				}
-			},
-		},
+
 		{
 			name:           "Calibrate",
-			args:           []string{"--calibrate", "--calibration-cache", "test.json"},
+			args:           []string{"--calibrate", "--calibration-cache", "test.json", "--data-dir", "/tmp/data", "--rotate-all", "90"},
 			expectedCalled: "RunCalibration",
 			verifyOpts: func(t *testing.T, opts AppOptions) {
 				if opts.CalibrationCache != "test.json" {
@@ -58,37 +43,12 @@ func TestRun_Flags(t *testing.T) {
 				if !opts.CalibrateOnly {
 					t.Error("expected CalibrateOnly true")
 				}
-			},
-		},
-		{
-			name:           "Render",
-			args:           []string{"--render", "--output", "test.png", "--rotate-all", "90"},
-			expectedCalled: "RunRender",
-			verifyOpts: func(t *testing.T, opts AppOptions) {
-				if opts.OutputFile != "test.png" {
-					t.Errorf("expected OutputFile test.png, got %s", opts.OutputFile)
-				}
-				if opts.RotateAll != 90 {
-					t.Errorf("expected RotateAll 90, got %f", opts.RotateAll)
-				}
-				if !opts.RenderOnly {
-					t.Error("expected RenderOnly true")
+				if opts.DataDir != "/tmp/data" || opts.RotateAll != 90 {
+					t.Errorf("DataDir, RotateAll = %s, %g", opts.DataDir, opts.RotateAll)
 				}
 			},
 		},
-		{
-			name:           "RenderIndividual",
-			args:           []string{"--render-individual", "--individual-rotation", "vac1=180"},
-			expectedCalled: "RunRenderIndividual",
-			verifyOpts: func(t *testing.T, opts AppOptions) {
-				if opts.IndividualRotation != "vac1=180" {
-					t.Errorf("expected IndividualRotation vac1=180, got %s", opts.IndividualRotation)
-				}
-				if !opts.RenderIndividual {
-					t.Error("expected RenderIndividual true")
-				}
-			},
-		},
+
 		{
 			name:           "PlanRooms",
 			args:           []string{"--plan-rooms"},
@@ -119,22 +79,6 @@ func TestRun_Flags(t *testing.T) {
 				}
 				if opts.HttpPort != 9090 {
 					t.Errorf("expected HttpPort 9090, got %d", opts.HttpPort)
-				}
-			},
-		},
-		{
-			name:           "VectorRendering",
-			args:           []string{"--render", "--format", "vector", "--vector-format", "svg", "--grid-spacing", "500"},
-			expectedCalled: "RunRender",
-			verifyOpts: func(t *testing.T, opts AppOptions) {
-				if opts.RenderFormat != "vector" {
-					t.Errorf("expected RenderFormat vector, got %s", opts.RenderFormat)
-				}
-				if opts.VectorFormat != "svg" {
-					t.Errorf("expected VectorFormat svg, got %s", opts.VectorFormat)
-				}
-				if opts.GridSpacing != 500 {
-					t.Errorf("expected GridSpacing 500, got %f", opts.GridSpacing)
 				}
 			},
 		},
@@ -185,8 +129,8 @@ func TestRun_Default(t *testing.T) {
 		t.Errorf("expected output to contain version, got: %s", out.String())
 	}
 
-	if !strings.Contains(out.String(), "tudomesh service starting...") {
-		t.Errorf("expected output to contain service starting message, got: %s", out.String())
+	if !strings.Contains(out.String(), "--mqtt --http") {
+		t.Errorf("expected usage hints, got: %s", out.String())
 	}
 }
 

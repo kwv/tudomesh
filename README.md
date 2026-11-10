@@ -52,7 +52,7 @@ Robots on different floors share no map: run one instance per floor, each with i
 | `/` | Page showing the live map |
 | `/live.svg`, `/live.png` | Floor plan with every robot's live position |
 | `/floorplan.svg` | Floor plan without robots |
-| `/composite-map.svg`, `.png` | Every robot's map in its own color, to check alignment |
+| `/composite-map.svg` | Every robot's map in its own color, to check alignment |
 | `/vacuums` | JSON list of every robot |
 | `/vacuum/{id}` | JSON: room, last status, position |
 | `/vacuum/{id}.png`, `.svg` | Live map with that robot circled and its room hatched red |
@@ -94,7 +94,7 @@ To align now from the saved maps (using the config's `reference` and `rotation` 
 
 ## CLI
 
-Without `--mqtt` or `--http`, TudoMesh works on the map exports in `--data-dir` and exits.
+`--mqtt` and `--http` run the service; the other modes work on the map exports in `--data-dir` and exit.
 
 | Flag | Description |
 |------|-------------|
@@ -104,12 +104,8 @@ Without `--mqtt` or `--http`, TudoMesh works on the map exports in `--data-dir` 
 | `--calibrate` | Align the map exports, print rotation and confidence, write the calibration cache |
 | `--compare-rotation=ID` | Render the 4 rotations of one robot, to pick a `rotation` hint |
 | `--plan-rooms` | Preview Valetudo room edits that match each robot's rooms to the reference's; changes nothing. See [Planning room edits](docs/plan-rooms.md) |
-| `--render`, `--format=raster\|vector\|both`, `--output=FILE` | Render the composite map |
-| `--grid-spacing=CM` | Grid spacing for `--render` (default 100) |
 | `--reference=ID` | Override the reference robot |
-| `--force-rotation=ID=DEG`, `--rotate-all=DEG` | Force one robot's rotation; rotate the whole output |
-| `--render-individual`, `--individual-rotation=ID=DEG` | Render each map separately |
-| `--parse-only` | Summarize each map export |
+| `--rotate-all=DEG` | Rotate the whole map (0, 90, 180, 270) |
 
 ## Troubleshooting
 

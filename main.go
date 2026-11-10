@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/kwv/tudomesh/mesh"
 )
 
 // Version is set at build time via -ldflags
@@ -14,35 +12,23 @@ var Version = "dev"
 
 // AppOptions holds the configuration parsed from CLI flags
 type AppOptions struct {
-	ConfigFile         string
-	ParseOnly          bool
-	CalibrateOnly      bool
-	RenderOnly         bool
-	RenderIndividual   bool
-	IndividualRotation string
-	CompareRotation    string
-	ForceRotation      string
-	ReferenceVacuum    string
-	RotateAll          float64
-	OutputFile         string
-	DataDir            string
-	CalibrationCache   string
-	MqttMode           bool
-	HttpMode           bool
-	HttpPort           int
-	RenderFormat       string
-	VectorFormat       string
-	GridSpacing        float64
-	PlanRooms          bool
+	ConfigFile       string
+	CalibrateOnly    bool
+	CompareRotation  string
+	ReferenceVacuum  string
+	RotateAll        float64
+	DataDir          string
+	CalibrationCache string
+	MqttMode         bool
+	HttpMode         bool
+	HttpPort         int
+	PlanRooms        bool
 }
 
 // MainApp defines the interface for the application logic
 type MainApp interface {
 	ApplyOptions(opts AppOptions)
-	RunParseOnly()
 	RunCalibration()
-	RunRender()
-	RunRenderIndividual(string)
 	RunCompareRotation(string)
 	RunService()
 	RunPlanRooms()
@@ -64,24 +50,15 @@ func run(args []string, out io.Writer, app MainApp) error {
 
 	opts := AppOptions{}
 	fs.StringVar(&opts.ConfigFile, "config", "config.yaml", "Path to configuration file")
-	fs.BoolVar(&opts.ParseOnly, "parse-only", false, "Parse JSON exports and exit (test mode)")
 	fs.BoolVar(&opts.CalibrateOnly, "calibrate", false, "Run calibration on JSON exports and exit (test mode)")
-	fs.BoolVar(&opts.RenderOnly, "render", false, "Render composite map PNG and exit")
-	fs.BoolVar(&opts.RenderIndividual, "render-individual", false, "Render each vacuum map as separate PNG")
-	fs.StringVar(&opts.IndividualRotation, "individual-rotation", "", "Rotation for individual renders: VACUUM_ID=DEGREES")
 	fs.StringVar(&opts.CompareRotation, "compare-rotation", "", "Render 4 rotation options for specified vacuum ID")
-	fs.StringVar(&opts.ForceRotation, "force-rotation", "", "Force rotation for vacuum: VACUUM_ID=DEGREES (e.g., FairBoldFalcon=180)")
 	fs.StringVar(&opts.ReferenceVacuum, "reference", "", "Override reference vacuum (default: from config or largest area)")
 	fs.Float64Var(&opts.RotateAll, "rotate-all", 0, "Rotate entire composite by degrees (0, 90, 180, 270)")
-	fs.StringVar(&opts.OutputFile, "output", "composite-map.png", "Output file for --render mode")
-	fs.StringVar(&opts.DataDir, "data-dir", ".", "Directory containing JSON exports for parse-only mode")
+	fs.StringVar(&opts.DataDir, "data-dir", ".", "Directory for config.yaml, map exports and caches")
 	fs.StringVar(&opts.CalibrationCache, "calibration-cache", ".calibration-cache.json", "Path to calibration cache file")
 	fs.BoolVar(&opts.MqttMode, "mqtt", false, "Run MQTT service mode for real-time position tracking")
 	fs.BoolVar(&opts.HttpMode, "http", false, "Enable HTTP server for serving map images")
 	fs.IntVar(&opts.HttpPort, "http-port", 8080, "HTTP server port (default 8080)")
-	fs.StringVar(&opts.RenderFormat, "format", "raster", "Render format: raster, vector, or both")
-	fs.StringVar(&opts.VectorFormat, "vector-format", "svg", "Vector output format (only svg)")
-	fs.Float64Var(&opts.GridSpacing, "grid-spacing", mesh.DefaultGridSpacing, "Grid line spacing in map units (cm; 100 = 1 m)")
 	fs.BoolVar(&opts.PlanRooms, "plan-rooms", false, "Plan room edits that match each robot's rooms to the reference robot's; writes previews, changes nothing")
 
 	if err := fs.Parse(args); err != nil {
@@ -92,23 +69,8 @@ func run(args []string, out io.Writer, app MainApp) error {
 
 	app.ApplyOptions(opts)
 
-	if opts.ParseOnly {
-		app.RunParseOnly()
-		return nil
-	}
-
 	if opts.CalibrateOnly {
 		app.RunCalibration()
-		return nil
-	}
-
-	if opts.RenderOnly {
-		app.RunRender()
-		return nil
-	}
-
-	if opts.RenderIndividual {
-		app.RunRenderIndividual(opts.IndividualRotation)
 		return nil
 	}
 
@@ -127,19 +89,12 @@ func run(args []string, out io.Writer, app MainApp) error {
 		return nil
 	}
 
-	// Normal service mode - to be implemented
-	_, _ = fmt.Fprintln(out, "tudomesh service starting...")
-	_, _ = fmt.Fprintln(out, "Use --parse-only to test JSON parsing")
-	_, _ = fmt.Fprintln(out, "Use --calibrate to align maps and write the calibration cache")
-	_, _ = fmt.Fprintln(out, "Use --render to output composite map PNG")
-	_, _ = fmt.Fprintln(out, "Use --compare-rotation=VACUUM_ID to compare rotation options")
-	_, _ = fmt.Fprintln(out, "Use --mqtt to run MQTT service mode")
-	_, _ = fmt.Fprintln(out, "Use --http to run HTTP server mode")
-	_, _ = fmt.Fprintln(out, "Use --mqtt --http to run both MQTT and HTTP together")
-	_, _ = fmt.Fprintln(out, "\nConfiguration:")
-	_, _ = fmt.Fprintln(out, "  config.yaml - MQTT settings and calibration overrides")
-	_, _ = fmt.Fprintln(out, "  .calibration-cache.json - Auto-computed alignment transforms (cached)")
-	_, _ = fmt.Fprintln(out, "\nFull service mode not yet implemented")
+	_, _ = fmt.Fprintln(out, "Usage:")
+	_, _ = fmt.Fprintln(out, "  --mqtt --http          run the service (live positions and HTTP maps)")
+	_, _ = fmt.Fprintln(out, "  --calibrate            align the map exports in --data-dir and write the calibration cache")
+	_, _ = fmt.Fprintln(out, "  --compare-rotation=ID  render the 4 rotations of one robot, to pick a rotation hint")
+	_, _ = fmt.Fprintln(out, "  --plan-rooms           preview room edits that match each robot's rooms to the reference's")
+	_, _ = fmt.Fprintln(out, "Run with -h for every flag.")
 
 	return nil
 }

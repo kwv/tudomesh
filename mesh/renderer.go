@@ -347,123 +347,6 @@ func (r *CompositeRenderer) SavePNG(path string) error {
 	return png.Encode(f, img)
 }
 
-// RenderSingleMap renders a single vacuum map to PNG
-func RenderSingleMap(m *ValetudoMap, outputPath string, floorColor, wallColor color.RGBA) error {
-	return RenderSingleMapWithRotation(m, outputPath, floorColor, wallColor, 0)
-}
-
-// RenderSingleMapWithRotation renders a single vacuum map with rotation applied
-func RenderSingleMapWithRotation(m *ValetudoMap, outputPath string, floorColor, wallColor color.RGBA, rotationDeg float64) error {
-	// Build rotation transform around centroid
-	floor, _ := mapGeometry(m)
-	centroid := Centroid(floor)
-
-	// Create transform: translate to origin, rotate, translate back
-	toOrigin := Translation(-centroid.X, -centroid.Y)
-	rotate := RotationDeg(rotationDeg)
-	fromOrigin := Translation(centroid.X, centroid.Y)
-	transform := MultiplyMatrices(fromOrigin, MultiplyMatrices(rotate, toOrigin))
-
-	// Find bounds after rotation
-	var minX, minY, maxX, maxY = math.MaxFloat64, math.MaxFloat64, -math.MaxFloat64, -math.MaxFloat64
-
-	for _, layer := range m.Layers {
-		if layer.Type == "floor" || layer.Type == "segment" || layer.Type == "wall" {
-			points := PixelsToPoints(layer.Pixels)
-			for _, p := range points {
-				tp := TransformPoint(p, transform)
-				if tp.X < minX {
-					minX = tp.X
-				}
-				if tp.Y < minY {
-					minY = tp.Y
-				}
-				if tp.X > maxX {
-					maxX = tp.X
-				}
-				if tp.Y > maxY {
-					maxY = tp.Y
-				}
-			}
-		}
-	}
-
-	scale := 1.0
-	padding := 30
-	width := int((maxX-minX)*scale) + 2*padding
-	height := int((maxY-minY)*scale) + 2*padding
-
-	// Create image
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			img.Set(x, y, color.RGBA{240, 240, 240, 255})
-		}
-	}
-
-	toImage := func(p Point) (int, int) {
-		tp := TransformPoint(p, transform)
-		x := int((tp.X-minX)*scale) + padding
-		y := int((tp.Y-minY)*scale) + padding
-		return x, y
-	}
-
-	// Draw floor/segments
-	for _, layer := range m.Layers {
-		if layer.Type == "floor" || layer.Type == "segment" {
-			points := PixelsToPoints(layer.Pixels)
-			for _, p := range points {
-				ix, iy := toImage(p)
-				if ix >= 0 && ix < width && iy >= 0 && iy < height {
-					img.Set(ix, iy, floorColor)
-				}
-			}
-		}
-	}
-
-	// Draw walls
-	for _, layer := range m.Layers {
-		if layer.Type == "wall" {
-			points := PixelsToPoints(layer.Pixels)
-			for _, p := range points {
-				ix, iy := toImage(p)
-				for dx := -1; dx <= 1; dx++ {
-					for dy := -1; dy <= 1; dy++ {
-						px, py := ix+dx, iy+dy
-						if px >= 0 && px < width && py >= 0 && py < height {
-							img.Set(px, py, wallColor)
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Draw charger
-	if charger, ok := ExtractChargerPosition(m); ok {
-		ix, iy := toImage(charger)
-		drawSquare(img, ix, iy, 8, color.RGBA{255, 215, 0, 255})
-	}
-
-	// Draw robot
-	if robot, _, ok := ExtractRobotPosition(m); ok {
-		ix, iy := toImage(robot)
-		drawCircle(img, ix, iy, 6, color.RGBA{255, 0, 0, 255})
-	}
-
-	// Draw origin (0,0) as purple triangle
-	ox, oy := toImage(Point{X: 0, Y: 0})
-	drawTriangle(img, ox, oy, 12, color.RGBA{128, 0, 128, 255}) // Purple
-
-	f, err := os.Create(outputPath)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-
-	return png.Encode(f, img)
-}
-
 // blendColors performs alpha blending of two colors
 func blendColors(bg color.RGBA, fg color.NRGBA) color.NRGBA {
 	// Convert RGBA background to NRGBA for proper blending
@@ -524,22 +407,6 @@ func drawSquare(img *image.RGBA, cx, cy, size int, c color.RGBA) {
 	}
 }
 
-// drawTriangle draws a filled triangle pointing up
-func drawTriangle(img *image.RGBA, cx, cy, size int, c color.RGBA) {
-	half := size / 2
-	for dy := -half; dy <= half; dy++ {
-		// Width of triangle at this row
-		progress := float64(dy+half) / float64(size)
-		width := int(progress * float64(half))
-		for dx := -width; dx <= width; dx++ {
-			x, y := cx+dx, cy+dy
-			if x >= 0 && x < img.Bounds().Max.X && y >= 0 && y < img.Bounds().Max.Y {
-				img.Set(x, y, c)
-			}
-		}
-	}
-}
-
 // drawLegend adds a legend with text labels to the image
 func (r *CompositeRenderer) drawLegend(img *image.RGBA, width, height int) {
 	// Sort vacuum IDs for consistent ordering
@@ -590,37 +457,6 @@ func textWidth(text string) int {
 	return font.MeasureString(face, text).Ceil()
 }
 
-// RenderCompositeMap aligns all maps to the reference (see AlignMaps) and renders them
-func RenderCompositeMap(maps map[string]*ValetudoMap, outputPath string, referenceOverride string, globalRotation float64) error {
-	if len(maps) < 2 {
-		return nil
-	}
-
-	// Select reference
-	refID := referenceOverride
-	if refID == "" {
-		refID = SelectReferenceVacuum(maps, nil)
-	}
-
-	// Compute transforms
-	transforms := make(map[string]AffineMatrix)
-	transforms[refID] = Identity()
-
-	refMap := maps[refID]
-	for id, m := range maps {
-		if id == refID {
-			continue
-		}
-		result, _ := AlignMaps(m, refMap)
-		transforms[id] = result.Transform
-	}
-
-	// Render
-	renderer := NewCompositeRenderer(maps, transforms, refID)
-	renderer.GlobalRotation = globalRotation
-	return renderer.SavePNG(outputPath)
-}
-
 // RenderWithForcedRotation renders with a specific rotation override for a vacuum
 func RenderWithForcedRotation(maps map[string]*ValetudoMap, vacuumID string, rotationDeg float64, outputPath string, referenceOverride string, globalRotation float64) error {
 	if len(maps) < 2 {
@@ -653,49 +489,6 @@ func RenderWithForcedRotation(maps map[string]*ValetudoMap, vacuumID string, rot
 	renderer := NewCompositeRenderer(maps, transforms, refID)
 	renderer.GlobalRotation = globalRotation
 	return renderer.SavePNG(outputPath)
-}
-
-// RenderWithCalibration renders with specific rotation and translation overrides
-func RenderWithCalibration(maps map[string]*ValetudoMap, rotations map[string]float64, translations map[string]TranslationOffset, outputPath string, referenceID string, rotateAll float64) error {
-	if len(maps) < 2 {
-		return nil
-	}
-
-	refID := referenceID
-	if refID == "" {
-		refID = SelectReferenceVacuum(maps, nil)
-	}
-	refMap := maps[refID]
-
-	transforms := make(map[string]AffineMatrix)
-	transforms[refID] = Identity()
-
-	for id, m := range maps {
-		if id == refID {
-			continue
-		}
-
-		if rotDeg, ok := rotations[id]; ok {
-			result, _ := AlignMapsAtRotation(m, refMap, rotDeg)
-			transforms[id] = result.Transform
-			if trans, ok := translations[id]; ok && (trans.X != 0 || trans.Y != 0) {
-				transforms[id] = MultiplyMatrices(Translation(trans.X, trans.Y), transforms[id])
-			}
-		} else {
-			result, _ := AlignMaps(m, refMap)
-			transforms[id] = result.Transform
-		}
-	}
-
-	renderer := NewCompositeRenderer(maps, transforms, refID)
-	renderer.GlobalRotation = rotateAll
-	return renderer.SavePNG(outputPath)
-}
-
-// RenderWithForcedRotations renders with specific rotation overrides for multiple vacuums
-// Deprecated: Use RenderWithCalibration instead
-func RenderWithForcedRotations(maps map[string]*ValetudoMap, forcedRotations map[string]float64, outputPath string, referenceOverride string, globalRotation float64) error {
-	return RenderWithCalibration(maps, forcedRotations, nil, outputPath, referenceOverride, globalRotation)
 }
 
 // RenderRotationComparison renders 4 images showing all rotation options for a vacuum

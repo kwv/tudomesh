@@ -150,63 +150,6 @@ func TestSaveConfig(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// BuildForceRotationMap
-// ---------------------------------------------------------------------------
-
-func TestBuildForceRotationMap(t *testing.T) {
-	t.Run("empty string", func(t *testing.T) {
-		got := BuildForceRotationMap("")
-		if len(got) != 0 {
-			t.Errorf("empty input: got %v, want empty map", got)
-		}
-	})
-
-	t.Run("single entry", func(t *testing.T) {
-		got := BuildForceRotationMap("vac-a=90")
-		if len(got) != 1 {
-			t.Fatalf("single entry: len = %d, want 1", len(got))
-		}
-		if got["vac-a"] != 90 {
-			t.Errorf("vac-a = %g, want 90", got["vac-a"])
-		}
-	})
-
-	t.Run("multiple entries", func(t *testing.T) {
-		got := BuildForceRotationMap("vac-a=90,vac-b=180,vac-c=270")
-		if len(got) != 3 {
-			t.Fatalf("multiple entries: len = %d, want 3", len(got))
-		}
-		if got["vac-a"] != 90 {
-			t.Errorf("vac-a = %g, want 90", got["vac-a"])
-		}
-		if got["vac-b"] != 180 {
-			t.Errorf("vac-b = %g, want 180", got["vac-b"])
-		}
-		if got["vac-c"] != 270 {
-			t.Errorf("vac-c = %g, want 270", got["vac-c"])
-		}
-	})
-
-	t.Run("malformed entries skipped", func(t *testing.T) {
-		// "bad" has no =, "vac-x=abc" has non-numeric value
-		got := BuildForceRotationMap("bad,vac-x=abc,vac-ok=45")
-		if len(got) != 1 {
-			t.Fatalf("malformed: len = %d, want 1 (only vac-ok)", len(got))
-		}
-		if got["vac-ok"] != 45 {
-			t.Errorf("vac-ok = %g, want 45", got["vac-ok"])
-		}
-	})
-
-	t.Run("fractional degrees", func(t *testing.T) {
-		got := BuildForceRotationMap("vac-f=33.5")
-		if got["vac-f"] != 33.5 {
-			t.Errorf("vac-f = %g, want 33.5", got["vac-f"])
-		}
-	})
-}
-
-// ---------------------------------------------------------------------------
 // MergeCalibrationIntoConfig
 // ---------------------------------------------------------------------------
 
