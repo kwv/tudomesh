@@ -35,6 +35,14 @@ vacuums:
 #                             # font for PNG room names and captions, tried before
 #                             # the bundled Go font (Latin, Greek, Cyrillic);
 #                             # only needed for other scripts, e.g. CJK
+#   theme: dark               # live and alert maps: light (default), dark, or
+#                             # auto (SVG follows the viewer's dark mode; PNG
+#                             # is light). ?theme= overrides it per request.
+#   colors:                   # override single colors (#rrggbb), any theme
+#     background: "#101010"
+#     wall: "#e0e0e0"
+#     rooms: ["#2c4056", "#2e4a36", "#56482e"]
+#     # also: floor, text, halo (outline behind text), alert (stuck room)
 
 # Per-vacuum overrides (rarely needed):
 #   id: name        # instead of the Valetudo systemId

@@ -20,6 +20,9 @@ type VectorRenderer struct {
 	// Calibrated lists vacuums whose Transforms entry is a real calibration;
 	// only those get their own room highlighted. nil trusts every transform.
 	Calibrated map[string]bool
+	// Theme colors the live SVG through --tm-* CSS variables (see
+	// svgThemeCSS). The zero value is LightTheme.
+	Theme Theme
 	// Crop limits the live SVG's viewBox to the Highlight vacuum's room or a
 	// radius around it (see Crop).
 	Crop Crop

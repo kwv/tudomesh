@@ -170,6 +170,18 @@ The live, floorplan and per-vacuum maps (PNG and SVG) outline each room of the r
 
 PNG text uses the bundled Go Regular font, which covers Latin, Greek and Cyrillic (`Küche`, `Salle à manger`, `Кухня`). For other scripts such as Chinese or Japanese, point `render.fontPath` in `config.yaml` at a font that has them (`.ttf`, `.otf`, or the first font of a `.ttc`); it is tried first, with Go Regular as the fallback. In Docker, mount the font file into the container and use the path inside it. SVG labels use the viewer's `sans-serif` font.
 
+### Themes
+
+The live, floorplan and per-vacuum maps come in a `light` (default) and a `dark` theme. Set the default with `render.theme` in `config.yaml`, or per request with `?theme=light|dark|auto` on `/`, `/live.svg`, `/live.png`, `/floorplan.svg` and `/vacuum/{id}.png|.svg`. `auto` makes the SVG follow the viewer's dark-mode setting (`prefers-color-scheme`); PNGs have no viewer setting, so `auto` is light there. An unknown theme returns `400`. The composite views keep their per-robot colors.
+
+`render.colors` overrides single colors in every theme (`background`, `floor`, `wall`, `text`, `halo`, `alert`, and a `rooms` list); see [`config.example.yaml`](config.example.yaml). In the SVG the theme is a set of CSS variables on the `<svg>` element, so a page that embeds it inline can restyle it:
+
+```css
+#map-panel svg { --tm-bg: transparent; --tm-wall: #888; --tm-room-0: #234; }
+```
+
+Variables: `--tm-bg`, `--tm-floor`, `--tm-wall`, `--tm-text`, `--tm-halo`, `--tm-alert`, `--tm-alert-border`, and `--tm-room-0`, `--tm-room-1`, … (one per palette color in use).
+
 ### Per-vacuum (alerts)
 
 `{id}` is the vacuum id (its Valetudo `systemId`, or `id` from config) or the identifier in its MQTT topic, e.g. `rocky7` for `valetudo/rocky7/MapData/map-data`. Matching is case-insensitive.
@@ -211,7 +223,7 @@ The highlighted room is the robot's own segment under its position, mapped onto 
 
 ```text
 <svg>
-  <style>…</style>                          default colors (override freely)
+  <style>…</style>                          theme variables (--tm-*) and rules; override freely
   <g id="map" transform="…">                map geometry in grid cells
     <g id="rooms">
       <path id="room-16" class="room" data-room="Kitchen" data-segment-id="16"/>

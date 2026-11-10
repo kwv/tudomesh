@@ -188,6 +188,7 @@ func (r *CompositeRenderer) drawRoomOverlay(img *image.RGBA) {
 	if m == nil {
 		return
 	}
+	theme := r.Theme.orLight()
 	transform := r.Transforms[r.Reference]
 	minX, minY, _, _, centerX, centerY := r.CalculateBounds()
 	toImage := func(p Point) (int, int) {
@@ -236,8 +237,8 @@ func (r *CompositeRenderer) drawRoomOverlay(img *image.RGBA) {
 	}
 
 	// Outlines.
-	fills := map[color.RGBA]bool{toRGBA(AlertRoomColor): true}
-	for _, c := range RoomColors(m) {
+	fills := map[color.RGBA]bool{toRGBA(theme.Alert): true}
+	for _, c := range theme.RoomColors(m) {
 		fills[toRGBA(c)] = true
 	}
 	for y := 0; y < b.Dy(); y++ {
@@ -279,9 +280,9 @@ func (r *CompositeRenderer) drawRoomOverlay(img *image.RGBA) {
 		if !rectInside(cx, cy, float64(w+2*pad), float64(h+2*pad), 1, inside) {
 			continue
 		}
-		// A white halo keeps text readable over furniture and walls.
+		// A halo keeps text readable over furniture and walls.
 		dot := fixed.P(int(math.Round(cx-float64(w)/2)), int(math.Round(cy-float64(h)/2))+ascent)
-		halo := image.NewUniform(color.RGBA{255, 255, 255, 255})
+		halo := image.NewUniform(theme.Halo)
 		for _, off := range []fixed.Point26_6{
 			fixed.P(-1, 0), fixed.P(1, 0), fixed.P(0, -1), fixed.P(0, 1),
 			fixed.P(-1, -1), fixed.P(1, -1), fixed.P(-1, 1), fixed.P(1, 1),
@@ -290,7 +291,7 @@ func (r *CompositeRenderer) drawRoomOverlay(img *image.RGBA) {
 			d := &font.Drawer{Dst: img, Src: halo, Face: face, Dot: dot.Add(off)}
 			d.DrawString(name)
 		}
-		d := &font.Drawer{Dst: img, Src: image.NewUniform(color.RGBA{48, 48, 48, 255}), Face: face, Dot: dot}
+		d := &font.Drawer{Dst: img, Src: image.NewUniform(theme.Text), Face: face, Dot: dot}
 		d.DrawString(name)
 	}
 }
@@ -449,7 +450,7 @@ func writeRoomLabels(out *bytes.Buffer, f *svgFrame, m *ValetudoMap, t AffineMat
 
 func roomLabelCSS(s svgSizes, ps float64) string {
 	size := svgLabelSize(ps)
-	return fmt.Sprintf(`.room-outline{fill:none;stroke:#000;stroke-opacity:.3;stroke-width:%.2f;stroke-linecap:square}
-.room-label{font:%.1fpx sans-serif;text-anchor:middle;fill:#303030;paint-order:stroke;stroke:#fff;stroke-width:%.1f;stroke-linejoin:round}
+	return fmt.Sprintf(`.room-outline{fill:none;stroke:var(--tm-text);stroke-opacity:.3;stroke-width:%.2f;stroke-linecap:square}
+.room-label{font:%.1fpx sans-serif;text-anchor:middle;fill:var(--tm-text);paint-order:stroke;stroke:var(--tm-halo);stroke-width:%.1f;stroke-linejoin:round}
 `, s.stroke/ps, size, size*0.24)
 }

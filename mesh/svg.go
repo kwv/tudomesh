@@ -306,25 +306,26 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 		view = &c
 	}
 
+	theme := r.Theme.orLight()
 	var roomCSS strings.Builder
-	roomColors := RoomColors(baseMap, r.IgnoreRooms...)
-	for _, seg := range sortedKeys(roomColors) {
-		fmt.Fprintf(&roomCSS, "#room-%s{fill:%s}\n", cssToken(seg), svgColor(roomColors[seg]))
+	slots := roomIndexes(baseMap, r.IgnoreRooms...)
+	for _, seg := range sortedKeys(slots) {
+		fmt.Fprintf(&roomCSS, "#room-%s{fill:var(--tm-room-%d)}\n", cssToken(seg), slots[seg]%max(1, len(theme.Rooms)))
 	}
 
 	out := &bytes.Buffer{}
-	writeSVGOpen(out, f, ps, fmt.Sprintf(`.background{fill:#fff}
-.floor{fill:#c8c8c8}
-.room{fill:#c8c8c8}
-%s.alert-room{fill:%s;stroke:%s;stroke-width:1.2;stroke-dasharray:2.4 1.2}
-.wall{fill:#505050}
-%s%s.vacuum .body{stroke:#000;stroke-width:%.1f}
+	writeSVGOpen(out, f, ps, svgThemeCSS(theme, min(len(slots), len(theme.Rooms)))+fmt.Sprintf(`.background{fill:var(--tm-bg)}
+.floor{fill:var(--tm-floor)}
+.room{fill:var(--tm-floor)}
+%s.alert-room{fill:var(--tm-alert);stroke:var(--tm-alert-border);stroke-width:1.2;stroke-dasharray:2.4 1.2}
+.wall{fill:var(--tm-wall)}
+%s%s.vacuum .body{stroke:var(--tm-text);stroke-width:%.1f}
 .vacuum .heading{stroke-width:%.1f;stroke-linecap:round}
-.vacuum .label{font:bold %.1fpx sans-serif;text-anchor:middle;fill:#222;paint-order:stroke;stroke:#fff;stroke-width:%.1f}
+.vacuum .label{font:bold %.1fpx sans-serif;text-anchor:middle;fill:var(--tm-text);paint-order:stroke;stroke:var(--tm-halo);stroke-width:%.1f}
 .vacuum .ring{fill:none;stroke:#e61e1e;stroke-width:%.1f}
 .vacuum.highlight .ring{animation:tudomesh-pulse 1.5s ease-in-out infinite}
 @keyframes tudomesh-pulse{50%%{opacity:.25}}
-`, roomCSS.String(), svgColor(AlertRoomColor), svgColor(color.NRGBA(alertBorderColor)), gridCSS(s), roomLabelCSS(s, ps), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35), view)
+`, roomCSS.String(), gridCSS(s), roomLabelCSS(s, ps), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35), view)
 
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(baseMap, baseTransform))
 	writeMapLayers(out, baseMap, true, alert)

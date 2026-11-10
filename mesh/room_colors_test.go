@@ -259,9 +259,13 @@ func TestRenderLiveToSVG_RoomFills(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"#room-16{fill:" + svgColor(roomPalette[0]) + "}",
-		"#room-17{fill:" + svgColor(roomPalette[1]) + "}",
-		".alert-room{fill:" + svgColor(AlertRoomColor) + ";stroke:" + svgColor(color.NRGBA(alertBorderColor)),
+		"#room-16{fill:var(--tm-room-0)}",
+		"#room-17{fill:var(--tm-room-1)}",
+		"--tm-room-0:" + svgColor(roomPalette[0]) + ";",
+		"--tm-room-1:" + svgColor(roomPalette[1]) + ";",
+		"--tm-alert:" + svgColor(AlertRoomColor) + ";",
+		"--tm-alert-border:" + svgColor(color.NRGBA(alertBorderColor)) + ";",
+		".alert-room{fill:var(--tm-alert);stroke:var(--tm-alert-border)",
 		"stroke-dasharray:",
 	} {
 		if !strings.Contains(buf.String(), want) {
@@ -369,7 +373,7 @@ func TestRenderLiveHighlight_PNGSecondCue(t *testing.T) {
 	for y := 82; y < 116; y++ {
 		for x := 3; x < 77; x++ {
 			switch pixelAt(img, x, y) {
-			case color.NRGBA(alertHatchColor):
+			case color.NRGBA(toRGBA(LightTheme.AlertHatch)):
 				hatch++
 			case AlertRoomColor:
 				fill++

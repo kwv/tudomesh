@@ -99,7 +99,7 @@ func TestRenderLiveToSVG_IgnoredRoom(t *testing.T) {
 	if strings.Contains(svg, "#room-2{") {
 		t.Error("ignored room has a fill rule")
 	}
-	if !strings.Contains(svg, "#room-1{fill:"+svgColor(roomPalette[0])+"}") {
+	if !strings.Contains(svg, "#room-1{fill:var(--tm-room-0)}") {
 		t.Error("hall lost its fill")
 	}
 	if strings.Contains(svg, `class="room alert-room"`) {
