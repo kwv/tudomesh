@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"image/color"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -132,17 +133,19 @@ func TestRenderLiveToSVG_HeadingDirection(t *testing.T) {
 		if err := r.RenderLiveToSVG(&buf, pos); err != nil {
 			t.Fatal(err)
 		}
-		var x2, y2 float64
+		var deg float64
 		svg := buf.String()
 		i := strings.Index(svg, `class="heading"`)
 		if i < 0 {
-			t.Fatal("no heading line")
+			t.Fatal("no heading arrow")
 		}
-		if _, err := fmt.Sscanf(svg[i:], `class="heading" x2="%f" y2="%f"`, &x2, &y2); err != nil {
+		if _, err := fmt.Sscanf(svg[i:], `class="heading" transform="rotate(%f)"`, &deg); err != nil {
 			t.Fatalf("parse heading: %v", err)
 		}
-		if sign(x2) != tt.dx || sign(y2) != tt.dy {
-			t.Errorf("angle %g: heading end (%.1f, %.1f), want sign (%d, %d)", tt.angle, x2, y2, tt.dx, tt.dy)
+		// The arrow points +X before rotation.
+		x, y := math.Cos(deg*math.Pi/180), math.Sin(deg*math.Pi/180)
+		if sign(x) != tt.dx || sign(y) != tt.dy {
+			t.Errorf("angle %g: arrow points (%.2f, %.2f), want sign (%d, %d)", tt.angle, x, y, tt.dx, tt.dy)
 		}
 	}
 }

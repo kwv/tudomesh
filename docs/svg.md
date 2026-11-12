@@ -29,7 +29,8 @@ The SVG maps are structured so they can be restyled with CSS or scripted.
     <g id="vacuum-tidycalmpanda" class="vacuum state-error highlight"
        data-id="TidyCalmPanda" data-name="robo7" data-room="Kitchen" data-state="error">
       <circle class="ring"/>                only when highlighted
-      <circle class="body"/> <line class="heading"/> <text class="label">robo7</text>
+      <circle class="body"/> <path class="heading"/> <text class="label">robo7</text>
+                                            heading: white arrowhead, rotated to the robot's facing
     </g>
   </g>
 </svg>
