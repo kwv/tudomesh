@@ -705,12 +705,10 @@ func drawAlertRoom(img *image.RGBA, alert *alertRoom, refT AffineMatrix, toImage
 // drawVacuumIcon draws a stylized vacuum robot icon
 // cx, cy: center position
 // size: approximate size in pixels (diameter of robot body, ~20-25 recommended)
-// angleDeg: direction in degrees (0 = East/right, 90 = South/down in image coords)
+// angleRad: heading in radians from +X with Y down (see headingRad)
 // c: fill color for the robot
-// Note: In image coordinates, Y increases downward, so 90 degrees points down
-func drawVacuumIcon(img *image.RGBA, cx, cy, size int, angleDeg float64, c color.RGBA) {
+func drawVacuumIcon(img *image.RGBA, cx, cy, size int, angleRad float64, c color.RGBA) {
 	bounds := img.Bounds()
-	angleRad := angleDeg * math.Pi / 180.0
 
 	// Robot body radius (main circle)
 	radius := float64(size) / 2.0
@@ -841,12 +839,7 @@ func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert
 		// Parse color from hex string
 		robotColor := parseHexColor(pos.Color)
 
-		// Adjust angle for global rotation and image coordinate system
-		// In image coords, Y increases downward, and global rotation is CCW
-		displayAngle := pos.Angle + r.GlobalRotation
-
-		// Draw vacuum robot icon (size 22 pixels for good visibility)
-		drawVacuumIcon(img, ix, iy, 22, displayAngle, robotColor)
+		drawVacuumIcon(img, ix, iy, 22, headingRad(pos.Angle+r.GlobalRotation), robotColor)
 	}
 
 	if legend {

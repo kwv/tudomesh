@@ -10,7 +10,7 @@ type LivePosition struct {
 	VacuumID  string    `json:"vacuumId"`
 	X         float64   `json:"x"`
 	Y         float64   `json:"y"`
-	Angle     float64   `json:"angle"` // degrees, 0 = East, CCW
+	Angle     float64   `json:"angle"` // degrees, Valetudo convention: 0 = up, clockwise on the map
 	Timestamp time.Time `json:"timestamp"`
 	Color     string    `json:"color"` // hex color for this vacuum
 }

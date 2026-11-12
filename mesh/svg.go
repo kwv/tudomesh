@@ -358,7 +358,7 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 		if col == "" {
 			col = "#ff0000"
 		}
-		rad := (pos.Angle + r.GlobalRotation) * math.Pi / 180
+		rad := headingRad(pos.Angle + r.GlobalRotation)
 
 		fmt.Fprintf(out, `<g id="vacuum-%s" class="%s" data-id="%s" data-name="%s" data-room="%s" data-state="%s" transform="translate(%.1f %.1f)">`,
 			svgEscape(cssToken(id)), class, svgEscape(id), svgEscape(name), svgEscape(meta.Room), svgEscape(meta.State), c[0], c[1])

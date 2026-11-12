@@ -38,6 +38,12 @@ func TransformAngle(localAngle float64, transform AffineMatrix) float64 {
 	return NormalizeAngle(localAngle + transformRotation)
 }
 
+// headingRad converts a Valetudo robot angle (degrees, 0 = up, clockwise on
+// screen) to radians measured from +X with Y down, for cos/sin drawing.
+func headingRad(valetudoDeg float64) float64 {
+	return (valetudoDeg - 90) * math.Pi / 180
+}
+
 // MultiplyMatrices composes two affine transforms: result = m1 * m2
 // Applying result is equivalent to applying m2 first, then m1
 func MultiplyMatrices(m1, m2 AffineMatrix) AffineMatrix {
