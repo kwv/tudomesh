@@ -37,7 +37,7 @@ type VacuumMeta struct {
 //	<g id="vacuums">              one <g id="vacuum-<id>" class="vacuum state-<state> [highlight]"
 //	                              data-id data-name data-room data-state transform="translate(x y)">
 //	                                <circle class="ring"> (highlight only) <circle class="body">
-//	                                <line class="heading"> <text class="label">
+//	                                <path class="heading"> <text class="label">
 //
 // Each room has its own light fill (RoomColors). The alert room is the
 // highlighted vacuum's own segment under its position, mapped into the base
@@ -322,12 +322,12 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 %s.alert-room{fill:var(--tm-alert);stroke:var(--tm-alert-border);stroke-width:1.2;stroke-dasharray:2.4 1.2}
 .wall{fill:var(--tm-wall)}
 %s%s.vacuum .body{stroke:var(--tm-text);stroke-width:%.1f}
-.vacuum .heading{stroke-width:%.1f;stroke-linecap:round}
+.vacuum .heading{fill:#fff;stroke:#000;stroke-opacity:.4;stroke-width:%.1f;stroke-linejoin:round}
 .vacuum .label{font:bold %.1fpx sans-serif;text-anchor:middle;fill:var(--tm-text);paint-order:stroke;stroke:var(--tm-halo);stroke-width:%.1f}
 .vacuum .ring{fill:none;stroke:#e61e1e;stroke-width:%.1f}
 .vacuum.highlight .ring{animation:tudomesh-pulse 1.5s ease-in-out infinite}
 @keyframes tudomesh-pulse{50%%{opacity:.25}}
-`, roomCSS.String(), gridCSS(s), roomLabelCSS(s, ps), s.stroke, s.stroke*1.5, s.radius*1.6, s.radius*0.4, s.radius*0.35), view)
+`, roomCSS.String(), gridCSS(s), roomLabelCSS(s, ps), s.stroke, s.stroke*0.5, s.radius*1.6, s.radius*0.4, s.radius*0.35), view)
 
 	fmt.Fprintf(out, `<g id="map" transform="%s">`+"\n", f.mapMatrix(baseMap, baseTransform))
 	writeMapLayers(out, baseMap, true, alert)
@@ -358,7 +358,7 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 		if col == "" {
 			col = "#ff0000"
 		}
-		rad := (pos.Angle + r.GlobalRotation) * math.Pi / 180
+		rad := headingRad(pos.Angle + r.GlobalRotation)
 
 		fmt.Fprintf(out, `<g id="vacuum-%s" class="%s" data-id="%s" data-name="%s" data-room="%s" data-state="%s" transform="translate(%.1f %.1f)">`,
 			svgEscape(cssToken(id)), class, svgEscape(id), svgEscape(name), svgEscape(meta.Room), svgEscape(meta.State), c[0], c[1])
@@ -366,8 +366,10 @@ func (r *VectorRenderer) RenderLiveToSVG(w io.Writer, positions map[string]*Live
 			fmt.Fprintf(out, `<circle class="ring" r="%.1f"/>`, s.radius*2.5)
 		}
 		fmt.Fprintf(out, `<circle class="body" r="%.1f" fill="%s"/>`, s.radius, svgEscape(col))
-		fmt.Fprintf(out, `<line class="heading" x2="%.1f" y2="%.1f" stroke="%s"/>`,
-			s.radius*1.75*math.Cos(rad), s.radius*1.75*math.Sin(rad), svgEscape(col))
+		// Arrowhead pointing +X inside the body, rotated to the heading.
+		rr := s.radius
+		fmt.Fprintf(out, `<path class="heading" transform="rotate(%.1f)" d="M%.2f 0L%.2f %.2fL%.2f 0L%.2f %.2fZ"/>`,
+			rad*180/math.Pi, rr*0.65, -rr*0.45, rr*0.5, -rr*0.2, -rr*0.45, -rr*0.5)
 		fmt.Fprintf(out, `<text class="label" y="%.1f">%s</text>`, -s.radius*1.5, svgEscape(name))
 		out.WriteString("</g>\n")
 	}

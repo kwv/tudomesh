@@ -702,109 +702,60 @@ func drawAlertRoom(img *image.RGBA, alert *alertRoom, refT AffineMatrix, toImage
 	}
 }
 
-// drawVacuumIcon draws a stylized vacuum robot icon
+// drawVacuumIcon draws a filled circle with a dark outline and a white
+// arrowhead inside pointing along the heading (same shape as the live SVG).
 // cx, cy: center position
-// size: approximate size in pixels (diameter of robot body, ~20-25 recommended)
-// angleDeg: direction in degrees (0 = East/right, 90 = South/down in image coords)
+// size: diameter of the body in pixels (~20-25 recommended)
+// angleRad: heading in radians from +X with Y down (see headingRad)
 // c: fill color for the robot
-// Note: In image coordinates, Y increases downward, so 90 degrees points down
-func drawVacuumIcon(img *image.RGBA, cx, cy, size int, angleDeg float64, c color.RGBA) {
+func drawVacuumIcon(img *image.RGBA, cx, cy, size int, angleRad float64, c color.RGBA) {
 	bounds := img.Bounds()
-	angleRad := angleDeg * math.Pi / 180.0
-
-	// Robot body radius (main circle)
 	radius := float64(size) / 2.0
+	outline := radius + 2
+	outlineColor := color.RGBA{40, 40, 40, 255}
+	arrowColor := color.RGBA{255, 255, 255, 255}
 
-	// Colors
-	outlineColor := color.RGBA{40, 40, 40, 255}   // Dark outline for visibility
-	bumperColor := color.RGBA{60, 60, 60, 255}    // Dark grey for front bumper
-	sensorColor := color.RGBA{200, 200, 200, 255} // Light grey for sensor area
-
-	// Helper to check if point is in bounds and set pixel
-	setPixel := func(x, y int, col color.RGBA) {
-		if x >= bounds.Min.X && x < bounds.Max.X && y >= bounds.Min.Y && y < bounds.Max.Y {
-			img.Set(x, y, col)
-		}
+	// Arrowhead in local coords (pointing +X), as fractions of radius.
+	arrow := []Point{{0.65, 0}, {-0.45, 0.5}, {-0.2, 0}, {-0.45, -0.5}}
+	for i := range arrow {
+		arrow[i].X *= radius
+		arrow[i].Y *= radius
 	}
+	cos, sin := math.Cos(angleRad), math.Sin(angleRad)
 
-	// Helper to rotate a point around center
-	rotatePoint := func(px, py float64) (float64, float64) {
-		cos := math.Cos(angleRad)
-		sin := math.Sin(angleRad)
-		return px*cos - py*sin, px*sin + py*cos
-	}
-
-	// Draw outline circle (slightly larger)
-	outlineRadius := radius + 2
-	for dy := -int(outlineRadius) - 1; dy <= int(outlineRadius)+1; dy++ {
-		for dx := -int(outlineRadius) - 1; dx <= int(outlineRadius)+1; dx++ {
-			dist := math.Sqrt(float64(dx*dx + dy*dy))
-			if dist <= outlineRadius && dist > radius {
-				setPixel(cx+dx, cy+dy, outlineColor)
+	r := int(outline) + 1
+	for dy := -r; dy <= r; dy++ {
+		for dx := -r; dx <= r; dx++ {
+			x, y := cx+dx, cy+dy
+			if x < bounds.Min.X || x >= bounds.Max.X || y < bounds.Min.Y || y >= bounds.Max.Y {
+				continue
+			}
+			fx, fy := float64(dx), float64(dy)
+			dist := math.Hypot(fx, fy)
+			switch {
+			case dist > outline:
+				continue
+			case dist > radius:
+				img.SetRGBA(x, y, outlineColor)
+			case pointInPolygon(Point{X: fx*cos + fy*sin, Y: -fx*sin + fy*cos}, arrow):
+				img.SetRGBA(x, y, arrowColor)
+			default:
+				img.SetRGBA(x, y, c)
 			}
 		}
 	}
+}
 
-	// Draw main body circle with fill color
-	for dy := -int(radius) - 1; dy <= int(radius)+1; dy++ {
-		for dx := -int(radius) - 1; dx <= int(radius)+1; dx++ {
-			dist := math.Sqrt(float64(dx*dx + dy*dy))
-			if dist <= radius {
-				setPixel(cx+dx, cy+dy, c)
-			}
+// pointInPolygon reports whether p is inside poly (even-odd rule).
+func pointInPolygon(p Point, poly []Point) bool {
+	in := false
+	for i, j := 0, len(poly)-1; i < len(poly); j, i = i, i+1 {
+		a, b := poly[i], poly[j]
+		if (a.Y > p.Y) != (b.Y > p.Y) && p.X < (b.X-a.X)*(p.Y-a.Y)/(b.Y-a.Y)+a.X {
+			in = !in
 		}
 	}
-
-	// Draw front bumper/direction indicator (arc at the front)
-	// The bumper is a crescent shape at the front of the robot
-	bumperDepth := radius * 0.25
-	bumperWidth := radius * 0.7
-	for dy := -int(radius); dy <= int(radius); dy++ {
-		for dx := -int(radius); dx <= int(radius); dx++ {
-			// Rotate point to robot's local coordinates (unrotated)
-			localX, localY := rotatePoint(float64(dx), float64(dy))
-
-			// Check if in front bumper area
-			dist := math.Sqrt(float64(dx*dx + dy*dy))
-			if dist <= radius && localX > radius-bumperDepth && math.Abs(localY) < bumperWidth {
-				setPixel(cx+dx, cy+dy, bumperColor)
-			}
-		}
-	}
-
-	// Draw sensor/LiDAR turret (small circle slightly offset from center toward front)
-	sensorRadius := radius * 0.25
-	sensorOffsetX, sensorOffsetY := rotatePoint(radius*0.15, 0)
-	sensorCX := float64(cx) + sensorOffsetX
-	sensorCY := float64(cy) + sensorOffsetY
-
-	for dy := -int(sensorRadius) - 1; dy <= int(sensorRadius)+1; dy++ {
-		for dx := -int(sensorRadius) - 1; dx <= int(sensorRadius)+1; dx++ {
-			dist := math.Sqrt(float64(dx*dx + dy*dy))
-			if dist <= sensorRadius {
-				setPixel(int(sensorCX)+dx, int(sensorCY)+dy, sensorColor)
-			}
-		}
-	}
-
-	// Draw direction indicator line (small line extending from center toward front)
-	// This makes the direction more obvious
-	lineLength := radius * 0.6
-	lineStartX, lineStartY := rotatePoint(sensorRadius+1, 0)
-	for t := 0.0; t <= 1.0; t += 0.05 {
-		lx := lineStartX + t*(lineLength-lineStartX)
-		ly := lineStartY
-		rx, ry := lx, ly // Already in rotated space, just offset from sensor
-		// Actually need to compute from rotated offset
-		px := float64(cx) + lx*math.Cos(angleRad) - ly*math.Sin(angleRad)
-		py := float64(cy) + lx*math.Sin(angleRad) + ly*math.Cos(angleRad)
-		_ = rx
-		_ = ry
-		setPixel(int(px), int(py), outlineColor)
-		// Make line thicker
-		setPixel(int(px)+1, int(py), outlineColor)
-		setPixel(int(px), int(py)+1, outlineColor)
-	}
+	return in
 }
 
 // RenderLive creates a greyscale map with live position triangles
@@ -841,12 +792,7 @@ func (r *CompositeRenderer) renderLive(positions map[string]*LivePosition, alert
 		// Parse color from hex string
 		robotColor := parseHexColor(pos.Color)
 
-		// Adjust angle for global rotation and image coordinate system
-		// In image coords, Y increases downward, and global rotation is CCW
-		displayAngle := pos.Angle + r.GlobalRotation
-
-		// Draw vacuum robot icon (size 22 pixels for good visibility)
-		drawVacuumIcon(img, ix, iy, 22, displayAngle, robotColor)
+		drawVacuumIcon(img, ix, iy, 22, headingRad(pos.Angle+r.GlobalRotation), robotColor)
 	}
 
 	if legend {

@@ -3,7 +3,9 @@ package mesh
 import (
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"image/color"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +107,57 @@ func TestRenderLiveToSVG_Basic(t *testing.T) {
 	}
 
 	t.Logf("Live SVG length: %d bytes", len(svgContent))
+}
+
+// Valetudo angles are 0 = up, clockwise; the heading line must point that way.
+func TestRenderLiveToSVG_HeadingDirection(t *testing.T) {
+	m := &ValetudoMap{
+		PixelSize: 5,
+		MetaData:  MapMetaData{TotalLayerArea: 100},
+		Layers:    []MapLayer{{Type: "floor", Pixels: []int{0, 0, 10, 10, 20, 20}}},
+	}
+	r := NewVectorRenderer(map[string]*ValetudoMap{"vac1": m}, map[string]AffineMatrix{"vac1": Identity()}, "vac1")
+
+	tests := []struct {
+		angle  float64
+		dx, dy int // expected sign of the line end
+	}{
+		{0, 0, -1},  // up
+		{90, 1, 0},  // right
+		{180, 0, 1}, // down
+		{270, -1, 0},
+	}
+	for _, tt := range tests {
+		var buf bytes.Buffer
+		pos := map[string]*LivePosition{"vac1": {X: 25, Y: 25, Angle: tt.angle, Color: "#FF0000"}}
+		if err := r.RenderLiveToSVG(&buf, pos); err != nil {
+			t.Fatal(err)
+		}
+		var deg float64
+		svg := buf.String()
+		i := strings.Index(svg, `class="heading"`)
+		if i < 0 {
+			t.Fatal("no heading arrow")
+		}
+		if _, err := fmt.Sscanf(svg[i:], `class="heading" transform="rotate(%f)"`, &deg); err != nil {
+			t.Fatalf("parse heading: %v", err)
+		}
+		// The arrow points +X before rotation.
+		x, y := math.Cos(deg*math.Pi/180), math.Sin(deg*math.Pi/180)
+		if sign(x) != tt.dx || sign(y) != tt.dy {
+			t.Errorf("angle %g: arrow points (%.2f, %.2f), want sign (%d, %d)", tt.angle, x, y, tt.dx, tt.dy)
+		}
+	}
+}
+
+func sign(v float64) int {
+	switch {
+	case v > 0.01:
+		return 1
+	case v < -0.01:
+		return -1
+	}
+	return 0
 }
 
 func TestRenderLiveToSVG_MultipleVacuums(t *testing.T) {
