@@ -80,7 +80,7 @@ Query parameters:
 - `?crop=room` or `?crop=4m`: on `/vacuum/{id}.png|.svg`. Zooms to the robot's room (plus 1 m) or a radius around it.
 - `?scale=1..8`: on `/vacuum/{id}.png`. Image size (default 3).
 
-The live views draw the reference robot's rooms, each outlined and labelled with its Valetudo name. The SVGs give every room and robot its own element with stable ids and `data-*` attributes, for restyling with CSS: see [SVG structure](docs/svg.md).
+The live views draw the reference robot's rooms, each outlined, labelled with its Valetudo name, and colored so touching rooms differ. The SVGs give every room and robot its own element with stable ids and `data-*` attributes, for restyling with CSS: see [SVG structure](docs/svg.md).
 
 ## Calibration
 
